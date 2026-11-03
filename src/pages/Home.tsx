@@ -223,7 +223,7 @@ export default function Home() {
     };
     const onError = (error: GeolocationPositionError) => {
       setLocating(false);
-      if (error.code === error.PERMISSION_DENIED) toast.error("Localisation refusée. Clique sur le cadenas à gauche de l’adresse du site, puis autorise la localisation et réessaie.");
+      if (error.code === error.PERMISSION_DENIED) toast.error(/iPhone|iPad/i.test(navigator.userAgent) ? "Localisation refusée. Dans Safari : bouton « aA » de la barre d’adresse, Réglages du site web, Localisation, Autoriser. Tu peux aussi taper ton adresse de départ." : "Localisation refusée. Clique sur le cadenas à gauche de l’adresse du site pour l’autoriser, ou tape ton adresse de départ.");
       else if (error.code === error.POSITION_UNAVAILABLE) toast.error("Position introuvable. Active le GPS ou le Wi‑Fi de ton appareil et réessaie.");
       // Délai dépassé : on laisse le suivi continuer sans message.
     };

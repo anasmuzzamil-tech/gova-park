@@ -48,5 +48,5 @@ export default function App() {
     </Route>
     <Route path="/login" element={<Login />} />
     <Route path="*" element={<NotFound />} />
-  </Routes><Toaster position="top-center" richColors closeButton /></>;
+  </Routes><Toaster position="bottom-center" richColors closeButton duration={3500} offset={{ bottom: 24 }} mobileOffset={{ bottom: 90 }} /></>;
 }

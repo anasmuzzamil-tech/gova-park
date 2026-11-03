@@ -4,16 +4,16 @@ import { Map, CalendarDays, CirclePlus, UserRound, ParkingSquare, MessageCircle,
 
 const nav = [
   { to: "/", label: "Carte", icon: Map },
-  { to: "/reservations", label: "Réservations", icon: CalendarDays },
+  { to: "/reservations", label: "Réservations", short: "Résas", icon: CalendarDays },
   { to: "/messages", label: "Messages", icon: MessageCircle },
   { to: "/mobilite", label: "Mobilité", icon: CarFront },
-  { to: "/profil", label: "Paramètres", icon: UserRound },
+  { to: "/profil", label: "Paramètres", short: "Réglages", icon: UserRound },
 ];
 
 export default function AppShell() {
   const location = useLocation();
   const { user, isAuthenticated, isLoading } = useAuth();
-  const visibleNav = user?.role === "admin" ? [...nav, { to: "/entreprise", label: "Espace société", icon: ParkingSquare }, { to: "/admin", label: "Modération", icon: ShieldCheck }] : user?.role === "owner" ? [...nav, { to: "/proposer", label: "Espace propriétaire", icon: CirclePlus }] : [...nav, { to: "/espace-client", label: "Mon espace", icon: UserRound }];
+  const visibleNav = user?.role === "admin" ? [...nav, { to: "/entreprise", label: "Espace société", icon: ParkingSquare }, { to: "/admin", label: "Modération", icon: ShieldCheck }] : user?.role === "owner" ? [...nav, { to: "/proposer", label: "Espace propriétaire", icon: CirclePlus }] : [...nav, { to: "/espace-client", label: "Mon espace", short: "Espace", icon: UserRound }];
   const isMap = location.pathname === "/";
   if (isLoading) return <div className="page-loading"><span className="loader" />Ouverture de votre espace GOVAPARK…</div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -28,8 +28,8 @@ export default function AppShell() {
         <div className="rail-note"><span className="live-dot" />Données de démonstration<br /><small>Paiement désactivé</small></div>
       </aside>
       <main className={`app-main ${isMap ? "map-main" : ""}`}><Outlet /></main>
-      <nav className="bottom-nav" style={{ gridTemplateColumns: `repeat(${visibleNav.length}, minmax(0, 1fr))` }} aria-label="Navigation principale">
-        {visibleNav.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon size={21} strokeWidth={isMap && to === "/" ? 2.4 : 2} /><span>{label}</span></NavLink>)}
+      <nav className="bottom-nav" style={{ gridTemplateColumns: `repeat(${visibleNav.filter((item) => item.to !== "/mobilite").length}, minmax(0, 1fr))` }} aria-label="Navigation principale">
+        {visibleNav.filter((item) => item.to !== "/mobilite").map(({ to, label, short, icon: Icon }) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon size={21} strokeWidth={isMap && to === "/" ? 2.4 : 2} /><span>{short ?? label}</span></NavLink>)}
       </nav>
     </div>
   );

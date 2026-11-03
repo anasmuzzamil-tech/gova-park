@@ -531,3 +531,5 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-from input::placeholder { color: #8a87a0; font-weight: 600; }
 .m-from-me { height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 17px; background: var(--soft); color: var(--primary); font-size: 13px; font-weight: 800; white-space: nowrap; }
 .m-go { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 126px); }
+
+.bottom-nav a span { white-space: nowrap; font-size: 10.5px; }
