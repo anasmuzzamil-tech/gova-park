@@ -415,3 +415,27 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .leaflet-control-zoom a { width: 42px; height: 42px; line-height: 42px; font-size: 20px; color: var(--text); }
 .map-compass { border-radius: 50%; width: 44px; height: 44px; border-color: transparent; box-shadow: 0 6px 20px #1b1e3a33; }
 .leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 10px 30px #1b1e3a40; }
+
+/* ── Correctifs de mise en page de la carte ── */
+.leaflet-tile-pane { filter: saturate(1.12) contrast(1.03) brightness(1.02); }
+.pk-dot { display: block; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 2px 8px #1b1e3a55; transition: transform .15s ease; }
+.pk-dot:hover { transform: scale(1.35); }
+.pk-bubble.pk-sm { width: 22px; height: 22px; }
+.pk-bubble.pk-sm b { width: 16px; height: 16px; border-width: 2.5px; }
+.pk-bubble.pk-sm .pk-ring { inset: 0; }
+.popup-price { color: #2f6df6; font-size: 15px; }
+/* La barre de recherche n'est plus recouverte : les boutons passent sous elle, sur une seule ligne défilante. */
+.map-toolbar { top: 150px; left: 18px; right: 78px; flex-wrap: nowrap; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: none; }
+.map-toolbar::-webkit-scrollbar { display: none; }
+.map-toolbar > * { flex: 0 0 auto; }
+.map-compass { top: 160px; }
+/* Pile en bas à gauche : bandeau d'information, puis compteur, puis légende, sans chevauchement. */
+@media (min-width: 900px) {
+  .public-disclaimer { right: 90px; bottom: 14px; max-width: 560px; }
+  .speedometer-card { bottom: 82px; }
+  .map-legend { bottom: 150px; }
+}
+@media (max-width: 899px) {
+  .map-toolbar { top: 128px; left: 12px; right: 12px; }
+  .map-compass { top: 176px; }
+}

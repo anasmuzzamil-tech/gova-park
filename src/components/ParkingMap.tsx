@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { MapContainer, Marker, useMap, TileLayer, Circle, Popup, Polyline, ZoomControl } from "react-leaflet";
+import { useEffect, useRef, useState } from "react";
+import { MapContainer, Marker, useMap, useMapEvents, TileLayer, Circle, Popup, Polyline, ZoomControl } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -22,6 +22,12 @@ export type MapReport = {
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
 type RouteService = { id:string; lat:number; lng:number; name:string; kind:"charge"|"rest"|"parking"|"truck"|"restaurant"|"fuel"; detail?:string; price?:number; priceUpdated?:string };
+
+function ZoomTracker({ onZoom }: { onZoom: (zoom: number) => void }) {
+  const map = useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+  useEffect(() => { onZoom(map.getZoom()); }, [map, onZoom]);
+  return null;
+}
 
 function Recenter({ center }: { center: Center }) {
   const map = useMap();
@@ -57,12 +63,23 @@ function pricePill(color: string, text: string, label: string) {
     popupAnchor: [0, -18],
   });
 }
-// Bulle ronde de signalement, avec un halo qui pulse.
-function reportBubble(kind: "free" | "occupied" | "departure", symbol: string, label: string) {
+// De loin, une simple pastille de couleur : les prix ne se chevauchent pas.
+function dotIcon(color: string, label: string) {
   const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
   return L.divIcon({
     className: "govapark-marker-wrap",
-    html: `<span class="pk-bubble pk-b-${kind}" aria-label="${safe}"><i class="pk-ring"></i><b>${symbol}</b></span>`,
+    html: `<span class="pk-dot pk-${color}" aria-label="${safe}"></span>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    popupAnchor: [0, -10],
+  });
+}
+// Bulle ronde de signalement, avec un halo qui pulse.
+function reportBubble(kind: "free" | "occupied" | "departure", symbol: string, label: string, small = false) {
+  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+  return L.divIcon({
+    className: "govapark-marker-wrap",
+    html: `<span class="pk-bubble pk-b-${kind}${small ? " pk-sm" : ""}" aria-label="${safe}"><i class="pk-ring"></i><b>${small ? "" : symbol}</b></span>`,
     iconSize: [40, 40],
     iconAnchor: [20, 20],
     popupAnchor: [0, -22],
@@ -96,15 +113,17 @@ export default function ParkingMap({
   fuelStations?: Array<{id:number;lat:number;lng:number;name:string}>;
   vehicleType?: string; vehicleColor?: string;
 }) {
+  const [zoom, setZoom] = useState(12);
+  const detailed = zoom >= 14;
   return (
-    <MapContainer center={[center.lat, center.lng]} zoom={11} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
+    <MapContainer center={[center.lat, center.lng]} zoom={12} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         maxZoom={19}
       />
       <ZoomControl position="bottomright" />
+      <ZoomTracker onZoom={setZoom} />
       <Recenter center={center} />
       <MapMove onMove={onMove} />
       {routeCoordinates && routeCoordinates.length > 1 && <>
@@ -136,10 +155,10 @@ export default function ParkingMap({
           key={`l-${listing.id}`}
           position={[listing.latitude, listing.longitude]}
           title={`${listing.title} — ${statusText}`}
-          icon={pricePill(statusColor, listing.currentAvailability === "unavailable" ? "Complet" : formatRate(listing.hourlyCents), `${listing.title} — ${statusText}`)}
+          icon={detailed ? pricePill(statusColor, listing.currentAvailability === "unavailable" ? "Complet" : formatRate(listing.hourlyCents), `${listing.title} — ${statusText}`) : dotIcon(statusColor, `${listing.title} — ${statusText}`)}
         >
           <Popup>
-            <div className="map-listing-popup"><strong>{listing.title}</strong><span>{statusText}</span>{listing.approxAddress && <small>{listing.approxAddress}</small>}
+            <div className="map-listing-popup"><strong>{listing.title}</strong>{listing.hourlyCents != null && <b className="popup-price">{formatRate(listing.hourlyCents)}</b>}<span>{statusText}</span>{listing.approxAddress && <small>{listing.approxAddress}</small>}
               {routeListingIds?.has(listing.id) && <small className="route-nearby-tag">Sur votre trajet</small>}
               <div className="map-popup-actions"><button type="button" onClick={() => onRoute(listing.id)}>Itinéraire</button><button type="button" onClick={() => onBook(listing.id)}>Réserver</button></div>
             </div>
@@ -159,7 +178,7 @@ export default function ParkingMap({
           key={`r-${report.id}`}
           position={[report.latitude, report.longitude]}
           title={report.address}
-          icon={reportBubble(report.kind, text, report.address)}
+          icon={reportBubble(report.kind, text, report.address, !detailed)}
           eventHandlers={{ click: () => onReport(report) }}
         />;
       })}
