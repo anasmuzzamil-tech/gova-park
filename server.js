@@ -4,6 +4,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +19,28 @@ async function startStaticOnly(reason) {
   app.get('*', (_req, res) => res.sendFile(path.join(pub, 'index.html')));
   app.listen(process.env.PORT || 10000, '0.0.0.0', () => console.log('GOVAPARK (site seul) en ligne'));
 }
+
+// Base de donnees : si DATABASE_URL est renseignee, on cree/met a jour les tables puis on ajoute
+// les donnees de depart (places d'exemple) si la base est vide. Sans DATABASE_URL : mode demo, rien a faire.
+function prepareDatabase() {
+  if (!process.env.DATABASE_URL) return;
+  const kit = path.join(__dirname, 'node_modules', 'drizzle-kit', 'bin.cjs');
+  try {
+    console.log('[GOVAPARK] Base de donnees : creation des tables...');
+    execFileSync(process.execPath, [kit, 'push', '--force'], { cwd: __dirname, stdio: 'inherit', timeout: 180000 });
+  } catch (e) {
+    console.error('[GOVAPARK] Creation des tables impossible :', e && e.message ? e.message : e);
+    return;
+  }
+  const seed = path.join(__dirname, 'dist', 'server', 'seed.js');
+  if (!fs.existsSync(seed)) return;
+  try {
+    execFileSync(process.execPath, [seed], { cwd: __dirname, stdio: 'inherit', timeout: 120000 });
+  } catch (e) {
+    console.error('[GOVAPARK] Donnees de depart non ajoutees :', e && e.message ? e.message : e);
+  }
+}
+prepareDatabase();
 
 if (!fs.existsSync(path.join(__dirname, 'dist', 'public', 'index.html'))) {
   console.error('[GOVAPARK] dist/public/index.html introuvable : le build du site a échoué.');

@@ -19,7 +19,7 @@
     "cap:ios": "cap open ios",
     "cap:android": "cap open android",
     "mobile:prepare": "npm run build && cap sync",
-    "build:server": "esbuild api/boot.ts --bundle --platform=node --format=esm --target=node20 --packages=external --tsconfig=tsconfig.server.json --outfile=dist/server/boot.js"
+    "build:server": "esbuild api/boot.ts --bundle --platform=node --format=esm --target=node20 --packages=external --tsconfig=tsconfig.server.json --outfile=dist/server/boot.js && esbuild db/seed.ts --bundle --platform=node --format=esm --target=node20 --packages=external --tsconfig=tsconfig.server.json --outfile=dist/server/seed.js"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "2.0.78",
