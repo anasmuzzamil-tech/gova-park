@@ -6,7 +6,7 @@ import { getDb } from "./queries/connection";
 import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices } from "@db/schema";
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { storage } from "./lib/storage";
-import { isDemoMode, demoListings, demoReports } from "./demo";
+import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -173,7 +173,7 @@ export const govaparkRouter = createRouter({
 
   favorites: createRouter({
     list: authedQuery.query(async ({ ctx }) => {
-      if (isDemoMode) return [];
+      if (isDemoMode) return demoFavoriteListings();
       const rows = await getDb().select({ listing: listings }).from(favorites)
         .innerJoin(listings, eq(favorites.listingId, listings.id))
         .where(and(eq(favorites.userId, ctx.user.id), eq(listings.status, "published")))
@@ -181,11 +181,12 @@ export const govaparkRouter = createRouter({
       return (await withPhotoUrls(rows.map((r) => r.listing))).map(publicListing);
     }),
     ids: authedQuery.query(async ({ ctx }) => {
-      if (isDemoMode) return [] as number[];
+      if (isDemoMode) return demoFavoriteIds();
       const rows = await getDb().select({ listingId: favorites.listingId }).from(favorites).where(eq(favorites.userId, ctx.user.id));
       return rows.map((r) => Number(r.listingId));
     }),
     toggle: authedQuery.input(z.object({ listingId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) return demoToggleFavorite(input.listingId);
       const db = getDb();
       const [existing] = await db.select().from(favorites).where(and(eq(favorites.userId, ctx.user.id), eq(favorites.listingId, input.listingId))).limit(1);
       if (existing) { await db.delete(favorites).where(eq(favorites.id, existing.id)); return { favorite: false }; }
@@ -195,6 +196,7 @@ export const govaparkRouter = createRouter({
   }),
   reservations: createRouter({
     create: authedQuery.input(reservationCreateInput).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) { try { return demoCreateReservation(input); } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Réservation impossible." }); } }
       const db = getDb();
       return db.transaction(async (tx) => {
         const [listing] = await tx.select().from(listings).where(eq(listings.id, input.listingId)).for("update").limit(1);
@@ -242,7 +244,7 @@ export const govaparkRouter = createRouter({
       return { ok: true, status: "requested", paymentProviderConnected: false, message: "Demande enregistrée. Le remboursement devra être traité après activation ou via le prestataire de paiement externe." };
     }),
     mine: authedQuery.query(async ({ ctx }) => {
-      if (isDemoMode) return [];
+      if (isDemoMode) return demoMyReservations();
       const rows = await getDb().select({ reservation: reservations, listing: listings }).from(reservations)
         .innerJoin(listings, eq(reservations.listingId, listings.id)).where(eq(reservations.userId, ctx.user.id)).orderBy(desc(reservations.startAt));
       const hydrated = await withPhotoUrls(rows.map((row) => row.listing));
@@ -253,6 +255,7 @@ export const govaparkRouter = createRouter({
       }));
     }),
     cancel: authedQuery.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) { try { return demoCancelReservation(input.id); } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Annulation impossible." }); } }
       const [row] = await getDb().select().from(reservations).where(and(eq(reservations.id, input.id), eq(reservations.userId, ctx.user.id))).limit(1);
       if (!row || !["pending", "payment_pending", "confirmed"].includes(row.status)) throw new TRPCError({ code: "BAD_REQUEST", message: "Cette réservation ne peut plus être annulée." });
       const status = row.status === "confirmed" ? "refund_pending" : "cancelled";
@@ -528,6 +531,7 @@ export const govaparkRouter = createRouter({
       kind: z.enum(["free", "occupied", "departure"]), latitude: z.number(), longitude: z.number(),
       address: z.string().min(3), estimatedDeparture: z.date().optional(),
     })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) { if (input.kind === "departure" && !input.estimatedDeparture) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez une heure estimée de départ." }); return demoCreateReport(input); }
       const db = getDb();
       const [recent] = await db.select({ value: count() }).from(communityReports).where(and(eq(communityReports.userId, ctx.user.id), gt(communityReports.createdAt, new Date(Date.now() - 3600000))));
       if ((recent?.value ?? 0) >= 5) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Limite atteinte : 5 signalements par heure. Réessayez plus tard." });
@@ -537,6 +541,7 @@ export const govaparkRouter = createRouter({
       return { id: created.id };
     }),
     vote: authedQuery.input(z.object({ reportId: z.number().int(), vote: z.enum(["confirm", "contradict"]) })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) return demoVote(input.reportId, input.vote);
       const db = getDb();
       const [report] = await db.select().from(communityReports).where(eq(communityReports.id, input.reportId)).limit(1);
       if (!report) throw new TRPCError({ code: "NOT_FOUND" });
@@ -558,10 +563,12 @@ export const govaparkRouter = createRouter({
       return { confidence };
     }),
     updateDeparture: authedQuery.input(z.object({ id: z.number().int(), estimatedDeparture: z.date() })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) return demoUpdateDeparture(input.id, input.estimatedDeparture);
       await getDb().update(communityReports).set({ estimatedDeparture: input.estimatedDeparture, updatedAt: new Date() }).where(and(eq(communityReports.id, input.id), eq(communityReports.userId, ctx.user.id), eq(communityReports.kind, "departure")));
       return { ok: true };
     }),
     stopDeparture: authedQuery.input(z.object({ id: z.number().int() })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) return demoStopReport(input.id);
       await getDb().update(communityReports).set({ expiresAt: new Date() }).where(and(eq(communityReports.id, input.id), eq(communityReports.userId, ctx.user.id)));
       return { ok: true };
     }),

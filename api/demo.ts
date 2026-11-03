@@ -1,4 +1,5 @@
 import { env } from "./lib/env";
+import { calculatePrice } from "@contracts/pricing";
 
 // MODE DEMO : actif automatiquement tant que DATABASE_URL n'est pas renseignee.
 // Le site s'ouvre directement sur la carte avec des places d'exemple, sans connexion ni base.
@@ -74,10 +75,34 @@ export function demoListings() {
 }
 
 // Signalements de la communaute, dates par rapport a l'instant present.
+const votes = new Map<number, { c: number; x: number }>();
+const removedReports = new Set<number>();
+const userReports: Array<{ id: number; userId: number; kind: "free" | "occupied" | "departure"; latitude: number; longitude: number; address: string; source: string; confidence: number; estimatedDeparture: Date | null; updatedAt: Date; createdAt: Date; expiresAt: null }> = [];
+let nextReportId = 1000;
+
+export function demoCreateReport(input: { kind: "free" | "occupied" | "departure"; latitude: number; longitude: number; address: string; estimatedDeparture?: Date }) {
+  const id = nextReportId++;
+  const now = new Date();
+  userReports.push({ id, userId: demoUser.id, kind: input.kind, latitude: input.latitude, longitude: input.longitude, address: input.address, source: `${demoUser.name} · communauté`, confidence: 50, estimatedDeparture: input.estimatedDeparture ?? null, updatedAt: now, createdAt: now, expiresAt: null });
+  return { id };
+}
+export function demoVote(reportId: number, vote: "confirm" | "contradict") {
+  const current = votes.get(reportId) ?? { c: 0, x: 0 };
+  if (vote === "confirm") current.c += 1; else current.x += 1;
+  votes.set(reportId, current);
+  return { ok: true };
+}
+export function demoStopReport(id: number) { removedReports.add(id); return { ok: true }; }
+export function demoUpdateDeparture(id: number, estimatedDeparture: Date) {
+  const mine = userReports.find((r) => r.id === id);
+  if (mine) { mine.estimatedDeparture = estimatedDeparture; mine.updatedAt = new Date(); }
+  return { ok: true };
+}
+
 export function demoReports() {
   const now = Date.now();
   const base = { userId: null, createdAt: new Date(now), expiresAt: null, contradictions: 0 };
-  return [
+  const fixed = [
     { ...base, id: 1, kind: "free" as const, latitude: 48.8561, longitude: 2.3522, address: "Rue de Rivoli, Paris 4ᵉ", source: "Lina M. · communauté", confidence: 88, estimatedDeparture: null, updatedAt: new Date(now - 4 * 60000), confirmations: 3 },
     { ...base, id: 2, kind: "occupied" as const, latitude: 48.8584, longitude: 2.3471, address: "Rue Saint-Antoine, Paris 4ᵉ", source: "Mehdi R. · communauté", confidence: 76, estimatedDeparture: null, updatedAt: new Date(now - 9 * 60000), confirmations: 2 },
     { ...base, id: 3, kind: "departure" as const, latitude: 48.8531, longitude: 2.3491, address: "Quai des Célestins, Paris 4ᵉ", source: "Sophie D. · communauté", confidence: 64, estimatedDeparture: new Date(now + 12 * 60000), updatedAt: new Date(now - 3 * 60000), confirmations: 1 },
@@ -85,4 +110,47 @@ export function demoReports() {
     { ...base, id: 5, kind: "occupied" as const, latitude: 48.8441, longitude: 2.3731, address: "Rue de Lyon, Paris 12ᵉ", source: "Nora L. · communauté", confidence: 81, estimatedDeparture: null, updatedAt: new Date(now - 14 * 60000), confirmations: 2 },
     { ...base, id: 6, kind: "departure" as const, latitude: 48.8421, longitude: 2.3221, address: "Rue de Vaugirard, Paris 15ᵉ", source: "Jules T. · communauté", confidence: 57, estimatedDeparture: new Date(now + 20 * 60000), updatedAt: new Date(now - 8 * 60000), confirmations: 1 },
   ];
+  const cutoff = now - 30 * 60000;
+  return [...fixed, ...userReports.filter((r) => r.updatedAt.getTime() > cutoff).map((r) => ({ ...base, ...r, contradictions: 0, confirmations: 0 }))]
+    .filter((r) => !removedReports.has(r.id))
+    .map((r) => { const v = votes.get(r.id); return v ? { ...r, confirmations: r.confirmations + v.c, contradictions: r.contradictions + v.x } : r; });
 }
+
+// Favoris et reservations gardes en memoire (perdus au redemarrage du serveur).
+const favoriteIds = new Set<number>();
+export function demoFavoriteIds() { return [...favoriteIds]; }
+export function demoFavoriteListings() { return demoListings().filter((l) => favoriteIds.has(l.id)); }
+export function demoToggleFavorite(listingId: number) {
+  if (favoriteIds.has(listingId)) { favoriteIds.delete(listingId); return { favorite: false }; }
+  favoriteIds.add(listingId); return { favorite: true };
+}
+
+type DemoReservation = { id: number; listingId: number; userId: number; startAt: Date; endAt: Date; vehiclePlate: string | null; status: string; baseCents: number; feeCents: number; totalCents: number; commissionCents: number; netCents: number; expiresAt: Date | null; createdAt: Date; updatedAt: Date };
+const reservationsStore: DemoReservation[] = [];
+let nextReservationId = 1;
+
+export function demoCreateReservation(input: { listingId: number; startAt: Date; endAt: Date; vehiclePlate?: string | null }) {
+  const listing = demoListings().find((l) => l.id === input.listingId);
+  if (!listing) throw new Error("Annonce introuvable.");
+  if (input.startAt >= input.endAt) throw new Error("Le départ doit être postérieur à l’arrivée.");
+  const { startedHours: _hours, ...price } = calculatePrice({ ...input, ...listing, commissionBps: 1200 });
+  const now = new Date();
+  const id = nextReservationId++;
+  reservationsStore.push({
+    id, listingId: listing.id, userId: demoUser.id, startAt: input.startAt, endAt: input.endAt, vehiclePlate: input.vehiclePlate ?? null,
+    status: listing.bookingMode === "instant" ? "payment_pending" : "pending", ...price,
+    expiresAt: new Date(now.getTime() + (listing.bookingMode === "validation" ? 24 * 3600000 : 30 * 60000)), createdAt: now, updatedAt: now,
+  });
+  return { id, mode: listing.bookingMode };
+}
+export function demoMyReservations() {
+  const all = demoListings();
+  return [...reservationsStore].sort((a, b) => b.startAt.getTime() - a.startAt.getTime()).map((r) => ({ ...r, listing: all.find((l) => l.id === r.listingId)! }));
+}
+export function demoCancelReservation(id: number) {
+  const r = reservationsStore.find((x) => x.id === id);
+  if (!r || !["pending", "payment_pending"].includes(r.status)) throw new Error("Cette réservation ne peut plus être annulée.");
+  r.status = "cancelled"; r.updatedAt = new Date();
+  return { status: "cancelled" as const };
+}
+
