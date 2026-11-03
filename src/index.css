@@ -516,3 +516,5 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
   .leaflet-bottom.leaflet-right .leaflet-control-zoom { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .m-chip { transition: none; } }
+
+.pk-svc { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; border: 2.5px solid #fff; color: #fff; font-size: 12px; line-height: 1; box-shadow: 0 2px 8px #1a143a55; }

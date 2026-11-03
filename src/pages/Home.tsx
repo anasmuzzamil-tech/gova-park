@@ -146,21 +146,7 @@ export default function Home() {
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [search]);
 
-  useEffect(() => {
-    if (vehiclePrefs.fuelStations === false) { setFuelStations([]); return; }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      const around = userPosition ?? visibleCenter;
-      const query = `[out:json][timeout:15];(node[amenity=fuel](around:5000,${around.lat},${around.lng});way[amenity=fuel](around:5000,${around.lat},${around.lng}););out center tags;`;
-      try {
-        const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`, { signal: controller.signal });
-        if (!response.ok) return;
-        const payload = await response.json() as { elements?: Array<{id:number;lat?:number;lon?:number;center?:{lat:number;lon:number};tags?:{name?:string}} > };
-        setFuelStations((payload.elements ?? []).flatMap(item => { const lat=item.lat ?? item.center?.lat, lng=item.lon ?? item.center?.lon; return lat == null || lng == null ? [] : [{id:item.id,lat,lng,name:item.tags?.name || "Station-service"}]; }).slice(0,80));
-      } catch { /* le fond de carte reste disponible si Overpass est inaccessible */ }
-    }, 700);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [visibleCenter.lat, visibleCenter.lng, userPosition?.lat, userPosition?.lng, vehiclePrefs.fuelStations]);
+
 
   const createReport = trpc.govapark.community.create.useMutation({
     onSuccess: () => { toast.success("Signalement publié pour 30 minutes maximum"); setReportOpen(false); utils.govapark.community.list.invalidate(); },
@@ -228,7 +214,8 @@ export default function Home() {
         `node(around:1400,${pt[0]},${pt[1]})[amenity=fuel];way(around:1400,${pt[0]},${pt[1]})[amenity=fuel];`
       ]);
       const query=`[out:json][timeout:25];(${clauses.join("")});out center tags;`;
-      const response=await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+      void query; // Overpass désactivé : on n'affiche que les stations-service du flux officiel, le long du trajet
+      const response={ok:false} as Response;
       const found:RouteService[]=[];
       if(response.ok){const payload=await response.json() as {elements?:Array<{id:number;lat?:number;lon?:number;center?:{lat:number;lon:number};tags?:Record<string,string>}>};
         for(const item of payload.elements??[]){const lat=item.lat??item.center?.lat,lng=item.lon??item.center?.lon,tags=item.tags??{};if(lat==null||lng==null||distanceToRoute({lat,lng},route.coordinates)>1600)continue;
@@ -243,9 +230,9 @@ export default function Home() {
       const fuelResponse=await fetch(fuelUrl);
       if(fuelResponse.ok){const fuelData=await fuelResponse.json() as {results?:Array<{id:number;geom?:{lat:number;lon:number};adresse?:string;ville?:string;gazole_prix?:number;e10_prix?:number;sp98_prix?:number;sp95_prix?:number;e85_prix?:number;gazole_maj?:string;e10_maj?:string;sp98_maj?:string;sp95_maj?:string;e85_maj?:string;services_service?:string[]}>};
         const field=({gazole:"gazole_prix",e10:"e10_prix",sp98:"sp98_prix",sp95:"sp95_prix",e85:"e85_prix"} as const)[routeFuelType];const updateField=({gazole:"gazole_maj",e10:"e10_maj",sp98:"sp98_maj",sp95:"sp95_maj",e85:"e85_maj"} as const)[routeFuelType];
-        for(const station of fuelData.results??[]){const lat=station.geom?.lat,lng=station.geom?.lon,price=station[field];if(lat==null||lng==null||price==null||distanceToRoute({lat,lng},route.coordinates)>12000)continue;const truck=station.services_service?.some(service=>/piste poids lourds/i.test(service))??false;found.push({id:`fuel-${station.id}`,lat,lng,name:`${station.adresse??"Station"}, ${station.ville??""}`.trim(),kind:truck?"truck":"fuel",price,priceUpdated:station[updateField],detail:station.services_service?.join(" · ")});}
+        for(const station of fuelData.results??[]){const lat=station.geom?.lat,lng=station.geom?.lon,price=station[field];if(lat==null||lng==null||price==null||distanceToRoute({lat,lng},route.coordinates)>800)continue;const truck=station.services_service?.some(service=>/piste poids lourds/i.test(service))??false;found.push({id:`fuel-${station.id}`,lat,lng,name:`${station.adresse??"Station"}, ${station.ville??""}`.trim(),kind:truck?"truck":"fuel",price,priceUpdated:station[updateField],detail:station.services_service?.join(" · ")});}
       }
-      setRouteServices(found);
+      setRouteServices(found.slice(0,15));
     }catch{toast.message("Les services routiers sont temporairement indisponibles. Le trajet reste affiché.");}
   };
 
@@ -417,7 +404,7 @@ export default function Home() {
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}`}>
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
-          <ParkingMap center={target} listings={filtered} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={fuelStations} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
+          <ParkingMap center={target} listings={filtered} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
             routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
             onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />

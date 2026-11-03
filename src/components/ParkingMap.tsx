@@ -85,6 +85,17 @@ function reportBubble(kind: "free" | "occupied" | "departure", symbol: string, l
     popupAnchor: [0, -22],
   });
 }
+// Station sur le trajet : petite pastille discrète, le prix s'affiche au toucher.
+function serviceIcon(color: string, symbol: string, label: string) {
+  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+  return L.divIcon({
+    className: "govapark-marker-wrap",
+    html: `<span class="pk-svc pk-${color}" aria-label="${safe}">${symbol}</span>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -14],
+  });
+}
 const youIcon = L.divIcon({
   className: "govapark-marker-wrap",
   html: `<span class="pk-you"><i></i><b></b></span>`,
@@ -168,7 +179,7 @@ export default function ParkingMap({
       {routeServices.map((service) => {
         const symbol = service.kind === "charge" ? "⚡" : service.kind === "rest" ? "🛣" : service.kind === "truck" ? "🚛" : service.kind === "restaurant" ? "🍴" : service.kind === "parking" ? "P" : "⛽";
         const color = service.kind === "charge" ? "green" : service.kind === "truck" ? "orange" : service.kind === "fuel" ? "blue" : "violet";
-        return <Marker key={service.id} position={[service.lat,service.lng]} icon={markerIcon(color,symbol,service.name)}><Popup><strong>{service.name}</strong><br/>{service.kind === "charge" ? "Borne de recharge électrique" : service.kind === "rest" ? "Aire de repos ou de service" : service.kind === "truck" ? "Infrastructure poids lourds signalée" : service.kind === "restaurant" ? "Restauration" : service.kind === "parking" ? "Parking" : "Station-service"}{service.price != null && <><br/><strong>{service.price.toFixed(3)} €/L</strong><br/><small>Prix officiel · mise à jour {service.priceUpdated ? new Date(service.priceUpdated).toLocaleString("fr-FR") : "non précisée"}</small></>}{service.detail && <><br/><small>{service.detail}</small></>}</Popup></Marker>;
+        return <Marker key={service.id} position={[service.lat,service.lng]} icon={serviceIcon(color,symbol,service.name)}><Popup><strong>{service.name}</strong><br/>{service.kind === "charge" ? "Borne de recharge électrique" : service.kind === "rest" ? "Aire de repos ou de service" : service.kind === "truck" ? "Infrastructure poids lourds signalée" : service.kind === "restaurant" ? "Restauration" : service.kind === "parking" ? "Parking" : "Station-service"}{service.price != null && <><br/><strong>{service.price.toFixed(3)} €/L</strong><br/><small>Prix officiel · mise à jour {service.priceUpdated ? new Date(service.priceUpdated).toLocaleString("fr-FR") : "non précisée"}</small></>}{service.detail && <><br/><small>{service.detail}</small></>}</Popup></Marker>;
       })}
       {fuelStations.map((station) => <Marker key={`fuel-${station.id}`} position={[station.lat,station.lng]} icon={markerIcon("blue", "⛽", station.name)}><Popup><strong>{station.name}</strong><br/>Station-service · données OpenStreetMap</Popup></Marker>)}
       {reports.map((report) => {
