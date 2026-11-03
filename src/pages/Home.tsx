@@ -72,6 +72,7 @@ export default function Home() {
   const alertedListingIds = useRef<Set<number>>(new Set());
   const watchId = useRef<number | null>(null);
   const gpsInitialized = useRef(false);
+  const originRef = useRef<{ lat: number; lng: number } | null>(null);
   const [departureUpdate, setDepartureUpdate] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
   const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: userPosition?.lat ?? visibleCenter.lat, longitude: userPosition?.lng ?? visibleCenter.lng, radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
 
@@ -121,13 +122,21 @@ export default function Home() {
     const timer = window.setTimeout(async () => {
       setSearchingAddress(true);
       try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&q=${encodeURIComponent(query)}`, {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-        if (!response.ok) throw new Error("Recherche indisponible");
-        const data = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
-        setAddressSuggestions(data.map((item) => ({ label: item.display_name, lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const })));
+        let found: AddressSuggestion[] = [];
+        try {
+          const gouv = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=5&q=${encodeURIComponent(query)}`, { signal: controller.signal });
+          if (gouv.ok) {
+            const body = await gouv.json() as { features?: Array<{ geometry: { coordinates: [number, number] }; properties: { label: string; context?: string } }> };
+            found = (body.features ?? []).map((f) => ({ label: f.properties.label, subtitle: f.properties.context, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: "address" as const }));
+          }
+        } catch (error) { if ((error as Error).name === "AbortError") throw error; }
+        if (found.length === 0) {
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&q=${encodeURIComponent(query)}`, { signal: controller.signal, headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error("Recherche indisponible");
+          const data = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
+          found = data.map((item) => ({ label: item.display_name, lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const }));
+        }
+        setAddressSuggestions(found);
       } catch (error) {
         if ((error as Error).name !== "AbortError") setAddressSuggestions([]);
       } finally {
@@ -243,13 +252,14 @@ export default function Home() {
   const startRoute = async (listingId: number) => {
     const destination = listings.find((item) => item.id === listingId);
     if (!destination) return;
+    originRef.current = { lat: visibleCenter.lat, lng: visibleCenter.lng };
     await calculateRoutes({ lat: destination.latitude, lng: destination.longitude }, destination.title, listingId);
   };
 
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0) => {
     // Départ : position GPS si connue, sinon on la demande une fois (comme Google Maps),
     // sinon le centre de la carte.
-    let origin: { lat: number; lng: number } = userPosition ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    let origin: { lat: number; lng: number } = userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
     if (!userPosition && navigator.geolocation) {
       const here = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
         navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), () => resolve(null), { timeout: 6000, maximumAge: 60000 });
@@ -380,6 +390,13 @@ export default function Home() {
       .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
       .slice(0, 8);
   }, [filtered, userPosition, visibleCenter]);
+  const chooseSuggestion = (suggestion: AddressSuggestion) => {
+    // Le départ est mémorisé AVANT que la carte se recentre sur la destination.
+    originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    setSearch(suggestion.label); setDestinationChosen(true); setSearchFocused(false);
+    setTarget({ lat: suggestion.lat, lng: suggestion.lng });
+    void calculateRoutes({ lat: suggestion.lat, lng: suggestion.lng }, suggestion.label);
+  };
   const toggleRoute = () => {
     if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); return; }
     if (destinationChosen) { void calculateRoutes(target, search.trim()); return; }
@@ -410,12 +427,11 @@ export default function Home() {
           <div className="m-search">
             <Search size={20} />
             <input value={search} onChange={(e) => { setSearch(e.target.value); setDestinationChosen(false); }} onFocus={() => setSearchFocused(true)}
+              onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) { e.preventDefault(); chooseSuggestion(suggestions[0]); } }}
               placeholder="Où tu veux te garer ?" aria-label="Rechercher une adresse" />
             {search && <button className="m-clear" onClick={() => { setSearch(""); setDestinationChosen(false); }} aria-label="Effacer la recherche"><X size={18} /></button>}
             {searchFocused && search.length > 1 && <div className="search-suggestions">
-              {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => {
-                setSearch(suggestion.label); setDestinationChosen(true); setTarget({ lat: suggestion.lat, lng: suggestion.lng }); setVisibleCenter({ lat: suggestion.lat, lng: suggestion.lng }); setSearchFocused(false);
-              }}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
+              {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseSuggestion(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
               {searchingAddress && <p>Recherche en cours…</p>}
               {!searchingAddress && suggestions.length === 0 && <p>Aucun résultat. Essaie une adresse, une ville ou un quartier.</p>}
             </div>}
