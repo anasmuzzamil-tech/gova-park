@@ -172,7 +172,7 @@ export default function Home() {
     setLocating(true);
     gpsInitialized.current = false;
     if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
-    watchId.current = navigator.geolocation.watchPosition((position) => {
+    const onPosition = (position: GeolocationPosition) => {
       const next = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy };
       setUserPosition(next);
       setSpeedKmh(position.coords.speed == null ? null : Math.max(0, Math.round(position.coords.speed * 3.6)));
@@ -190,9 +190,16 @@ export default function Home() {
         });
       }
       setLocating(false);
-    }, () => { setLocating(false); toast.error("Position non partagée. Vérifiez l’autorisation de localisation."); }, {
-      enableHighAccuracy: true, maximumAge: 5000, timeout: 15000,
-    });
+    };
+    const onError = (error: GeolocationPositionError) => {
+      setLocating(false);
+      if (error.code === error.PERMISSION_DENIED) toast.error("Localisation refusée. Clique sur le cadenas à gauche de l’adresse du site, puis autorise la localisation et réessaie.");
+      else if (error.code === error.POSITION_UNAVAILABLE) toast.error("Position introuvable. Active le GPS ou le Wi‑Fi de ton appareil et réessaie.");
+      // Délai dépassé : on laisse le suivi continuer sans message.
+    };
+    // 1) un point rapide (réseau/Wi‑Fi) pour centrer la carte tout de suite, 2) un suivi précis qui prend le relais.
+    navigator.geolocation.getCurrentPosition(onPosition, () => {}, { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 });
+    watchId.current = navigator.geolocation.watchPosition(onPosition, onError, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
   };
   useEffect(() => () => { if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current); }, []);
 
