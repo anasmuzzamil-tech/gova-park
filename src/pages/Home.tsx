@@ -244,15 +244,35 @@ export default function Home() {
   };
 
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0) => {
-    const origin = userPosition ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    // Départ : position GPS si connue, sinon on la demande une fois (comme Google Maps),
+    // sinon le centre de la carte.
+    let origin: { lat: number; lng: number } = userPosition ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    if (!userPosition && navigator.geolocation) {
+      const here = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+        navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), () => resolve(null), { timeout: 6000, maximumAge: 60000 });
+      });
+      if (here) { origin = here; setUserPosition({ ...here }); }
+    }
     if (distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng) < 100) {
       toast.error("Choisissez une destination différente de votre position."); return;
     }
     setRouteLoading(true); setRouteOptions([]); setRouteServices([]);
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true&alternatives=3&continue_straight=true`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Service d’itinéraire indisponible");
+      // Plusieurs serveurs de calcul d'itinéraire : si le premier est saturé ou injoignable, on essaie le suivant.
+      const coords = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
+      const endpoints = [
+        `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=3`,
+        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=true`,
+        `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`,
+      ];
+      let response: Response | null = null;
+      for (const url of endpoints) {
+        try {
+          const attempt = await fetch(url, { signal: AbortSignal.timeout(12000) });
+          if (attempt.ok) { response = attempt; break; }
+        } catch { /* serveur suivant */ }
+      }
+      if (!response) throw new Error("Aucun serveur d’itinéraire ne répond pour le moment. Réessayez dans quelques instants.");
       const data = await response.json() as { routes?: Array<{geometry:{coordinates:[number,number][]};distance:number;duration:number;legs?:Array<{steps?:Array<{distance:number;name?:string;mode?:string;maneuver?:{type?:string;modifier?:string;location:[number,number]}}>}>}>};
       const rawRoutes = data.routes ?? [];
       if (!rawRoutes.length) throw new Error("Aucun itinéraire trouvé");
