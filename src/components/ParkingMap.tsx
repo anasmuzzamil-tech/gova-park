@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { MapContainer, Marker, useMap, TileLayer, Circle, CircleMarker, Popup, Polyline } from "react-leaflet";
+import { MapContainer, Marker, useMap, TileLayer, Circle, Popup, Polyline, ZoomControl } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -40,11 +40,42 @@ function markerIcon(color: string, text: string, label: string) {
   return L.divIcon({
     className: "govapark-marker-wrap",
     html: `<span class="map-marker marker-${color}" aria-label="${safeLabel}"><span class="marker-symbol">${text}</span></span>`,
-    iconSize: [38, 46],
-    iconAnchor: [19, 42],
-    popupAnchor: [0, -40],
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+    popupAnchor: [0, -22],
   });
 }
+
+// Pastille de prix : on lit le tarif directement sur la carte.
+function pricePill(color: string, text: string, label: string) {
+  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+  return L.divIcon({
+    className: "govapark-marker-wrap",
+    html: `<span class="pk-pill pk-${color}" aria-label="${safe}">${text}</span>`,
+    iconSize: [64, 30],
+    iconAnchor: [32, 15],
+    popupAnchor: [0, -18],
+  });
+}
+// Bulle ronde de signalement, avec un halo qui pulse.
+function reportBubble(kind: "free" | "occupied" | "departure", symbol: string, label: string) {
+  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+  return L.divIcon({
+    className: "govapark-marker-wrap",
+    html: `<span class="pk-bubble pk-b-${kind}" aria-label="${safe}"><i class="pk-ring"></i><b>${symbol}</b></span>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -22],
+  });
+}
+const youIcon = L.divIcon({
+  className: "govapark-marker-wrap",
+  html: `<span class="pk-you"><i></i><b></b></span>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
   center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb",
@@ -68,24 +99,27 @@ export default function ParkingMap({
   return (
     <MapContainer center={[center.lat, center.lng]} zoom={11} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        subdomains="abcd"
         maxZoom={19}
       />
+      <ZoomControl position="bottomright" />
       <Recenter center={center} />
       <MapMove onMove={onMove} />
-      {routeCoordinates && routeCoordinates.length > 1 && <Polyline positions={routeCoordinates} pathOptions={{ color: "#1769aa", weight: 6, opacity: 0.82 }} />}
+      {routeCoordinates && routeCoordinates.length > 1 && <>
+        <Polyline positions={routeCoordinates} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.95, lineCap: "round", lineJoin: "round" }} />
+        <Polyline positions={routeCoordinates} pathOptions={{ color: "#2f6df6", weight: 6.5, opacity: 1, lineCap: "round", lineJoin: "round" }} />
+      </>}
       {userPosition && <>
         <Circle
           center={[userPosition.lat, userPosition.lng]}
           radius={Math.max(20, Math.min(userPosition.accuracy ?? 35, 120))}
           pathOptions={{ color: "#2563eb", fillColor: "#60a5fa", fillOpacity: 0.12, weight: 1 }}
         />
-        <CircleMarker
-          center={[userPosition.lat, userPosition.lng]}
-          radius={8}
-          pathOptions={{ color: "#ffffff", weight: 3, fillColor: vehicleColor, fillOpacity: 1 }}
-        ><Popup>Votre position GPS · {vehicleType}</Popup></CircleMarker>
+        <Marker position={[userPosition.lat, userPosition.lng]} icon={youIcon} zIndexOffset={900}>
+          <Popup>Votre position GPS · {vehicleType}</Popup>
+        </Marker>
       </>}
       {listings.map((listing) => {
         const statusColor = listing.currentAvailability === "available"
@@ -102,7 +136,7 @@ export default function ParkingMap({
           key={`l-${listing.id}`}
           position={[listing.latitude, listing.longitude]}
           title={`${listing.title} — ${statusText}`}
-          icon={markerIcon(statusColor, "P", `${listing.title} — ${statusText}`)}
+          icon={pricePill(statusColor, listing.currentAvailability === "unavailable" ? "Complet" : formatRate(listing.hourlyCents), `${listing.title} — ${statusText}`)}
         >
           <Popup>
             <div className="map-listing-popup"><strong>{listing.title}</strong><span>{statusText}</span>{listing.approxAddress && <small>{listing.approxAddress}</small>}
@@ -125,7 +159,7 @@ export default function ParkingMap({
           key={`r-${report.id}`}
           position={[report.latitude, report.longitude]}
           title={report.address}
-          icon={markerIcon(color, text, report.address)}
+          icon={reportBubble(report.kind, text, report.address)}
           eventHandlers={{ click: () => onReport(report) }}
         />;
       })}

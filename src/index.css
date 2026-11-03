@@ -384,3 +384,34 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 
 /* Étape 18 — Hub stationnement et mobilité */
 .mobility-page{max-width:1120px;margin:0 auto;padding:30px 22px 110px;display:grid;gap:22px}.mobility-hero,.mobility-section{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:clamp(20px,3vw,32px)}.mobility-hero{background:linear-gradient(135deg,var(--surface),var(--surface-muted));display:grid;gap:14px}.mobility-hero h1{max-width:760px;margin:0}.mobility-hero>p,.mobility-intro{color:var(--text-muted);max-width:850px;margin:0}.mobility-city{max-width:480px}.mobility-hero>.btn{justify-self:start}.mobility-section{display:grid;gap:16px}.mobility-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.mobility-section-heading h2{margin:0}.mobility-section-heading>svg{color:var(--primary)}.mobility-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.mobility-provider-card{border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:9px;min-width:0}.mobility-provider-top{display:flex;justify-content:space-between;align-items:center;color:var(--text-muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.mobility-provider-card h3{margin:0}.mobility-provider-card p{font-size:13px;color:var(--text-muted);margin:0;flex:1}.mobility-provider-card .btn{align-self:flex-start;min-height:38px;font-size:12px}.mobility-note,.mobility-feature-strip,.mobility-footer{display:flex;align-items:flex-start;gap:12px;padding:14px;border-radius:12px;background:var(--surface-muted);color:var(--text-muted);font-size:13px}.mobility-note svg,.mobility-feature-strip svg,.mobility-footer svg{flex:0 0 auto;color:var(--primary);margin-top:2px}.mobility-note p,.mobility-feature-strip p,.mobility-footer p{margin:0}.mobility-note strong,.mobility-feature-strip strong,.mobility-footer strong{color:var(--text)}.mobility-accessibility{border-color:color-mix(in oklch,var(--green) 30%,var(--border))}.cmi-card{border:1px solid var(--border);border-radius:16px;padding:18px;display:grid;gap:14px}.cmi-card-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}.cmi-card-heading>div{display:grid;gap:4px}.cmi-card-heading span{font-size:12px;color:var(--text-muted)}.cmi-free-label{padding:6px 10px;border-radius:99px;background:var(--success-bg);color:var(--green)!important;font-weight:800}.cmi-card>p{margin:0;color:var(--text-muted);font-size:14px}.cmi-toggle{display:flex;align-items:center;gap:10px;padding:12px;background:var(--surface-muted);border-radius:10px}.cmi-toggle input{width:19px;min-height:19px;flex:0 0 auto;accent-color:var(--primary)}.cmi-card>small{font-size:11px;color:var(--text-muted)}.cmi-details{background:var(--surface-muted);padding:14px;border-radius:10px;font-size:13px}.cmi-details ul{padding-left:20px}.cmi-details li{margin:7px 0}.cmi-details a{display:inline-flex;align-items:center;gap:5px;color:var(--primary);font-weight:800}.mobility-footer{margin-bottom:18px}@media(max-width:640px){.mobility-page{padding:16px 12px 105px;gap:14px}.mobility-provider-grid{grid-template-columns:1fr}.mobility-section,.mobility-hero{padding:18px}.mobility-hero h1{font-size:2rem}.cmi-card-heading{display:grid}}
+
+/* ── Carte façon "carte en direct" : fond clair, pastilles de prix, bulles de signalement ── */
+.leaflet-tile-pane { filter: none; }
+.parking-map { background: #e9eef2; }
+.leaflet-control-attribution { font-size: 9px !important; border-radius: 8px 0 0 0; }
+.map-marker { border-radius: 50%; transform: none; }
+.map-marker .marker-symbol { transform: none; }
+.pk-pill { display: grid; place-items: center; min-width: 52px; height: 30px; padding: 0 11px; border-radius: 999px; border: 2.5px solid #fff; color: #fff; font: 800 12.5px/1 "Manrope", sans-serif; white-space: nowrap; box-shadow: 0 3px 10px #1b1e3a40; transition: transform .15s ease; }
+.pk-pill:hover { transform: scale(1.1); }
+.pk-green { background: #12a150; }.pk-red { background: #8a8f9c; }.pk-blue { background: #2f6df6; }.pk-violet { background: #6d4ae0; }
+.pk-bubble { position: relative; width: 40px; height: 40px; display: grid; place-items: center; }
+.pk-bubble b { position: relative; z-index: 1; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 3px solid #fff; color: #fff; font: 800 17px/1 "Manrope", sans-serif; box-shadow: 0 3px 10px #1b1e3a45; }
+.pk-ring { position: absolute; inset: 3px; border-radius: 50%; opacity: .45; animation: pk-pulse 2.4s ease-out infinite; }
+.pk-b-free b, .pk-b-free .pk-ring { background: #12a150; }
+.pk-b-occupied b, .pk-b-occupied .pk-ring { background: #e5483c; }
+.pk-b-departure b, .pk-b-departure .pk-ring { background: #f08a14; }
+.pk-you { position: relative; width: 28px; height: 28px; display: grid; place-items: center; }
+.pk-you i { position: absolute; inset: 0; border-radius: 50%; background: #2f6df6; opacity: .28; animation: pk-pulse 2s ease-out infinite; }
+.pk-you b { position: relative; width: 16px; height: 16px; border-radius: 50%; background: #2f6df6; border: 3px solid #fff; box-shadow: 0 2px 8px #1b1e3a55; }
+@keyframes pk-pulse { 0% { transform: scale(.7); opacity: .5; } 100% { transform: scale(1.7); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pk-ring, .pk-you i { animation: none; } }
+.search-wrap { border-radius: 999px; min-height: 54px; padding: 0 18px; border-color: transparent; box-shadow: 0 6px 24px #1b1e3a2e; }
+.search-wrap input { font-size: 15px; font-weight: 600; }
+.search-suggestions { border-radius: 20px; border-color: transparent; box-shadow: 0 14px 36px #1b1e3a33; }
+.location-btn { border-radius: 50%; border-color: transparent; box-shadow: 0 6px 24px #1b1e3a2e; }
+.map-greeting { border-radius: 20px; border-color: transparent; box-shadow: 0 6px 24px #1b1e3a24; }
+.filter-button, .report-button { border-color: transparent; box-shadow: 0 4px 16px #1b1e3a26; }
+.leaflet-bottom.leaflet-right .leaflet-control-zoom { border: 0; box-shadow: 0 6px 20px #1b1e3a33; border-radius: 18px; overflow: hidden; margin: 0 14px 110px 0; }
+.leaflet-control-zoom a { width: 42px; height: 42px; line-height: 42px; font-size: 20px; color: var(--text); }
+.map-compass { border-radius: 50%; width: 44px; height: 44px; border-color: transparent; box-shadow: 0 6px 20px #1b1e3a33; }
+.leaflet-popup-content-wrapper { border-radius: 16px; box-shadow: 0 10px 30px #1b1e3a40; }
