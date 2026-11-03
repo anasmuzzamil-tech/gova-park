@@ -37,6 +37,8 @@ export default function Home() {
   const myReservations = trpc.govapark.reservations.mine.useQuery(undefined, { enabled: isAuthenticated });
   const [view, setView] = useState<"map" | "list">("map");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [search, setSearch] = useState("");
@@ -80,8 +82,9 @@ export default function Home() {
     return listing.hourlyCents <= filters.maxPrice && distance <= filters.maxDistance &&
       (filters.type === "tous" || listing.placeType === filters.type) &&
       (filters.covered === "tous" || (filters.covered === "couvert" ? listing.covered : !listing.covered)) &&
-      listing.heightCm >= filters.minHeight;
-  }), [listings, filters, visibleCenter]);
+      listing.heightCm >= filters.minHeight &&
+      (!onlyAvailable || listing.currentAvailability === "available");
+  }), [listings, filters, visibleCenter, onlyAvailable]);
   const confirmedIds = useMemo(() => new Set((myReservations.data ?? []).filter((r) => ["confirmed", "in_progress"].includes(r.status)).map((r) => r.listingId)), [myReservations.data]);
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? null;
   const routeListingIds = useMemo(() => new Set(drivingRoute ? listings.filter((item) => item.currentAvailability === "available" && distanceToRoute({lat:item.latitude,lng:item.longitude}, drivingRoute.coordinates) <= 900).map((item) => item.id) : []), [drivingRoute, listings]);
@@ -370,68 +373,106 @@ export default function Home() {
     }
   }, [proximityAlertsEnabled, userPosition, listings]);
 
+  const nearby = useMemo(() => {
+    const from = userPosition ?? visibleCenter;
+    return [...filtered]
+      .map((item) => ({ item, meters: distanceMeters(from.lat, from.lng, item.latitude, item.longitude) }))
+      .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
+      .slice(0, 8);
+  }, [filtered, userPosition, visibleCenter]);
+  const toggleRoute = () => {
+    if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); return; }
+    if (destinationChosen) { void calculateRoutes(target, search.trim()); return; }
+    if (search.trim().length > 0) { toast.message("Choisis une adresse dans les suggestions."); return; }
+    const candidate = nearby.find((entry) => entry.item.currentAvailability === "available") ?? nearby[0];
+    if (candidate) void startRoute(candidate.item.id); else toast.message("Cherche une destination pour calculer un trajet.");
+  };
+  const toggleVoice = () => {
+    if (!drivingRoute) return;
+    if (voiceGuidanceEnabled) { window.speechSynthesis?.cancel(); setVoiceGuidanceEnabled(false); toast.message("Guidage vocal arrêté"); return; }
+    setVoiceGuidanceEnabled(true); spokenStepIndex.current = 0;
+    const first = drivingRoute.steps[0];
+    if (first && "speechSynthesis" in window) { const speech = new SpeechSynthesisUtterance(`Guidage vocal activé. ${first.instruction}`); speech.lang = "fr-FR"; window.speechSynthesis.speak(speech); spokenStepIndex.current = 1; }
+  };
+  const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
+
   return (
-    <div className={`home-screen view-${view}`}>
+    <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}`}>
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
           <ParkingMap center={target} listings={filtered} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={fuelStations} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
             routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
             onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />
-          {vehiclePrefs.speedometer !== false && <div className="speedometer-card"><Gauge size={17}/><strong>{speedKmh == null ? "—" : speedKmh}</strong><small>km/h · GPS</small></div>}
-          <span className="map-credit">© OpenStreetMap · disponibilité indicative, selon la dernière mise à jour</span>
-          {vehiclePrefs.compass !== false && <div className="map-compass" aria-label="Boussole : nord en haut"><span>▲</span><small>N</small></div>}
-          <div className="map-status-legend" aria-label="Légende de disponibilité">
-            <span><i className="legend-dot legend-available" />Libre / disponible</span>
-            <span><i className="legend-dot legend-unavailable" />Occupée / indisponible</span>
-            <span><i className="legend-dot legend-community" />Signalement communautaire</span>
-            {userPosition && <span><i className="legend-dot legend-position" />Votre position GPS</span>}
-          </div>
         </div>
-        <div className="map-topbar">
-          <div className="map-greeting"><div><strong>Bonjour{user?.name ? ` ${user.name.split(" ")[0]}` : ""} 👋</strong><span>Planifier un trajet</span></div><div className="map-greeting-actions"><button onClick={()=>navigate("/messages")} aria-label="Boîte de réception" title="Boîte de réception"><Mail size={18}/></button><button onClick={()=>navigate("/mobilite")} aria-label="Services de mobilité" title="Services de mobilité"><Fuel size={18}/></button><button onClick={()=>navigate("/profil")} aria-label="Paramètres" title="Paramètres"><Settings size={18}/></button></div></div>
-          <div className="map-search-row"><div className="search-wrap">
-            <Search size={19} />
+
+        <div className="m-top">
+          <div className="m-search">
+            <Search size={20} />
             <input value={search} onChange={(e) => { setSearch(e.target.value); setDestinationChosen(false); }} onFocus={() => setSearchFocused(true)}
-              placeholder="Où souhaitez-vous aller ?" aria-label="Rechercher une adresse" />
-            {search && <button onClick={() => setSearch("")} aria-label="Effacer la recherche"><X size={17} /></button>}
+              placeholder="Où tu veux te garer ?" aria-label="Rechercher une adresse" />
+            {search && <button className="m-clear" onClick={() => { setSearch(""); setDestinationChosen(false); }} aria-label="Effacer la recherche"><X size={18} /></button>}
             {searchFocused && search.length > 1 && <div className="search-suggestions">
               {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => {
                 setSearch(suggestion.label); setDestinationChosen(true); setTarget({ lat: suggestion.lat, lng: suggestion.lng }); setVisibleCenter({ lat: suggestion.lat, lng: suggestion.lng }); setSearchFocused(false);
               }}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
-              {searchingAddress && <p>Recherche de l’adresse…</p>}
-              {!searchingAddress && suggestions.length === 0 && <p>Aucun résultat. Essayez une adresse, une ville ou un quartier.</p>}
+              {searchingAddress && <p>Recherche en cours…</p>}
+              {!searchingAddress && suggestions.length === 0 && <p>Aucun résultat. Essaie une adresse, une ville ou un quartier.</p>}
             </div>}
           </div>
-          <button className={`location-btn ${trackingGps ? "gps-active" : ""}`} onClick={locate} aria-label={trackingGps ? "Arrêter le suivi GPS" : "Activer le suivi GPS"} title={trackingGps ? "Arrêter le suivi GPS" : "Activer le suivi GPS"}><LocateFixed size={20} className={locating ? "spinning" : ""} /></button></div>
+          <button className={`m-round ${trackingGps ? "on" : ""}`} onClick={locate} aria-label={trackingGps ? "Arrêter le suivi GPS" : "Me localiser"}><LocateFixed size={22} className={locating ? "spinning" : ""} /></button>
+          <button className="m-round" onClick={() => setMenuOpen((open) => !open)} aria-label="Plus d’options" aria-expanded={menuOpen}><SlidersHorizontal size={21} /></button>
         </div>
-        <div className="map-toolbar">
-          <div className="view-toggle" aria-label="Mode d’affichage">
-            <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}><MapIcon size={16} />Carte</button>
-            <button className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={16} />Liste</button>
+
+        <div className="m-chips">
+          <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
+          <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
+          <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
+          <button className={`m-chip ${filters.type === "garage" ? "on" : ""}`} onClick={() => setFilters({ ...filters, type: filters.type === "garage" ? "tous" : "garage" })}>Garage</button>
+        </div>
+
+        {destinationChosen && !drivingRoute && <button className="m-go" disabled={routeLoading} onClick={toggleRoute}><Navigation size={18} />{routeLoading ? "Calcul…" : "Y aller"}</button>}
+
+        {menuOpen && <div className="m-menu" role="menu">
+          <button onClick={() => { setMenuOpen(false); setDraftFilters(filters); setFiltersOpen(true); }}><SlidersHorizontal size={19} />Tous les filtres</button>
+          <button onClick={() => { setMenuOpen(false); setView("list"); }}><List size={19} />Voir en liste</button>
+          <button onClick={() => { setMenuOpen(false); void enableProximityAlerts(); }}><ThumbsUp size={19} />Alerte place à 800 m</button>
+          <button onClick={() => { setMenuOpen(false); void enableBackgroundAlerts(); }}><Clock3 size={19} />Alertes en arrière-plan</button>
+          {drivingRoute && <button onClick={() => { setMenuOpen(false); toggleVoice(); }}><Navigation size={19} />{voiceGuidanceEnabled ? "Couper la voix" : "Guidage vocal"}</button>}
+          <button onClick={() => navigate("/messages")}><Mail size={19} />Messages</button>
+          <button onClick={() => navigate("/mobilite")}><Fuel size={19} />Mobilité</button>
+          <p className="m-menu-note"><ShieldAlert size={14} />Voie publique : infos de la communauté, sans garantie de place libre.</p>
+        </div>}
+
+        <div className="m-sheet">
+          <div className="m-sheet-head">
+            {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
+            <button className="m-fab" onClick={() => setReportOpen(true)}><Plus size={20} />Signaler</button>
           </div>
-          <button className="filter-button" onClick={() => { setDraftFilters(filters); setFiltersOpen(true); }}><SlidersHorizontal size={17} />Filtres
-            {(filters.type !== "tous" || filters.covered !== "tous" || filters.minHeight > 0 || filters.maxPrice < 350) && <span className="filter-dot" />}
-          </button>
-          <button className="report-button" onClick={() => setReportOpen(true)}><Plus size={17} />Signaler</button>
-          <button className="filter-button" disabled={routeLoading} onClick={() => { if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); } else if (destinationChosen) void calculateRoutes(target, search.trim()); else if(search.trim().length>0) toast.message("Sélectionnez une adresse dans les suggestions pour confirmer la destination."); else { const candidate=filtered.find((item) => item.currentAvailability === "available") ?? filtered[0]; if(candidate) void startRoute(candidate.id); else toast.message("Recherchez une destination pour calculer un trajet."); } }}>{routeLoading ? "Calcul…" : drivingRoute ? "Effacer trajet" : "Itinéraire"}</button>
-          <button className="filter-button" onClick={enableProximityAlerts}>Alertes à 800 m</button>
-          {drivingRoute && <button className={`filter-button ${voiceGuidanceEnabled ? "gps-active" : ""}`} onClick={() => {
-            if (voiceGuidanceEnabled) { window.speechSynthesis?.cancel(); setVoiceGuidanceEnabled(false); toast.message("Guidage vocal arrêté"); }
-            else { setVoiceGuidanceEnabled(true); spokenStepIndex.current = 0; const first = drivingRoute.steps[0]; if (first && "speechSynthesis" in window) { const speech = new SpeechSynthesisUtterance(`Guidage vocal activé. ${first.instruction}`); speech.lang = "fr-FR"; window.speechSynthesis.speak(speech); spokenStepIndex.current = 1; } }
-          }}> {voiceGuidanceEnabled ? "Couper la voix" : "Guidage vocal"}</button>}
-          <button className={`filter-button ${backgroundAlertsEnabled ? "gps-active" : ""}`} onClick={enableBackgroundAlerts}>Alertes arrière-plan</button>
+          {drivingRoute ? <div className="m-route">
+            <div className="m-route-main"><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></div>
+            {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>{Math.round(option.duration / 60)} min</button>)}</div>}
+            <button className="m-route-stop" onClick={toggleRoute}><X size={18} />Arrêter</button>
+          </div> : <>
+            <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
+            <div className="m-cards">
+              {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} />)}
+              {!listingsQuery.isLoading && nearby.length === 0 && <div className="m-empty">Aucune place avec ces filtres. <button onClick={() => { setFilters(initialFilters); setOnlyAvailable(false); }}>Tout afficher</button></div>}
+              {nearby.map(({ item, meters: away }) => <article className="m-card" key={item.id}>
+                <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
+                  <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
+                  <span className={`m-state ${item.currentAvailability === "available" ? "free" : "busy"}`}>{item.currentAvailability === "available" ? "Dispo" : "Complet"}</span>
+                  <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span><span className="m-sub">{item.covered ? "Couvert" : "Extérieur"} · ★ {item.rating.toFixed(1)}</span></span>
+                </button>
+                <button className="m-card-go" onClick={() => void startRoute(item.id)}><Navigation size={16} />Y aller</button>
+              </article>)}
+            </div>
+          </>}
         </div>
-        <div className="public-disclaimer"><ShieldAlert size={16} /><span><strong>Voie publique :</strong> informations communautaires uniquement. Aucune réservation, location ou disponibilité garantie.</span></div>
-        <details className="map-legend">
-          <summary>Légende des marqueurs</summary>
-          <div><span><i className="legend-dot green" />Libre récemment <small>non garanti</small></span><span><i className="legend-dot red" />Occupée</span><span><i className="legend-dot orange" />Départ annoncé</span><span><i className="legend-dot violet" />Privée à louer</span><span><i className="legend-dot blue" />Ma réservation confirmée</span></div>
-        </details>
-        {view === "map" && <button className="mobile-results-pill" onClick={() => setView("list")}><List size={16} />{filtered.length} places privées · voir la liste</button>}
       </section>
 
       <aside className={`results-panel ${view === "map" ? "desktop-only" : ""}`}>
-        <section className="prediction-panel" aria-label="Prévision des départs de stationnement">
+        {view === "list" && <section className="prediction-panel" aria-label="Prévision des départs de stationnement">
           <div className="prediction-heading"><div><span className="eyebrow">GOVAPARK INTELLIGENCE</span><h2>Places susceptibles de se libérer</h2></div><span className="prediction-live">En direct</span></div>
           <p className="prediction-explainer">Estimation basée sur les départs annoncés récemment par la communauté, leur heure prévue et leur niveau de confiance. Ce n’est pas une garantie de place libre.</p>
           {predictedDepartures.length === 0 ? <div className="prediction-empty">Aucun départ annoncé suffisamment récent dans un rayon de 5 km. Les places privées disponibles restent affichées ci-dessous.</div> : predictedDepartures.map((item) => <div className="prediction-row" key={`prediction-${item.id}`}>
@@ -440,7 +481,7 @@ export default function Home() {
           </div>)}
           <div className="learned-zone-panel"><strong>Historique intelligent des zones</strong><small>{learnedPredictions.data?.totalObservations ?? 0} observations enregistrées dans un rayon de 5 km · 90 derniers jours</small>{(learnedPredictions.data?.predictions ?? []).slice(0,3).map((zone) => <div key={`${zone.cellKey}-${zone.weekday}-${zone.hour}`}><span>{zone.score}/100 · {zone.confidence === "élevée" ? "confiance élevée" : zone.confidence === "moyenne" ? "confiance moyenne" : "confiance faible"}</span><small>{zone.observations} observations · {zone.freeSignals} libres · {zone.occupiedSignals} occupées</small></div>)}{!learnedPredictions.data?.predictions.length && <small>Le moteur attend davantage de confirmations réelles pour établir des tendances horaires fiables.</small>}</div>
           <small className="prediction-footnote">Indice expérimental. Les prévisions reposent sur les observations communautaires des 90 derniers jours, regroupées par zone, jour et heure. Elles ne garantissent jamais une place libre.</small>
-        </section>
+        </section>}
         {drivingRoute && <section className="route-results"><div><strong>Vos 3 alternatives de trajet</strong><span>{(drivingRoute.distance/1000).toFixed(1)} km · {Math.round(drivingRoute.duration/60)} min</span></div>
           <div className="route-options">{routeOptions.map((option)=> <button key={option.id} className={`route-option ${drivingRoute.id===option.id?"selected":""}`} onClick={()=>{setDrivingRoute(option);void refreshRouteServices(option);spokenStepIndex.current=0;}}><strong>{option.label}</strong><span>{(option.distance/1000).toFixed(1)} km · {Math.round(option.duration/60)} min</span>{option.fuelPrice!=null?<small>Carburant estimé : {((option.distance/1000)*(fuelConsumption/100)*option.fuelPrice).toFixed(2)} €</small>:<small>Coût carburant indisponible</small>}</button>)}</div>
           <div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destinationChosen)void calculateRoutes(target,search.trim());else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>
