@@ -6,6 +6,7 @@ import { getDb } from "./queries/connection";
 import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices } from "@db/schema";
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { storage } from "./lib/storage";
+import { isDemoMode, demoListings, demoReports } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -87,6 +88,7 @@ export const govaparkRouter = createRouter({
   }),
   listings: createRouter({
     list: publicQuery.query(async () => {
+      if (isDemoMode) return demoListings();
       const db = getDb();
       const rows = await db.select().from(listings).where(eq(listings.status, "published"));
       const now = new Date();
@@ -111,12 +113,14 @@ export const govaparkRouter = createRouter({
       return (await withPhotoUrls(enriched)).map(publicListing);
     }),
     byId: publicQuery.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
+      if (isDemoMode) { const found = demoListings().find((item) => item.id === input.id); if (!found) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." }); return found; }
       const [row] = await getDb().select().from(listings).where(and(eq(listings.id, input.id), eq(listings.status, "published"))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." });
       const [withPhotos] = await withPhotoUrls([row]);
       return publicListing(withPhotos);
     }),
     quote: publicQuery.input(reservationInput).query(async ({ input }) => {
+      if (isDemoMode) { const found = demoListings().find((item) => item.id === input.listingId); if (!found) throw new TRPCError({ code: "NOT_FOUND" }); return calculatePrice({ ...input, ...found, commissionBps: 1200 }); }
       const [listing] = await getDb().select().from(listings).where(eq(listings.id, input.listingId)).limit(1);
       if (!listing) throw new TRPCError({ code: "NOT_FOUND" });
       assertBookable(listing, input.startAt, input.endAt);
@@ -169,6 +173,7 @@ export const govaparkRouter = createRouter({
 
   favorites: createRouter({
     list: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return [];
       const rows = await getDb().select({ listing: listings }).from(favorites)
         .innerJoin(listings, eq(favorites.listingId, listings.id))
         .where(and(eq(favorites.userId, ctx.user.id), eq(listings.status, "published")))
@@ -176,6 +181,7 @@ export const govaparkRouter = createRouter({
       return (await withPhotoUrls(rows.map((r) => r.listing))).map(publicListing);
     }),
     ids: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return [] as number[];
       const rows = await getDb().select({ listingId: favorites.listingId }).from(favorites).where(eq(favorites.userId, ctx.user.id));
       return rows.map((r) => Number(r.listingId));
     }),
@@ -236,6 +242,7 @@ export const govaparkRouter = createRouter({
       return { ok: true, status: "requested", paymentProviderConnected: false, message: "Demande enregistrée. Le remboursement devra être traité après activation ou via le prestataire de paiement externe." };
     }),
     mine: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return [];
       const rows = await getDb().select({ reservation: reservations, listing: listings }).from(reservations)
         .innerJoin(listings, eq(reservations.listingId, listings.id)).where(eq(reservations.userId, ctx.user.id)).orderBy(desc(reservations.startAt));
       const hydrated = await withPhotoUrls(rows.map((row) => row.listing));
@@ -345,11 +352,12 @@ export const govaparkRouter = createRouter({
   }),
 
   messaging: createRouter({
-    threads: authedQuery.query(async ({ ctx }) => getDb().select({ reservationId: reservations.id, listingId: listings.id, listingTitle: listings.title, status: reservations.status, startAt: reservations.startAt, endAt: reservations.endAt, customerId: reservations.userId, ownerId: listings.ownerId })
+    threads: authedQuery.query(async ({ ctx }) => isDemoMode ? [] : getDb().select({ reservationId: reservations.id, listingId: listings.id, listingTitle: listings.title, status: reservations.status, startAt: reservations.startAt, endAt: reservations.endAt, customerId: reservations.userId, ownerId: listings.ownerId })
       .from(reservations).innerJoin(listings, eq(reservations.listingId, listings.id))
       .where(or(eq(reservations.userId, ctx.user.id), eq(listings.ownerId, ctx.user.id))).orderBy(desc(reservations.updatedAt)).limit(100)),
-    notifications: authedQuery.query(async ({ ctx }) => getDb().select().from(notifications).where(eq(notifications.userId, ctx.user.id)).orderBy(desc(notifications.createdAt)).limit(100)),
+    notifications: authedQuery.query(async ({ ctx }) => isDemoMode ? [] : getDb().select().from(notifications).where(eq(notifications.userId, ctx.user.id)).orderBy(desc(notifications.createdAt)).limit(100)),
     unreadCount: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return 0;
       const [row] = await getDb().select({ value: count() }).from(notifications).where(and(eq(notifications.userId, ctx.user.id), isNull(notifications.readAt)));
       return row?.value ?? 0;
     }),
@@ -503,6 +511,7 @@ export const govaparkRouter = createRouter({
 
   community: createRouter({
     list: publicQuery.query(async () => {
+      if (isDemoMode) return demoReports();
       const db = getDb();
       const cutoff = new Date(Date.now() - 30 * 60000);
       const reports = await db.select().from(communityReports).where(and(
@@ -570,6 +579,7 @@ export const govaparkRouter = createRouter({
 
   intelligence: createRouter({
     predictions: publicQuery.input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), radiusKm: z.number().min(1).max(20).default(5) })).query(async ({ input }) => {
+      if (isDemoMode) return { generatedAt: new Date(), periodDays: 90, totalObservations: 0, currentWeekday: new Date().getDay(), currentHour: new Date().getHours(), predictions: [] as Array<{ cellKey: string; latitude: number; longitude: number; weekday: number; hour: number; observations: number; freeSignals: number; departures: number; occupiedSignals: number; contradictions: number; score: number; confidence: string }> };
       const db = getDb(); const since = new Date(Date.now() - 90 * 86400000); const now = new Date();
       const parisParts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", weekday: "short", hour: "2-digit", hourCycle: "h23" }).formatToParts(now);
       const currentWeekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parisParts.find(p => p.type === "weekday")?.value ?? "Sun");
