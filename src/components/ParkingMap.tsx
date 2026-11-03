@@ -29,6 +29,16 @@ function ZoomTracker({ onZoom }: { onZoom: (zoom: number) => void }) {
   return null;
 }
 
+// Cadre automatiquement le trajet entier dans la carte.
+function FitRoute({ coords }: { coords?: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!coords || coords.length < 2) return;
+    map.fitBounds(L.latLngBounds(coords), { paddingTopLeft: [60, 150], paddingBottomRight: [60, 170], maxZoom: 16 });
+  }, [coords, map]);
+  return null;
+}
+
 function Recenter({ center }: { center: Center }) {
   const map = useMap();
   const previous = useRef(center);
@@ -136,6 +146,7 @@ export default function ParkingMap({
       <ZoomControl position="bottomright" />
       <ZoomTracker onZoom={setZoom} />
       <Recenter center={center} />
+      <FitRoute coords={routeCoordinates} />
       <MapMove onMove={onMove} />
       {routeCoordinates && routeCoordinates.length > 1 && <>
         <Polyline positions={routeCoordinates} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.95, lineCap: "round", lineJoin: "round" }} />
