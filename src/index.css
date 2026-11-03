@@ -523,3 +523,11 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-top { z-index: 700; }
 .m-menu { z-index: 800; }
 .route-results > p, .route-results > small, .route-service-legend, .route-cost-controls, .route-background-note, .route-cost-note { display: none; }
+
+/* Champ Départ : même emplacement que les filtres rapides */
+.m-from { position: absolute; z-index: 650; top: calc(max(14px, env(safe-area-inset-top, 0px)) + 68px); left: 14px; right: 14px; max-width: 640px; height: 46px; padding: 0 6px 0 16px; display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 23px; box-shadow: 0 6px 20px #1a143a2a; }
+.m-from-label { color: var(--primary); font-size: 13px; font-weight: 800; }
+.m-from input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: #17142b; font-size: 15px; font-weight: 700; }
+.m-from input::placeholder { color: #8a87a0; font-weight: 600; }
+.m-from-me { height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 17px; background: var(--soft); color: var(--primary); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.m-go { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 126px); }

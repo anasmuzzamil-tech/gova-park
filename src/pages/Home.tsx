@@ -28,6 +28,21 @@ function distanceToRoute(point: {lat:number;lng:number}, line: [number,number][]
 
 type AddressSuggestion = { label: string; lat: number; lng: number; kind: "listing" | "address"; subtitle?: string };
 
+async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSuggestion[]> {
+  try {
+    const gouv = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=5&q=${encodeURIComponent(query)}`, { signal });
+    if (gouv.ok) {
+      const body = await gouv.json() as { features?: Array<{ geometry: { coordinates: [number, number] }; properties: { label: string; context?: string } }> };
+      const found = (body.features ?? []).map((f) => ({ label: f.properties.label, subtitle: f.properties.context, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: "address" as const }));
+      if (found.length) return found;
+    }
+  } catch (error) { if ((error as Error).name === "AbortError") throw error; }
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&q=${encodeURIComponent(query)}`, { signal, headers: { Accept: "application/json" } });
+  if (!response.ok) return [];
+  const data = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
+  return data.map((item) => ({ label: item.display_name, lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const }));
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
@@ -73,6 +88,11 @@ export default function Home() {
   const watchId = useRef<number | null>(null);
   const gpsInitialized = useRef(false);
   const originRef = useRef<{ lat: number; lng: number } | null>(null);
+  const fromChosen = useRef(false);
+  const destinationRef = useRef<{ lat: number; lng: number; label: string } | null>(null);
+  const [fromSearch, setFromSearch] = useState("");
+  const [fromFocused, setFromFocused] = useState(false);
+  const [fromSuggestions, setFromSuggestions] = useState<AddressSuggestion[]>([]);
   const [departureUpdate, setDepartureUpdate] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
   const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: userPosition?.lat ?? visibleCenter.lat, longitude: userPosition?.lng ?? visibleCenter.lng, radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
 
@@ -147,6 +167,16 @@ export default function Home() {
   }, [search]);
 
 
+
+  useEffect(() => {
+    const query = fromSearch.trim();
+    if (query.length < 3 || fromChosen.current) { setFromSuggestions([]); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try { setFromSuggestions(await geocodeFR(query, controller.signal)); } catch (error) { if ((error as Error).name !== "AbortError") setFromSuggestions([]); }
+    }, 400);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [fromSearch]);
 
   const createReport = trpc.govapark.community.create.useMutation({
     onSuccess: () => { toast.success("Signalement publié pour 30 minutes maximum"); setReportOpen(false); utils.govapark.community.list.invalidate(); },
@@ -253,8 +283,8 @@ export default function Home() {
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0) => {
     // Départ : position GPS si connue, sinon on la demande une fois (comme Google Maps),
     // sinon le centre de la carte.
-    let origin: { lat: number; lng: number } = userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
-    if (!userPosition && navigator.geolocation) {
+    let origin: { lat: number; lng: number } = fromChosen.current && originRef.current ? originRef.current : (userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng });
+    if (!userPosition && !fromChosen.current && navigator.geolocation) {
       const here = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
         navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), () => resolve(null), { timeout: 6000, maximumAge: 60000 });
       });
@@ -386,10 +416,23 @@ export default function Home() {
   }, [filtered, userPosition, visibleCenter]);
   const chooseSuggestion = (suggestion: AddressSuggestion) => {
     // Le départ est mémorisé AVANT que la carte se recentre sur la destination.
-    originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    if (!fromChosen.current) originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    destinationRef.current = { lat: suggestion.lat, lng: suggestion.lng, label: suggestion.label };
     setSearch(suggestion.label); setDestinationChosen(true); setSearchFocused(false);
     setTarget({ lat: suggestion.lat, lng: suggestion.lng });
     void calculateRoutes({ lat: suggestion.lat, lng: suggestion.lng }, suggestion.label);
+  };
+  const chooseFrom = (suggestion: AddressSuggestion) => {
+    originRef.current = { lat: suggestion.lat, lng: suggestion.lng }; fromChosen.current = true;
+    setFromSearch(suggestion.label); setFromFocused(false);
+    const destination = destinationRef.current;
+    if (destination) void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label);
+  };
+  const useMyPosition = () => {
+    if (!userPosition) { locate(); return; }
+    originRef.current = { lat: userPosition.lat, lng: userPosition.lng }; fromChosen.current = true; setFromSearch("Ma position");
+    const destination = destinationRef.current;
+    if (destination) void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label);
   };
   const toggleRoute = () => {
     if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); return; }
@@ -423,7 +466,7 @@ export default function Home() {
             <input value={search} onChange={(e) => { setSearch(e.target.value); setDestinationChosen(false); }} onFocus={() => setSearchFocused(true)}
               onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) { e.preventDefault(); chooseSuggestion(suggestions[0]); } }}
               placeholder="Où tu veux te garer ?" aria-label="Rechercher une adresse" />
-            {search && <button className="m-clear" onClick={() => { setSearch(""); setDestinationChosen(false); }} aria-label="Effacer la recherche"><X size={18} /></button>}
+            {search && <button className="m-clear" onClick={() => { setSearch(""); setDestinationChosen(false); destinationRef.current = null; }} aria-label="Effacer la recherche"><X size={18} /></button>}
             {searchFocused && search.length > 1 && <div className="search-suggestions">
               {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseSuggestion(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
               {searchingAddress && <p>Recherche en cours…</p>}
@@ -434,12 +477,22 @@ export default function Home() {
           <button className="m-round" onClick={() => setMenuOpen((open) => !open)} aria-label="Plus d’options" aria-expanded={menuOpen}><SlidersHorizontal size={21} /></button>
         </div>
 
-        <div className="m-chips">
+        {destinationChosen && <div className="m-from">
+          <span className="m-from-label">Départ</span>
+          <input value={fromSearch} onChange={(e) => { fromChosen.current = false; setFromSearch(e.target.value); }} onFocus={() => setFromFocused(true)}
+            onKeyDown={(e) => { if (e.key === "Enter" && fromSuggestions[0]) { e.preventDefault(); chooseFrom(fromSuggestions[0]); } }}
+            placeholder={userPosition ? "Ma position" : "Tape une adresse de départ"} aria-label="Adresse de départ" />
+          <button className="m-from-me" onClick={useMyPosition}><LocateFixed size={16} />Ma position</button>
+          {fromFocused && fromSuggestions.length > 0 && <div className="search-suggestions">
+            {fromSuggestions.map((suggestion, index) => <button key={`from-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseFrom(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? "Adresse ou quartier"}</small></span></button>)}
+          </div>}
+        </div>}
+        {!destinationChosen && <div className="m-chips">
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
           <button className={`m-chip ${filters.type === "garage" ? "on" : ""}`} onClick={() => setFilters({ ...filters, type: filters.type === "garage" ? "tous" : "garage" })}>Garage</button>
-        </div>
+        </div>}
 
         {destinationChosen && !drivingRoute && <button className="m-go" disabled={routeLoading} onClick={toggleRoute}><Navigation size={18} />{routeLoading ? "Calcul…" : "Y aller"}</button>}
 
