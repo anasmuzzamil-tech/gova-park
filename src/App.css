@@ -1,0 +1,49 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Messagerie GOVAPARK — styles de l'étape 7 */
+.message-notice{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--border,#e7e9ee)}
+.message-notice:last-child{border-bottom:0}.message-notice p{margin:5px 0;font-size:.94rem}.message-notice small,.message-bubble small{color:var(--muted-foreground,#777);font-size:.75rem}
+.message-thread{display:flex;flex-direction:column;gap:12px;min-height:160px;max-height:420px;overflow:auto;padding:16px 4px;margin:14px 0;border:1px solid var(--border,#e7e9ee);border-radius:14px}
+.message-bubble{align-self:flex-start;max-width:min(82%,520px);padding:11px 14px;border-radius:14px;background:var(--muted,#f1f3f5)}.message-bubble p{margin:0 0 6px;white-space:pre-wrap;overflow-wrap:anywhere}.message-mine{align-self:flex-end;background:#e8f1ff}.message-compose{display:flex;align-items:flex-end;gap:10px}.message-compose textarea{flex:1;resize:vertical}
+@media(max-width:600px){.message-compose{flex-direction:column;align-items:stretch}.message-compose button{align-self:flex-end}}

@@ -1,0 +1,74 @@
+GOVAPARK — LIVRAISON DE DEVELOPPEMENT
+
+Cette version conserve le projet source transmis et ajoute :
+- un tableau de bord propriétaire alimenté par une route API sécurisée ;
+- des contrôles plus stricts lors du refus d'une demande ;
+- des textes explicites sur l'absence de paiement réel ;
+- un parcours de réservation de démonstration sans saisie de carte bancaire ;
+- un guide de démarrage et une feuille de route de mise en production.
+
+ATTENTION :
+Le paiement réel n'est pas connecté. Aucune carte bancaire n'est débitée et aucun propriétaire n'est payé. Les montants affichés sont des calculs internes de démonstration.
+
+Validation : l'installation des dépendances a dépassé le délai disponible dans l'environnement de préparation. La vérification TypeScript locale n'a donc pas pu démarrer faute des types Node et Vite. Exécuter npm ci, npm run check, npm run lint, npm run build et npm test sur ordinateur avant toute mise en ligne.
+
+ETAPE 9 — GUIDAGE ET LIBERATION DE PLACE
+- Itineraire routier OSRM dessine sur la carte.
+- Places privees disponibles a moins de 900 m du trajet.
+- Actions itineraire et reserver depuis le marqueur.
+- Alertes de proximite a 800 m apres consentement notification.
+- Plaque facultative sur une reservation privee, non publique.
+- Detection GPS volontaire du depart annonce : deux positions fiables et eloignement >= 120 m ; le signalement devient libre potentiel pendant 15 minutes.
+- Migration requise : ALTER TABLE reservations ADD COLUMN vehiclePlate VARCHAR(12) NULL;
+- Limites : GPS en arriere-plan non garanti sur navigateur ; OSRM public pour prototype uniquement ; la plaque ne geolocalise jamais un vehicule.
+
+
+ETAPE 10 : consignes routières, guidage vocal navigateur, notifications système préparées dans le service worker. Web Push backend et GPS natif arrière-plan restent à développer. Compilation TypeScript non validée : types node et vite/client manquants dans node_modules.
+
+ETAPE 11 — ESTIMATION DES DEPARTS DE STATIONNEMENT
+- Ajout d'un panneau de prévision expérimentale dans les résultats.
+- Classement des départs communautaires récents selon confiance, proximité de l'heure annoncée et fraîcheur.
+- Rayon d'analyse de 5 km, fenêtre de départ de -5 à +60 minutes, fraîcheur maximale de 30 minutes.
+- Limites et feuille de route documentées dans ETAPE_11_PREDICTION_STATIONNEMENT.md.
+- Contrôle de syntaxe TSX effectué sur Home.tsx : OK.
+- Compilation complète non certifiée : les dépendances du projet doivent être installées pour lancer le build et les vérifications TypeScript complètes.
+
+
+ETAPE 12 — Comptes et espaces métiers
+- Inscription/connexion e-mail + mot de passe (hash scrypt).
+- Rôles conducteur, propriétaire, société (admin non auto-attribuable).
+- Espace société avec indicateurs et tendances horaires/zones.
+- Table parkingObservations et agrégation statistique 90 jours.
+- Migration SQL 0010 obligatoire avant exécution sur base existante.
+
+ETAPE 13 — CENTRE DE CONTROLE SOCIETE
+- Console /entreprise avec huit sections : vue générale, comptes, propriétaires, annonces, réservations/litiges, finances/commissions, carte régionale, cerveau prédictif.
+- Gestion de tous les comptes et attribution des rôles user/owner ; rôle admin protégé.
+- Dossier propriétaire : nom légal/téléphone, décision admin, statut synchronisé sur le compte ; publication bloquée avant validation.
+- Modération des annonces en attente et gestion des litiges.
+- Commission configurable (0 à 50 %, 12 % initial) appliquée aux nouvelles réservations.
+- Indicateurs financiers explicitement non encaissés tant que Stripe Connect reste désactivé.
+- Carte de France alimentée par les codes postaux des annonces.
+- Journalisation des instantanés de prédiction et premières métriques d'évaluation différée via deux confirmations communautaires.
+- Migration obligatoire : db/migrations/0011_centre_controle_societe.sql.
+- Syntaxe TS/TSX vérifiée. Build complet non certifié : installation npm ci expirée et types Node/Vite manquants.
+
+
+ETAPE 14 — SECURITE OPERATIONNELLE
+- Journal des opérations administrateur et consultation réservée société.
+- Justificatifs propriétaires rattachés au dossier et URL signée temporaire pour la revue.
+- Demandes de remboursement et suivi de traitement avec référence externe obligatoire avant clôture comme remboursé.
+- Notifications internes pour événements sensibles.
+- Migration 0012_securite_audit_remboursements.sql.
+- Paiement/remboursement bancaire non connecté ; aucun débit automatique.
+
+ETAPE 14 — SECURITE OPERATIONNELLE
+- Ajout des justificatifs propriétaires avec stockage privé et URL signée temporaire réservée aux administrateurs.
+- Journal des actions sensibles du centre société : modération, validation propriétaire, rôles, commissions, litiges et remboursements.
+- Demande de remboursement côté conducteur et traitement côté société avec référence externe obligatoire avant marquage comme remboursé.
+- Notifications internes lors des événements sensibles.
+- Migration 0012_securite_audit_remboursements.sql.
+- Paiements et remboursements bancaires réels non connectés.
+\nÉtape 15 — Accueil personnalisé, préférences de trajet, compteur GPS, stations-service, rappels, alertes configurables, thèmes, anniversaire et prouesses communautaires. Voir README_ETAPE_15.txt.\n
+
+ETAPE 17 — Ajouts : alternatives de trajet (jusqu'à 3), bornes de recharge, aires, parkings, restaurants, repérage poids lourds, prix carburants du flux officiel et estimation du coût carburant. Plugin GPS natif arrière-plan ajouté avec démarrage après consentement. Non compilé/testé sur appareils réels ; les restrictions de routage PL, péages, disponibilité des bornes et APNs/FCM restent à intégrer/configurer.

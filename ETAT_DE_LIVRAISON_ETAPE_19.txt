@@ -1,0 +1,10 @@
+Étape 19 — Stratégie indépendante modèle C
+- Décision intégrée : marketplace de propriétaires tiers + parkings détenus, loués ou exploités par GOVAPARK.
+- Documentation stratégique ajoutée : ETAPE_19_STRATEGIE_INDEPENDANTE_MODELE_C.md.
+- Hub mobilité réécrit : retrait des redirections vers PayByPhone, EasyPark, Indigo Neo, Zenpark, Yespark, Onepark et Ector.
+- Parcours GOVAPARK Marketplace : liens internes vers la recherche et l'espace propriétaire existants.
+- GOVAPARK Parking : modèles achat, location-exploitation et mandat de gestion documentés ; aucun site fictivement déclaré actif.
+- GOVAPARK Street et GOVAPARK Valet affichés comme en préparation, soumis aux autorisations, contrats et intégrations nécessaires.
+- CMI conservée avec distinction voirie publique / parkings privés.
+- Limites : aucun nouveau paiement réel, contrat immobilier, contrôle d'accès ou réseau voiturier n'est activé par cette étape documentaire et UI.
+- Vérifications : à exécuter avec dépendances installées ; build complet et tests iOS/Android non certifiés dans cet environnement.

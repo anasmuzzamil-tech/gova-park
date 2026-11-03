@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: govapark
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev --legacy-peer-deps && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: NODE_ENV
+        value: production
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
+      - key: APP_SECRET
+        generateValue: true
+      - key: APP_ID
+        value: govapark
+      - key: DATABASE_URL
+        sync: false

@@ -1,0 +1,8 @@
+Étape 18 — livraison préparée
+- Hub mobilité ajouté à la navigation.
+- Redirections opérateurs voirie : PayByPhone, EasyPark, Indigo Neo.
+- Réservation / partage : Indigo Neo, Zenpark, Yespark, Onepark.
+- Voiturier : Ector.
+- Préférence CMI locale et informations juridiques françaises.
+- Aucune transaction tierce simulée ou déclarée comme active.
+- Build complet et tests natifs non certifiés dans cet environnement.
