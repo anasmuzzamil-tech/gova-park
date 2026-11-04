@@ -76,7 +76,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .icon-btn { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }
 .icon-btn:hover { background: var(--surface-muted); }
 .back-button { min-height: 44px; padding: 0; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--text); font-weight: 700; }
-.text-button { min-height: 40px; padding: 0; display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--primary); font-weight: 700; font-size: 13px; }
+.text-button { min-height: 44px; padding: 0; display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--primary); font-weight: 700; font-size: 13px; }
 .eyebrow { display: block; color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; margin-bottom: 8px; }
 .legend-dot { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; }
 .legend-dot.green { background: var(--green); }.legend-dot.red { background: var(--red); }.legend-dot.orange { background: var(--orange); }.legend-dot.violet { background: var(--violet); }.legend-dot.blue { background: var(--blue); }
@@ -617,3 +617,17 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .skel-line.w60 { width: 60%; }
 .skel-card { height: 320px; border-radius: 14px; }
 @media (prefers-reduced-motion: reduce) { .skel, .listing-skeleton, .m-card-skeleton { animation: none; } }
+
+/* Accessibilite mobile : zones tactiles d'au moins 44 px pour les boutons principaux */
+.m-chips { padding-bottom: 8px; }
+.m-chip { height: 44px; min-width: 44px; }
+.m-card-go { height: 44px; }
+.m-sheet:has(.m-route) .m-card-go { height: 44px; }
+.m-clear { width: 44px; height: 44px; margin-right: -12px; }
+.m-from-me { height: 44px; }
+.m-route-options button { min-height: 44px; }
+.m-route-stop { height: 44px; }
+.m-route-stop { width: 44px; }
+.map-popup-actions button { min-height: 44px; min-width: 44px; }
+.switch { position: relative; }
+.switch::after { content: ""; position: absolute; inset: -7px 0; }
