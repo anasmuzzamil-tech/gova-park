@@ -88,6 +88,15 @@ app.use("/sw.js", async (c, next) => {
   c.header("Cache-Control", "no-cache");
   c.header("Service-Worker-Allowed", "/");
 });
+// HTML de l'application : toujours revalide (un nouveau deploiement doit apparaitre tout de suite) ;
+// fichiers /assets/ (noms haches par Vite) : cache long.
+app.use("*", async (c, next) => {
+  await next();
+  const path = c.req.path;
+  if (path.startsWith("/api/")) return;
+  if (path.startsWith("/assets/")) { if (c.res.status === 200) c.header("Cache-Control", "public, max-age=31536000, immutable"); return; }
+  if ((c.res.headers.get("content-type") || "").includes("text/html")) c.header("Cache-Control", "no-cache");
+});
 app.use("/api/trpc/*", bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 app.use("/api/trpc/*", async (c) => {

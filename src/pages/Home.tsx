@@ -605,6 +605,7 @@ export default function Home() {
           <button onClick={() => navigate("/messages")}><Mail size={19} />Messages</button>
           <button onClick={() => navigate("/mobilite")}><Fuel size={19} />Mobilité</button>
           <p className="m-menu-note"><ShieldAlert size={14} />Voie publique : infos de la communauté, sans garantie de place libre.</p>
+          <p className="m-version" aria-label="Version de l’application">Version {__APP_VERSION__}</p>
         </div>}
 
         <div className="m-sheet">

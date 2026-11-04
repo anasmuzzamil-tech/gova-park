@@ -472,6 +472,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-menu button { height: 50px; padding: 0 14px; display: flex; align-items: center; gap: 12px; border: 0; border-radius: 14px; background: transparent; color: #17142b; font-size: 15px; font-weight: 700; text-align: left; }
 .m-menu button:hover { background: var(--soft); }
 .m-menu button svg { color: var(--primary); }
+.m-version { margin: 0 8px 4px; color: #a09db4; font-size: 10.5px; text-align: right; letter-spacing: .02em; }
 .m-menu-note { margin: 4px 8px 6px; display: flex; gap: 7px; align-items: flex-start; color: #7a7792; font-size: 11.5px; line-height: 1.4; }
 
 .m-sheet { position: absolute; z-index: 500; left: 0; right: 0; bottom: 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); pointer-events: none; }

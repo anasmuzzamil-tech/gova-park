@@ -2,7 +2,11 @@
 // Il met en cache UNIQUEMENT : (1) le shell statique de l'application, (2) les tuiles/styles de carte
 // publics (OpenFreeMap, OpenStreetMap), avec une limite de quantite. Il ne touche jamais a /api, /trpc,
 // aux requetes non-GET ni aux donnees personnelles. Les dernieres places sont gardees cote page (localStorage).
-const SHELL_CACHE = 'govapark-shell-v3';
+// __BUILD_ID__ est remplace a chaque build (vite.config.ts) : chaque deploiement a donc son propre cache de shell,
+// et les anciens caches sont supprimes a l'activation. Le service worker change a chaque build => mise a jour automatique.
+const BUILD_ID = '__BUILD_ID__';
+const SHELL_CACHE = 'govapark-shell-' + BUILD_ID;
+const NAVIGATION_TIMEOUT_MS = 20000;
 const TILE_CACHE = 'govapark-tiles-v1';
 const MAX_TILE_ENTRIES = 600;
 const SHELL_URLS = ['/', '/offline.html', '/manifest.webmanifest', '/favicon.svg', '/icons/govapark-192.svg', '/icons/govapark-512.svg'];
@@ -52,19 +56,21 @@ async function handleMapRequest(request, url) {
   return fromNetwork();
 }
 
+// Navigation (HTML) : RESEAU D'ABORD, toujours (cache HTTP contourne). Le shell en cache ne sert qu'en repli
+// quand le reseau est injoignable (hors ligne, timeout, serveur 502/503/504 pendant son reveil).
 async function handleNavigation(request) {
   const shell = await caches.open(SHELL_CACHE);
   try {
     const response = await Promise.race([
-      fetch(request),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
+      fetch(request, { cache: 'no-store' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), NAVIGATION_TIMEOUT_MS)),
     ]);
+    if ([502, 503, 504].includes(response.status)) throw new Error('server-unavailable');
     const type = response.headers.get('content-type') || '';
     if (response.ok && type.includes('text/html')) shell.put('/', response.clone()).catch(() => {});
     return response;
   } catch (error) {
-    // Hors ligne (ou reseau tres lent) : on rouvre l'application depuis le shell mis en cache.
-    return (await shell.match('/')) || (await shell.match('/offline.html')) || Response.error();
+    return (await shell.match('/')) || (await caches.match('/')) || (await shell.match('/offline.html')) || Response.error();
   }
 }
 
@@ -83,7 +89,7 @@ self.addEventListener('fetch', (event) => {
       const cached = await cache.match(request);
       if (cached) return cached;
       const response = await fetch(request);
-      if (response.ok) cache.put(request, response.clone()).catch(() => {});
+      if (response.ok && !(response.headers.get('content-type') || '').includes('text/html')) cache.put(request, response.clone()).catch(() => {});
       return response;
     })());
     return;
