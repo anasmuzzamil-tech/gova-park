@@ -632,3 +632,12 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .map-popup-actions button { min-height: 44px; min-width: 44px; }
 .switch { position: relative; }
 .switch::after { content: ""; position: absolute; inset: -7px 0; }
+
+/* Places de parking plus grosses et lisibles sur mobile (vert = disponible confirmé, rouge = occupé, orange = estimé, gris = inconnu) */
+@media (max-width: 899px) {
+  .pk-dot { width: 28px; height: 28px; border-width: 3px; display: grid; place-items: center; box-shadow: 0 2px 10px #1b1e3a66; }
+  .pk-dot::after { content: "P"; color: #fff; font: 800 14px/1 "Manrope", sans-serif; }
+  .govapark-marker-wrap .pk-dot { margin: -5px 0 0 -5px; }
+  .govapark-marker-wrap .pk-pill { margin: -3px 0 0 -2px; }
+  .pk-pill { min-width: 60px; height: 36px; padding: 0 13px; font-size: 15px; border-width: 3px; box-shadow: 0 3px 12px #1b1e3a66; }
+}
