@@ -177,18 +177,36 @@ export const govaparkRouter = createRouter({
       const [settings] = await getDb().select().from(companySettings).where(eq(companySettings.id, 1)).limit(1);
       return calculatePrice({ ...input, ...listing, commissionBps: settings?.commissionBps ?? 1200 });
     }),
+    // Vérification de disponibilité d'un créneau (lecture seule, mêmes règles que la création : checkBooking). Le message vient toujours du serveur, jamais d'une valeur supposée.
+    checkSlot: publicQuery.input(reservationInput).query(async ({ input }) => {
+      if (isDemoMode) {
+        const found = demoListings().find((item) => item.id === input.listingId);
+        if (!found) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." });
+        const check = checkBooking(found, input.startAt, input.endAt, demoBookedSlots(found.id));
+        return check.ok ? { available: true as const, message: null } : { available: false as const, message: check.message };
+      }
+      const [listing] = await getDb().select().from(listings).where(eq(listings.id, input.listingId)).limit(1);
+      if (!listing) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." });
+      const taken = await getDb().select({ startAt: reservations.startAt, endAt: reservations.endAt }).from(reservations).where(and(
+        eq(reservations.listingId, listing.id),
+        or(inArray(reservations.status, ["confirmed", "in_progress"]), and(eq(reservations.status, "payment_pending"), gt(reservations.expiresAt, new Date()))),
+        lt(reservations.startAt, input.endAt), gt(reservations.endAt, input.startAt),
+      ));
+      const check = checkBooking(listing, input.startAt, input.endAt, taken);
+      return check.ok ? { available: true as const, message: null } : { available: false as const, message: check.message };
+    }),
     mine: ownerQuery.query(async ({ ctx }) => {
       const rows = await getDb().select().from(listings).where(eq(listings.ownerId, ctx.user.id)).orderBy(desc(listings.createdAt));
       return withPhotoUrls(rows);
     }),
     create: ownerQuery.input(z.object({
-      title: z.string().min(4).max(180), description: z.string().min(20),
-      address: z.string().min(5), approxAddress: z.string().min(3),
-      accessInstructions: z.string().min(5), latitude: z.number(), longitude: z.number(),
+      title: z.string().min(4).max(180), description: z.string().min(20).max(5000),
+      address: z.string().min(5).max(255), approxAddress: z.string().min(3).max(255),
+      accessInstructions: z.string().min(5).max(2000), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
       placeType: z.enum(["garage", "residence", "entreprise", "parking"]), covered: z.boolean(), accessible: z.boolean().default(false),
       lengthM: z.number().positive(), widthM: z.number().positive(), heightCm: z.number().int().positive(),
       hourlyCents: z.number().int().positive(), dailyCents: z.number().int().positive(), weeklyCents: z.number().int().positive(),
-      bookingMode: z.enum(["instant", "validation"]), photos: z.array(z.string()).min(1).max(8), mainPhoto: z.number().int().min(0),
+      bookingMode: z.enum(["instant", "validation"]), photos: z.array(z.string().max(600)).min(1).max(8), mainPhoto: z.number().int().min(0),
       availability: availabilityInput, blocked: blockedInput, submit: z.boolean(),
     })).mutation(async ({ ctx, input }) => {
       const problems = validateListing({ title: input.title, description: input.description, address: input.address, approxAddress: input.approxAddress, accessInstructions: input.accessInstructions, latitude: input.latitude, longitude: input.longitude, lengthM: input.lengthM, widthM: input.widthM, heightCm: input.heightCm, hourlyCents: input.hourlyCents, dailyCents: input.dailyCents, weeklyCents: input.weeklyCents, photoCount: input.photos.length, availability: input.availability });
@@ -614,8 +632,8 @@ export const govaparkRouter = createRouter({
       }).filter((report) => !report.parkingStatus.stale);
     }),
     create: authedQuery.input(z.object({
-      kind: z.enum(["free", "occupied", "departure"]), latitude: z.number(), longitude: z.number(),
-      address: z.string().min(3), estimatedDeparture: z.date().optional(),
+      kind: z.enum(["free", "occupied", "departure"]), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
+      address: z.string().min(3).max(255), estimatedDeparture: z.date().optional(),
     })).mutation(async ({ ctx, input }) => {
       if (isDemoMode) { if (input.kind === "departure" && !input.estimatedDeparture) throw new TRPCError({ code: "BAD_REQUEST", message: "Indiquez une heure estimée de départ." }); return demoCreateReport(input); }
       const db = getDb();

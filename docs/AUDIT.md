@@ -1,0 +1,41 @@
+# Audit sécurité et qualité (lecture du code)
+
+**Date** : 2026-11-04. **Méthode** : relecture statique de `api/` (auth, middleware, boot, routeur métier), `contracts/`, `db/schema.ts`, `server.js`, `.env.example`, `render.yaml`, recherche de secrets dans les fichiers versionnés. **Limites** : aucune exécution (npm bloqué dans l'environnement de l'audit), aucun test d'intrusion, aucun `npm audit`, front (`src/`) survolé seulement. Ce document ne prouve donc pas l'absence de failles.
+
+## Corrigé dans cette passe (petit et certain)
+| Réf. | Constat | Correction |
+|---|---|---|
+| C1 | `community.create` : latitude/longitude sans bornes, adresse sans longueur maximale (colonne `varchar(255)`) : une valeur longue provoquait une erreur serveur 500. | Bornes -90/90 et -180/180, adresse 3 à 255 caractères. |
+| C2 | `listings.create` : `description`, `address`, `approxAddress`, `accessInstructions`, clés de photos et coordonnées sans plafond (colonnes `varchar(255)`), seul le plancher était contrôlé. | Plafonds alignés sur le schéma (5000, 255, 255, 2000, 600) et bornes GPS. |
+
+Statut : syntaxe du fichier vérifiée (transpileModule) ; **tests et build non exécutés** dans ce sandbox. Aucun changement visuel ni de logique métier.
+
+## Points solides constatés (à la lecture)
+- Requêtes SQL via Drizzle (paramétrées). Les trois `sql\`...\`` bruts n'interpolent que des valeurs paramétrées.
+- Mots de passe hachés avec scrypt + sel, comparaison en temps constant ; message d'erreur de connexion identique pour e-mail inconnu et mauvais mot de passe.
+- Cookie de session `httpOnly`, `secure` hors localhost, JWT HS256 avec algorithme imposé à la vérification.
+- Contrôle d'accès : procédures `authedQuery` / `ownerQuery` / `adminQuery`; les actions propriétaire filtrent sur `listings.ownerId`, celles du locataire sur `reservations.userId`; la messagerie vérifie l'appartenance à la réservation; les photos et documents joints sont vérifiés comme appartenant à l'utilisateur.
+- Adresse exacte et consignes d'accès retirées des réponses publiques (`publicListing`) ; révélées seulement pour des statuts de réservation confirmés.
+- Double réservation : transaction avec verrou de ligne (`for update`) et test de chevauchement.
+- `reservations.pay` refuse toujours (aucune confirmation sans webhook vérifié) : le paiement est réellement désactivé.
+- Aucun secret trouvé dans les fichiers versionnés (`.env` ignoré, `.env.example` sans valeurs). Recherche par motifs sur les fichiers suivis ; l'historique git complet n'a pas été fouillé.
+- Pas de CORS ouvert, en-têtes de sécurité Hono, limite de taille sur `/api/trpc` et `/api/log`.
+
+## À traiter (non corrigé)
+| Réf. | Gravité | Constat | Statut |
+|---|---|---|---|
+| A1 | Moyenne | **Limitation de débit contournable** : l'IP vient du premier élément de `X-Forwarded-For`, que le client peut fixer lui-même. Cela affaiblit la limite générale (300/min) et surtout la protection anti force brute de `auth.login` (10 essais / 15 min). Compteurs en mémoire, perdus au redémarrage. | Ouvert. À corriger en lisant l'IP ajoutée par le proxy Render (à vérifier sur le déploiement réel) et en limitant aussi par e-mail. |
+| A2 | Moyenne | **Dépôt de fichiers permissif** : `storage.upload` accepte tout `contentType` et tout nom (préfixé par l'identifiant utilisateur). Pas de liste de types autorisés (images/PDF) ni de contrôle du contenu réel ; pas de quota par utilisateur. | Ouvert. Restreindre aux types attendus (non fait : peut casser le dépôt de justificatifs sans test). |
+| A3 | Moyenne | **Blocage de créneau par réservation instantanée** : un compte peut créer sans limite des réservations `payment_pending` (30 min) qui bloquent le créneau d'une annonce. Pas de plafond de réservations en attente par utilisateur. | Ouvert. |
+| A4 | Moyenne | **`reservations.markDispute`** ne contrôle pas le statut courant : une réservation annulée, remboursée ou terminée peut repasser en « dispute ». | Ouvert. Définir les statuts admissibles avec le produit avant de corriger. |
+| A5 | Moyenne | **Cookie `SameSite=None`** en production (utile à l'app native, qui n'est pas publiée). Les mutations tRPC exigent du JSON (requête préalable CORS bloquée sans CORS ouvert), ce qui limite le risque CSRF, mais ce n'est pas une défense explicite. | Ouvert. Passer en `Lax` si l'app native n'est pas livrée ; sinon ajouter un contrôle d'origine. Non testé. |
+| A6 | Moyenne | **Mode démo en production** : sans `DATABASE_URL`, `createContext` attribue à tout visiteur l'utilisateur « Visiteur démo » (rôle `user`, jamais admin). Pas une faille d'élévation, mais l'authentification est absente tant que la base n'est pas branchée. **Ne jamais mettre de données réelles dans ce mode.** | Connu, documenté. |
+| A7 | Moyenne | **Adresse de signalement publique** : `community.list` renvoie `userId` de l'auteur de chaque signalement (le front s'en sert pour reconnaître « mon signalement »). Fuite d'identifiant interne, sans nom ni e-mail. | Ouvert. Remplacer par un indicateur « est le mien » côté serveur (touche le front). |
+| A8 | Moyenne | **Stockage de fichiers dépendant de la plateforme de départ** (`api/lib/storage.ts`, variables `KIMI_AGENTGW_*`) : non vérifié sur Render ; photos et justificatifs d'identité pourraient ne pas être stockés, ou l'être chez un tiers non évalué (RGPD). | Non testé. À remplacer par un stockage choisi et documenté. |
+| A9 | Basse | **Pas de CSP** (choix documenté : carte 3D). Pas de verrouillage de compte, pas de vérification d'e-mail, pas de réinitialisation de mot de passe. | Ouvert. |
+| A10 | Basse | **Sessions d'un an** sans révocation côté serveur ; `APP_SECRET` absent = secret temporaire (connexions perdues à chaque redémarrage). | Ouvert. |
+| A11 | Basse | **Requêtes lourdes** : `community.list` charge tous les votes puis filtre en mémoire ; `listings.list` renvoie toutes les annonces publiées sans pagination. Acceptable en démo, pas à l'échelle. | Ouvert. |
+| A12 | Basse | **`listings.quote`** (public) ne vérifie pas le statut avant calcul (renvoie seulement un prix pour une annonce non publiée ; `assertBookable` refuse ensuite). | Ouvert, sans impact sérieux. |
+| A13 | Basse | **Dépendances** : pas de `package-lock.json` (installations non reproductibles), `legacy-peer-deps` activé, `npm audit` non exécuté, `ai` et `jose` épinglés mais le reste en `^`. Le journal côté serveur écrit dans `/tmp/kimi-logs` (héritage du gabarit). | Ouvert. Générer le lockfile avec un accès réseau, lancer `npm audit`. |
+| A14 | Info | **Typage non vérifié** : `tsc -b` n'a pas pu être exécuté ; la CI le lance en mode non bloquant. Il n'existe pas de tests sur le routeur tRPC (contrôles d'accès non couverts par des tests). | Ouvert. |
+| A15 | Info | Reliquats du gabarit de départ : OAuth « Kimi » (`api/kimi/`), variables `KIMI_*`. La connexion réelle est e-mail + mot de passe. À nettoyer pour une base de code investisseur. | Ouvert. |
