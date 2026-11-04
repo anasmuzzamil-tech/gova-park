@@ -599,6 +599,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .offline-modal p { margin: 0; }
 .offline-ok { color: #12a150; }
 .offline-err { color: #e5483c; }
+.route-origin-note { display: block; margin: 0 0 4px; font-size: 12.5px; color: #3b3a46; }
 .route-offline-note { margin: 4px 0 0; font-size: 12.5px; color: #3b3a46; }
 
 /* iPhone (390 px) : les 4 filtres rapides tiennent dans la largeur, plus de bouton coupe */

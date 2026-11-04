@@ -110,6 +110,7 @@ export default function Home() {
   const [fuelStations, setFuelStations] = useState<Array<{id:number;lat:number;lng:number;name:string}>>([]);
   const [vehiclePrefs] = useState(() => { try { return JSON.parse(localStorage.getItem("govapark.preferences.v1") || "{}"); } catch { return {}; } });
   const [trackingGps, setTrackingGps] = useState(false);
+  const [originNote, setOriginNote] = useState<string | null>(null);
   const [drivingRoute, setDrivingRoute] = useState<DrivingRoute | null>(null);
   const [routeOptions, setRouteOptions] = useState<DrivingRoute[]>([]);
   const [routeServices, setRouteServices] = useState<RouteService[]>([]);
@@ -342,15 +343,10 @@ export default function Home() {
   };
 
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0) => {
-    // Départ : position GPS si connue, sinon on la demande une fois (comme Google Maps),
-    // sinon le centre de la carte.
-    let origin: { lat: number; lng: number } = fromChosen.current && originRef.current ? originRef.current : (userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng });
-    if (!userPosition && !fromChosen.current && navigator.geolocation) {
-      const here = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
-        navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }), () => resolve(null), { timeout: 6000, maximumAge: 60000 });
-      });
-      if (here) { origin = here; setUserPosition({ ...here }); }
-    }
+    // Départ : adresse de départ saisie, sinon position GPS si elle est déjà connue, sinon centre de la carte.
+    // On n'attend JAMAIS la géolocalisation (refusée, indisponible ou en attente d'autorisation) : le trajet part tout de suite.
+    const origin: { lat: number; lng: number } = fromChosen.current && originRef.current ? originRef.current : (userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng });
+    setOriginNote(fromChosen.current || userPosition ? null : "Départ : centre de la carte (tape une adresse de départ pour le changer)");
     if (distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng) < 100) {
       toast.error("Choisissez une destination différente de votre position."); return;
     }
@@ -645,6 +641,7 @@ export default function Home() {
           {drivingRoute ? <><div className="m-route">
             <div className="m-route-main">{drivingRoute.offline ? <><strong>{meters(drivingRoute.distance)}</strong><span>à vol d’oiseau · {drivingRoute.label}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">
+{originNote && <small className="route-origin-note">{originNote}</small>}
 {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.fuelCost != null ? ` · ${option.fuelCost.toFixed(1).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
 {drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={() => { if (!trackingGps) locate(); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
