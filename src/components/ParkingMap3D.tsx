@@ -264,35 +264,32 @@ export default function ParkingMap3D({
     if (userPosition) { autoFitDone.current = true; return; }
     autoFitDone.current = true;
     const from = initialCenter.current;
-    const nearest = [...listings]
-      .map((l) => ({ l, d: metersBetween(from, { lat: l.latitude, lng: l.longitude }) }))
-      .sort((a, b) => a.d - b.d).slice(0, 4);
-    const bounds = new maplibregl.LngLatBounds([from.lng, from.lat], [from.lng, from.lat]);
-    nearest.forEach(({ l }) => bounds.extend([l.longitude, l.latitude]));
+    const candidates = [...listings]
+      .map((l) => ({ lat: l.latitude, lng: l.longitude, d: metersBetween(from, { lat: l.latitude, lng: l.longitude }) }))
+      .sort((a, b) => a.d - b.d).slice(0, 8);
     const box = map.getContainer().getBoundingClientRect();
     const sheet = document.querySelector(".m-sheet")?.getBoundingClientRect();
     const chips = document.querySelector(".m-chips")?.getBoundingClientRect();
     const top = Math.round(Math.max(110, (chips ? chips.bottom - box.top : 0) + 16));
     const bottom = Math.round(Math.max(120, sheet ? box.bottom - sheet.top + 24 : 260));
     const padding = { top, bottom: Math.min(bottom, Math.round(box.height * 0.6)), left: 50, right: 50 };
+    const areaW = box.width - padding.left - padding.right, areaH = box.height - padding.top - padding.bottom;
     try {
-      // 1) zoom et centre approchés (vue à plat), 2) inclinaison 3D, 3) correction exacte en pixels : l'inclinaison déforme le cadrage.
-      const cam = map.cameraForBounds(bounds, { padding, maxZoom: 16 });
-      if (!cam?.center) return;
-      map.jumpTo({ center: cam.center, zoom: Math.max(cam.zoom ?? START_ZOOM, 14.4), pitch: REST_PITCH, bearing: 0 });
-      const points = [from, ...nearest.map(({ l }) => ({ lat: l.latitude, lng: l.longitude }))];
-      const fitPixels = () => {
-        const px = points.map((pt) => map.project([pt.lng, pt.lat]));
-        const minX = Math.min(...px.map((q) => q.x)), maxX = Math.max(...px.map((q) => q.x));
-        const minY = Math.min(...px.map((q) => q.y)), maxY = Math.max(...px.map((q) => q.y));
-        const areaW = box.width - padding.left - padding.right, areaH = box.height - padding.top - padding.bottom;
-        return { minX, maxX, minY, maxY, areaW, areaH };
+      // Zoom fixe « de quartier » (bâtiments 3D visibles) : on garde la place la plus proche, puis on ajoute les suivantes tant qu'elles tiennent dans la zone libre.
+      map.jumpTo({ center: [candidates[0].lng, candidates[0].lat], zoom: 14.4, pitch: REST_PITCH, bearing: 0 });
+      const kept = [candidates[0]];
+      const extent = (set: typeof kept) => {
+        const px = set.map((pt) => map.project([pt.lng, pt.lat]));
+        const xs = px.map((q) => q.x), ys = px.map((q) => q.y);
+        return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
       };
-      let f = fitPixels();
-      const scale = Math.max((f.maxX - f.minX) / f.areaW, (f.maxY - f.minY) / f.areaH);
-      if (scale > 1) { map.jumpTo({ zoom: Math.max(map.getZoom() - Math.log2(scale), 14.4) }); f = fitPixels(); }
-      const dx = (f.minX + f.maxX) / 2 - (padding.left + f.areaW / 2);
-      const dy = (f.minY + f.maxY) / 2 - (padding.top + f.areaH / 2);
+      for (const candidate of candidates.slice(1)) {
+        const e = extent([...kept, candidate]);
+        if (e.maxX - e.minX <= areaW && e.maxY - e.minY <= areaH) kept.push(candidate);
+      }
+      const e = extent(kept);
+      const dx = (e.minX + e.maxX) / 2 - (padding.left + areaW / 2);
+      const dy = (e.minY + e.maxY) / 2 - (padding.top + areaH / 2);
       map.panBy([dx, dy], { animate: false });
     } catch (error) { console.warn("[GOVAPARK] Cadrage initial impossible", error); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
