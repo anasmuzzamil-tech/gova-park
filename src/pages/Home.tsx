@@ -35,19 +35,47 @@ function distanceToRoute(point: {lat:number;lng:number}, line: [number,number][]
 
 type AddressSuggestion = { label: string; lat: number; lng: number; kind: "listing" | "address"; subtitle?: string };
 
+// Île-de-France : centre de Paris pour le biais de localisation et cadre approximatif (lon min, lat min, lon max, lat max).
+const PARIS_CENTER = { lat: 48.8566, lng: 2.3522 };
+const IDF_BOX = { west: 1.45, south: 48.12, east: 3.56, north: 49.25 };
+const inIleDeFrance = (lat: number, lng: number) => lat >= IDF_BOX.south && lat <= IDF_BOX.north && lng >= IDF_BOX.west && lng <= IDF_BOX.east;
+
+type BanFeature = { geometry: { coordinates: [number, number] }; properties: { label: string; context?: string } };
+type NominatimItem = { name?: string; display_name: string; lat: string; lon: string };
+
+// Recherche d'adresse en priorité en Île-de-France : api-adresse.data.gouv.fr (biais Paris) pour les adresses,
+// Nominatim (cadre Île-de-France) en complément pour les monuments et lieux, que la base d'adresses ne connaît pas.
+// Les résultats hors Île-de-France ne sont affichés que s'il n'y en a aucun dans la région.
 async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSuggestion[]> {
-  try {
-    const gouv = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=5&q=${encodeURIComponent(query)}`, { signal });
-    if (gouv.ok) {
-      const body = await gouv.json() as { features?: Array<{ geometry: { coordinates: [number, number] }; properties: { label: string; context?: string } }> };
-      const found = (body.features ?? []).map((f) => ({ label: f.properties.label, subtitle: f.properties.context, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: "address" as const }));
-      if (found.length) return found;
-    }
-  } catch (error) { if ((error as Error).name === "AbortError") throw error; }
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&q=${encodeURIComponent(query)}`, { signal, headers: { Accept: "application/json" } });
-  if (!response.ok) return [];
-  const data = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
-  return data.map((item) => ({ label: item.display_name, lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const }));
+  const q = encodeURIComponent(query);
+  const looksLikeAddress = /^\s*\d/.test(query);
+  const banRequest = (async (): Promise<AddressSuggestion[]> => {
+    const response = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=10&lat=${PARIS_CENTER.lat}&lon=${PARIS_CENTER.lng}&q=${q}`, { signal });
+    if (!response.ok) return [];
+    const body = await response.json() as { features?: BanFeature[] };
+    return (body.features ?? []).map((f) => ({ label: f.properties.label, subtitle: f.properties.context, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: "address" as const }));
+  })();
+  const nominatimRequest = (async (): Promise<AddressSuggestion[]> => {
+    if (looksLikeAddress) return [];
+    const viewbox = `${IDF_BOX.west},${IDF_BOX.north},${IDF_BOX.east},${IDF_BOX.south}`;
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&viewbox=${viewbox}&q=${q}`, { signal, headers: { Accept: "application/json" } });
+    if (!response.ok) return [];
+    const data = await response.json() as NominatimItem[];
+    return data.map((item) => {
+      const parts = item.display_name.split(", ");
+      const named = Boolean(item.name) && parts[0] === item.name;
+      return { label: named ? parts[0] : parts.slice(0, 3).join(", "), subtitle: parts.slice(named ? 1 : 3, named ? 4 : 5).join(", "), lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const };
+    });
+  })();
+  const [ban, nominatim] = await Promise.allSettled([banRequest, nominatimRequest]);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const banResults = ban.status === "fulfilled" ? ban.value : [];
+  const nominatimResults = nominatim.status === "fulfilled" ? nominatim.value : [];
+  const all = [...nominatimResults, ...banResults];
+  const seen = new Set<string>();
+  const unique = all.filter((item) => { const key = `${item.lat.toFixed(4)},${item.lng.toFixed(4)}`; if (seen.has(key)) return false; seen.add(key); return true; });
+  const local = unique.filter((item) => inIleDeFrance(item.lat, item.lng));
+  return (local.length > 0 ? local : unique).slice(0, 5);
 }
 
 export default function Home() {
@@ -186,20 +214,7 @@ export default function Home() {
     const timer = window.setTimeout(async () => {
       setSearchingAddress(true);
       try {
-        let found: AddressSuggestion[] = [];
-        try {
-          const gouv = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=5&q=${encodeURIComponent(query)}`, { signal: controller.signal });
-          if (gouv.ok) {
-            const body = await gouv.json() as { features?: Array<{ geometry: { coordinates: [number, number] }; properties: { label: string; context?: string } }> };
-            found = (body.features ?? []).map((f) => ({ label: f.properties.label, subtitle: f.properties.context, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], kind: "address" as const }));
-          }
-        } catch (error) { if ((error as Error).name === "AbortError") throw error; }
-        if (found.length === 0) {
-          const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=4&countrycodes=fr&q=${encodeURIComponent(query)}`, { signal: controller.signal, headers: { Accept: "application/json" } });
-          if (!response.ok) throw new Error("Recherche indisponible");
-          const data = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
-          found = data.map((item) => ({ label: item.display_name, lat: Number(item.lat), lng: Number(item.lon), kind: "address" as const }));
-        }
+        const found = await geocodeFR(query, controller.signal);
         setAddressSuggestions(found);
       } catch (error) {
         if ((error as Error).name !== "AbortError") setAddressSuggestions([]);
