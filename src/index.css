@@ -551,3 +551,20 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 /* Carte 3D (MapLibre) : popups et contrôles discrets */
 .maplibregl-popup-content { border-radius: 16px; box-shadow: 0 10px 30px #1b1e3a40; padding: 12px 14px; font-family: "Manrope", sans-serif; }
 .maplibregl-ctrl-group { border-radius: 12px; box-shadow: 0 4px 14px #1b1e3a30; opacity: .92; }
+
+/* Trajet : panneau compact pour laisser la carte visible */
+.m-route { padding: 10px 12px; gap: 10px; flex-wrap: nowrap; align-items: flex-start; }
+.m-route:has(.m-route-options) .m-route-main { display: none; }
+.m-route-options { flex: 1; flex-basis: auto; order: 0; min-width: 0; gap: 5px; }
+.m-route-options button { min-height: 38px; padding: 6px 12px; border-radius: 12px; gap: 8px; }
+.m-route-options button b { font-size: 16px; }
+.m-route-options button span { font-size: 12px; }
+.m-route-stop { order: 1; height: 38px; padding: 0 12px; margin-left: 0; font-size: 13px; }
+.m-sheet:has(.m-route) .m-sheet-title { padding: 8px 18px 4px; font-size: 14px; }
+.m-sheet:has(.m-route) .m-card { flex-basis: min(62vw, 210px); border-radius: 16px; }
+.m-sheet:has(.m-route) .m-card-open img { display: none; }
+.m-sheet:has(.m-route) .m-card-open { position: relative; }
+.m-sheet:has(.m-route) .m-state { position: static; display: inline-block; margin: 8px 12px 0; }
+.m-sheet:has(.m-route) .m-card-body { padding: 4px 12px 0; }
+.m-sheet:has(.m-route) .m-card-go { margin: 6px 12px 10px; height: 34px; }
+.m-sheet:has(.m-route) .m-cards { max-height: none; }
