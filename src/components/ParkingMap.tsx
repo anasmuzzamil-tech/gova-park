@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MapContainer, Marker, useMap, useMapEvents, TileLayer, Circle, Popup, Polyline, ZoomControl } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { clusterPoints } from "@/lib/cluster";
 
 export type MapListing = {
   id: number;
@@ -173,7 +174,8 @@ export default function ParkingMap({
           <Popup>Votre position GPS · {vehicleType}</Popup>
         </Marker>
       </>}
-      {listings.map((listing) => {
+      {clusterPoints(listings, zoom).filter((g) => g.items.length > 1).map((g) => <ClusterMarker key={`c-${g.lat.toFixed(4)}-${g.lng.toFixed(4)}-${g.items.length}`} lat={g.lat} lng={g.lng} count={g.items.length} />)}
+      {clusterPoints(listings, zoom).filter((g) => g.items.length === 1).map((g) => g.items[0]).map((listing) => {
         const statusColor = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
         const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
         return <Marker
@@ -209,6 +211,12 @@ export default function ParkingMap({
       })}
     </MapContainer>
   );
+}
+
+function ClusterMarker({ lat, lng, count }: { lat: number; lng: number; count: number }) {
+  const map = useMap();
+  const icon = L.divIcon({ className: "govapark-marker-wrap", html: `<span class="pk-cluster" aria-label="${count} places dans cette zone">${count}</span>`, iconSize: [40, 40], iconAnchor: [20, 20] });
+  return <Marker position={[lat, lng]} icon={icon} eventHandlers={{ click: () => map.flyTo([lat, lng], Math.min(map.getZoom() + 2, 16), { duration: 0.5 }) }} />;
 }
 
 function MapMove({ onMove }: { onMove?: (center: Center) => void }) {

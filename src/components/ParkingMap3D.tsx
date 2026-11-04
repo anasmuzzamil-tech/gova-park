@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { MapListing, MapReport } from "./ParkingMap";
+import { clusterPoints } from "@/lib/cluster";
 
 export type { MapListing, MapReport };
 type Center = { lat: number; lng: number };
@@ -220,7 +221,15 @@ export default function ParkingMap3D({
     const map = mapRef.current;
     if (!map || !ready) return;
     listingMarkers.current.forEach((m) => m.remove());
-    listingMarkers.current = listings.map((listing) => {
+    const groups = clusterPoints(listings, zoom);
+    const singles = groups.filter((g) => g.items.length === 1).map((g) => g.items[0]);
+    const clusters = groups.filter((g) => g.items.length > 1).map((g) => {
+      const node = text("span", String(g.items.length), "pk-cluster");
+      node.title = `${g.items.length} places dans cette zone : toucher pour zoomer`; node.setAttribute("aria-label", node.title); node.style.cursor = "pointer";
+      node.addEventListener("click", (e) => { e.stopPropagation(); map.easeTo({ center: [g.lng, g.lat], zoom: Math.min(map.getZoom() + 2, 16), duration: 500 }); });
+      return new maplibregl.Marker({ element: node }).setLngLat([g.lng, g.lat]).addTo(map);
+    });
+    listingMarkers.current = [...clusters, ...singles.map((listing) => {
       const color = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
       const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
       const label = `${listing.title} — ${statusText}`;
@@ -240,8 +249,8 @@ export default function ParkingMap3D({
       actions.append(go, book); box.append(actions);
       const popup = new maplibregl.Popup({ offset: 18, closeButton: true, maxWidth: "260px" }).setDOMContent(box);
       return new maplibregl.Marker({ element: node }).setLngLat([listing.longitude, listing.latitude]).setPopup(popup).addTo(map);
-    });
-  }, [ready, listings, confirmedIds, detailed, routeListingIds]);
+    })];
+  }, [ready, listings, confirmedIds, detailed, routeListingIds, Math.floor(zoom)]);
 
   // Signalements.
   useEffect(() => {
