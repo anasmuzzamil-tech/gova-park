@@ -1,0 +1,42 @@
+/* Parcours de réservation et liste « Mes réservations » : classes préfixées bk- (aucune règle globale modifiée). */
+.bk-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.bk-fields > label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+.bk-fields > label.bk-wide { grid-column: 1 / -1; }
+.bk-fields input { min-height: 44px; }
+.bk-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; margin-bottom: 14px; cursor: pointer; }
+.bk-check input { width: 20px; height: 20px; }
+.bk-slot { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; border: 1px solid var(--border); background: var(--surface-muted); }
+.bk-slot strong { display: block; }
+.bk-slot p { margin: 2px 0 0; font-size: 13px; }
+.bk-slot.ok { background: var(--success-bg); border-color: var(--green); color: var(--text); }
+.bk-slot.ok svg { color: var(--green); }
+.bk-slot.ko { background: var(--danger-bg); border-color: var(--red); }
+.bk-slot.ko svg { color: var(--red); }
+.bk-price { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 0 0 18px; background: var(--surface); }
+.bk-price h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.bk-price > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 14px; }
+.bk-price > div small { display: block; color: var(--text-muted); font-size: 12px; }
+.bk-price > .bk-total { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px; font-size: 17px; font-weight: 800; }
+.bk-price > .bk-cap { color: var(--green); font-size: 13px; font-weight: 700; }
+.bk-tariffs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.bk-tariffs > div { background: var(--surface-muted); border-radius: 8px; padding: 8px; text-align: center; font-size: 12px; }
+.bk-tariffs strong { display: block; font-size: 14px; }
+.bk-hours { margin: 10px 0 0; font-size: 12px; color: var(--text-muted); }
+.bk-soon { display: flex; align-items: center; gap: 8px; padding: 11px 13px; background: var(--soft); border-radius: 8px; margin-bottom: 18px; font-size: 13px; }
+.bk-recap { display: grid; gap: 8px; margin-bottom: 18px; font-size: 14px; }
+.bk-recap > div { display: flex; justify-content: space-between; gap: 12px; }
+.bk-recap > div > span:first-child { color: var(--text-muted); }
+.bk-recap > div > strong { text-align: right; }
+.bk-error { display: grid; gap: 10px; margin-bottom: 16px; }
+.bk-success { max-width: 620px; margin: 20px auto; }
+.bk-success .bk-number { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--soft); font-weight: 800; font-size: 13px; margin-bottom: 14px; }
+.bk-success .bk-price, .bk-success .bk-recap { text-align: left; }
+.bk-next { text-align: left; font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
+/* Mes réservations */
+.bk-res-detail { display: grid; gap: 4px; margin: 10px 0; padding: 10px 12px; background: var(--surface-muted); border-radius: 10px; font-size: 13px; }
+.bk-res-detail > div { display: flex; justify-content: space-between; gap: 12px; }
+.bk-res-detail > .bk-res-total { font-weight: 800; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+.bk-res-note { margin: 8px 0 0; font-size: 12px; color: var(--text-muted); }
+.bk-res-num { font-size: 12px; color: var(--text-muted); font-weight: 700; }
+.bk-cancel-rule { padding: 10px 12px; border-radius: 10px; background: var(--soft); font-size: 13px; margin: 0 0 14px; text-align: left; }
+@media (max-width: 560px) { .bk-fields { grid-template-columns: 1fr; } .bk-fields > label.bk-wide { grid-column: auto; } }

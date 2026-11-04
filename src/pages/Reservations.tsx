@@ -7,6 +7,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { AuthGate } from "@/components/AuthGate";
 import { Modal } from "@/components/Modal";
 import { bookingModeLabel, euros, fullDate, statusLabel } from "@/lib/format";
+import "@/styles/booking.css";
+
+const durationLabel = (start: Date | string, end: Date | string) => {
+  const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
+  if (!(minutes > 0)) return "—";
+  const d = Math.floor(minutes / 1440), h = Math.floor((minutes % 1440) / 60), m = minutes % 60;
+  return [d ? `${d} j` : "", h ? `${h} h` : "", m ? `${m} min` : ""].filter(Boolean).join(" ");
+};
 
 type Tab = "upcoming" | "current" | "past";
 
@@ -46,8 +54,10 @@ export default function Reservations() {
         const access: string = "accessInstructions" in item.listing ? String(item.listing.accessInstructions) : "";
         return <article className="reservation-card" key={item.id}>
           <img src={item.listing.photos[item.listing.mainPhoto] || item.listing.photos[0]} alt="" />
-          <div className="reservation-content"><div className="reservation-title"><div><span className={`status-badge status-${effectiveStatus}`}>{statusLabel(effectiveStatus)}</span><h2>{item.listing.title}</h2></div><strong>{euros(item.totalCents)}</strong></div>
+          <div className="reservation-content"><div className="reservation-title"><div><span className={`status-badge status-${effectiveStatus}`}>{effectiveStatus === "payment_pending" ? "Paiement bientôt disponible" : statusLabel(effectiveStatus)}</span> <span className="bk-res-num">Réservation n°{item.id}</span><h2>{item.listing.title}</h2></div><strong>{euros(item.totalCents)}</strong></div>
             <div className="reservation-info"><span><CalendarDays size={16} />{fullDate(item.startAt)}</span><span><Clock3 size={16} />Départ : {fullDate(item.endAt)}</span><span><MapPin size={16} />{exact ?? item.listing.approxAddress}</span></div>
+            <div className="bk-res-detail"><div><span>Durée</span><strong>{durationLabel(item.startAt, item.endAt)}</strong></div><div><span>Stationnement</span><strong>{euros(item.baseCents)}</strong></div><div><span>Frais de service (8 %)</span><strong>{euros(item.feeCents)}</strong></div><div className="bk-res-total"><span>Total</span><strong>{euros(item.totalCents)}</strong></div></div>
+            {item.status === "payment_pending" && <p className="bk-res-note">Votre place n’est pas confirmée : le paiement sécurisé n’est pas encore disponible. Aucun débit n’a été effectué.</p>}
             <p className="reservation-mode">{bookingModeLabel(item.listing.bookingMode)}{item.status === "pending" && item.expiresAt ? ` · expire ${new Date(item.expiresAt).toLocaleString("fr-FR")}` : ""}</p>
             {exact && <div className="access-inline"><strong>Accès révélé</strong><p>{access}</p></div>}
             <div className="reservation-actions"><button className="btn btn-ghost" onClick={() => navigate(`/place/${item.listingId}`)}>Voir l’annonce <ChevronRight size={15} /></button><button className="btn btn-ghost" onClick={() => navigate(`/messages?reservation=${item.id}`)}>Écrire au propriétaire</button>{["pending", "payment_pending", "confirmed"].includes(item.status) && <button className="btn btn-secondary" onClick={() => setCancelId(item.id)}>Annuler</button>}{["completed", "confirmed", "in_progress"].includes(item.status) && <button className="btn btn-secondary" onClick={() => { setRefundId(item.id); setRefundReason(""); }}><RotateCcw size={15}/>Demander un remboursement</button>}{["completed", "confirmed", "in_progress"].includes(item.status) && <button className="btn btn-ghost" onClick={() => dispute.mutate({ id: item.id })}><AlertCircle size={15} />Signaler un problème</button>}</div>
@@ -56,6 +66,6 @@ export default function Reservations() {
       })}</div>
     </>}
     {refundId && <Modal title="Demander un remboursement" onClose={() => setRefundId(null)}><div className="confirmation-modal"><RotateCcw size={27}/><p>Votre demande sera examinée par l’équipe GOVAPARK. Aucun remboursement bancaire n’est déclenché automatiquement.</p><label>Motif de la demande<textarea minLength={5} maxLength={1000} required value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Expliquez votre demande…"/></label><div className="modal-actions"><button className="btn btn-ghost" onClick={()=>setRefundId(null)}>Retour</button><button className="btn btn-primary" disabled={requestRefund.isPending || refundReason.trim().length<5} onClick={()=>requestRefund.mutate({reservationId:refundId,reason:refundReason})}>Envoyer la demande</button></div></div></Modal>}
-    {cancelId && <Modal title="Annuler cette réservation ?" onClose={() => setCancelId(null)}><div className="confirmation-modal"><RotateCcw size={27} /><p>Les conditions affichées avant le paiement s’appliquent. Pour une réservation confirmée, le statut passera à « remboursement en cours ».</p><div className="modal-actions"><button className="btn btn-ghost" onClick={() => setCancelId(null)}>Garder ma réservation</button><button className="btn btn-danger" disabled={cancel.isPending} onClick={() => cancel.mutate({ id: cancelId })}>Confirmer l’annulation</button></div></div></Modal>}
+    {cancelId && <Modal title="Annuler cette réservation ?" onClose={() => setCancelId(null)}><div className="confirmation-modal"><RotateCcw size={27} />{(() => { const target = items.find((r) => r.id === cancelId); const hours = target ? (new Date(target.startAt).getTime() - Date.now()) / 3600000 : 0; return <p className="bk-cancel-rule">{hours >= 24 ? "Plus de 24 h avant l’arrivée : annulation gratuite." : "Moins de 24 h avant l’arrivée : 50 % du stationnement est remboursé (frais de service non remboursables)."} Aucun débit n’a été effectué à ce jour.</p>; })()}<p>Les conditions affichées avant la réservation s’appliquent. Pour une réservation confirmée, le statut passera à « remboursement en cours ».</p><div className="modal-actions"><button className="btn btn-ghost" onClick={() => setCancelId(null)}>Garder ma réservation</button><button className="btn btn-danger" disabled={cancel.isPending} onClick={() => cancel.mutate({ id: cancelId })}>Confirmer l’annulation</button></div></div></Modal>}
   </div>;
 }
