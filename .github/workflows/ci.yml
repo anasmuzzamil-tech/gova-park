@@ -1,0 +1,49 @@
+# Intégration continue gratuite (GitHub Actions). Indépendante de Render : le déploiement
+# se fait sur push main via Render et ne dépend PAS de ce workflow.
+# Ce fichier n'a jamais été exécuté au moment de son écriture (npm bloqué dans le sandbox) :
+# le premier run sur GitHub dira ce qui passe vraiment.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installation (comme sur Render)
+        run: npm install --include=dev --legacy-peer-deps --no-audit --no-fund
+
+      # Non bloquant tant que le typage complet n'a pas été vérifié une première fois.
+      # Retirer continue-on-error une fois ce pas au vert.
+      - name: Vérification des types (tsc -b)
+        id: types
+        continue-on-error: true
+        run: npx tsc -b
+
+      - name: Tests (vitest : api/*.test.ts, règles de contracts/)
+        run: npm test
+
+      - name: Build (site + serveur)
+        run: npm run build
+
+      - name: Résumé
+        if: always()
+        run: |
+          echo "types: ${{ steps.types.outcome }}" >> "$GITHUB_STEP_SUMMARY"
