@@ -547,3 +547,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-route-options button b { font-size: 17px; }
 .m-route-options button span { font-size: 13px; font-weight: 700; opacity: .8; overflow: hidden; text-overflow: ellipsis; }
 .m-sheet:has(.m-route) .m-cards { max-height: 150px; }
+
+/* Carte 3D (MapLibre) : popups et contrôles discrets */
+.maplibregl-popup-content { border-radius: 16px; box-shadow: 0 10px 30px #1b1e3a40; padding: 12px 14px; font-family: "Manrope", sans-serif; }
+.maplibregl-ctrl-group { border-radius: 12px; box-shadow: 0 4px 14px #1b1e3a30; opacity: .92; }

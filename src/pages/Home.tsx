@@ -1,10 +1,13 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import ParkingMap, { type MapReport } from "@/components/ParkingMap";
+const ParkingMap3D = lazy(() => import("@/components/ParkingMap3D"));
+const hasWebGL = (() => { try { const c = document.createElement("canvas"); return !!(c.getContext("webgl2") || c.getContext("webgl")); } catch { return false; } })();
+const MapView = hasWebGL ? ParkingMap3D : ParkingMap;
 import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -484,10 +487,12 @@ export default function Home() {
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}`}>
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
-          <ParkingMap center={target} listings={mapListings} altRoutes={routeOptions.filter((o) => o.id !== drivingRoute?.id)} onPickRoute={(id) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } }} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
+          <Suspense fallback={null}>
+          <MapView center={target} listings={mapListings} altRoutes={routeOptions.filter((o) => o.id !== drivingRoute?.id)} onPickRoute={(id) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } }} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
             driving={!!drivingRoute} routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
             onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />
+          </Suspense>
         </div>
 
         <div className={`m-top${destinationChosen ? " with-from" : ""}`}>
