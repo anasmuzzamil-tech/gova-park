@@ -276,9 +276,24 @@ export default function ParkingMap3D({
     const bottom = Math.round(Math.max(120, sheet ? box.bottom - sheet.top + 24 : 260));
     const padding = { top, bottom: Math.min(bottom, Math.round(box.height * 0.6)), left: 50, right: 50 };
     try {
+      // 1) zoom et centre approchés (vue à plat), 2) inclinaison 3D, 3) correction exacte en pixels : l'inclinaison déforme le cadrage.
       const cam = map.cameraForBounds(bounds, { padding, maxZoom: 16 });
-      const zoom = Math.max(cam?.zoom ?? START_ZOOM, 14.4); // pas trop éloigné : les bâtiments 3D restent visibles
-      if (cam?.center) map.easeTo({ center: cam.center, zoom, pitch: REST_PITCH, bearing: 0, duration: 700 });
+      if (!cam?.center) return;
+      map.jumpTo({ center: cam.center, zoom: Math.max(cam.zoom ?? START_ZOOM, 14.4), pitch: REST_PITCH, bearing: 0 });
+      const points = [from, ...nearest.map(({ l }) => ({ lat: l.latitude, lng: l.longitude }))];
+      const fitPixels = () => {
+        const px = points.map((pt) => map.project([pt.lng, pt.lat]));
+        const minX = Math.min(...px.map((q) => q.x)), maxX = Math.max(...px.map((q) => q.x));
+        const minY = Math.min(...px.map((q) => q.y)), maxY = Math.max(...px.map((q) => q.y));
+        const areaW = box.width - padding.left - padding.right, areaH = box.height - padding.top - padding.bottom;
+        return { minX, maxX, minY, maxY, areaW, areaH };
+      };
+      let f = fitPixels();
+      const scale = Math.max((f.maxX - f.minX) / f.areaW, (f.maxY - f.minY) / f.areaH);
+      if (scale > 1) { map.jumpTo({ zoom: Math.max(map.getZoom() - Math.log2(scale), 14.4) }); f = fitPixels(); }
+      const dx = (f.minX + f.maxX) / 2 - (padding.left + f.areaW / 2);
+      const dy = (f.minY + f.maxY) / 2 - (padding.top + f.areaH / 2);
+      map.panBy([dx, dy], { animate: false });
     } catch (error) { console.warn("[GOVAPARK] Cadrage initial impossible", error); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, listings, routeCoordinates, userPosition]);
