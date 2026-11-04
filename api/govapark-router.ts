@@ -8,6 +8,7 @@ import { calculatePrice, overlaps } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
 import { checkBooking } from "@contracts/booking";
+import { validateListing } from "@contracts/listing-validation";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
@@ -190,6 +191,8 @@ export const govaparkRouter = createRouter({
       bookingMode: z.enum(["instant", "validation"]), photos: z.array(z.string()).min(1).max(8), mainPhoto: z.number().int().min(0),
       availability: availabilityInput, blocked: blockedInput, submit: z.boolean(),
     })).mutation(async ({ ctx, input }) => {
+      const problems = validateListing({ title: input.title, description: input.description, address: input.address, approxAddress: input.approxAddress, accessInstructions: input.accessInstructions, latitude: input.latitude, longitude: input.longitude, lengthM: input.lengthM, widthM: input.widthM, heightCm: input.heightCm, hourlyCents: input.hourlyCents, dailyCents: input.dailyCents, weeklyCents: input.weeklyCents, photoCount: input.photos.length, availability: input.availability });
+      if (problems.length) throw new TRPCError({ code: "BAD_REQUEST", message: problems.join(" ") });
       const [ownerAccount] = await getDb().select({ ownerVerificationStatus: users.ownerVerificationStatus }).from(users).where(eq(users.id, ctx.user.id)).limit(1);
       if (ctx.user.role !== "admin" && ownerAccount?.ownerVerificationStatus !== "verified") throw new TRPCError({ code: "FORBIDDEN", message: "Votre compte propriétaire doit être validé par GOVAPARK avant de publier une annonce." });
       if (input.photos.some((key) => !key.startsWith("/parking/"))) {

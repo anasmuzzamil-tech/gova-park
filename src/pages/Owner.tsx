@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthGate } from "@/components/AuthGate";
+import { validateListing } from "@contracts/listing-validation";
 import { bookingModeLabel, euros, fullDate, placeTypeLabel, statusLabel, toLocalInput } from "@/lib/format";
 
 type OwnerTab = "listings" | "new" | "calendar" | "requests" | "revenue";
@@ -63,12 +64,15 @@ export default function Owner() {
 }
 
 function ListingForm({ onDone }: { onDone: () => void }) {
-  const [form, setForm] = useState({ title: "", approxAddress: "Paris 11ᵉ · secteur Charonne", address: "", description: "", access: "Portail avec badge", type: "garage", covered: true, length: "4,8", width: "2,4", height: "190", hourly: "2,50", daily: "18", weekly: "95", mode: "instant" });
+  const [form, setForm] = useState({ title: "", approxAddress: "", address: "", description: "", access: "", accessible: false, type: "garage", covered: true, length: "4,8", width: "2,4", height: "190", hourly: "2,50", daily: "18", weekly: "95", mode: "instant" });
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [mainPhoto, setMainPhoto] = useState(0);
   const [availability, setAvailability] = useState<Availability>({ days: [1,2,3,4,5], start: "08:00", end: "20:00" });
   const [blocked, setBlocked] = useState<Blocked[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
   const upload = trpc.govapark.storage.upload.useMutation();
   const create = trpc.govapark.listings.create.useMutation({ onSuccess: (result) => { toast.success(result.status === "pending" ? "Annonce envoyée pour vérification" : "Brouillon enregistré"); onDone(); }, onError: (e) => toast.error(e.message) });
   const number = (value: string) => Number(value.replace(",", "."));
@@ -87,23 +91,41 @@ function ListingForm({ onDone }: { onDone: () => void }) {
     } catch (error) { toast.error(error instanceof Error ? error.message : "Échec de l’envoi de la photo"); }
     finally { setUploading(false); }
   };
+  // Position GPS réelle : géocodage de l'adresse exacte (api-adresse.data.gouv.fr, gratuit) ; l'utilisateur voit le résultat avant d'envoyer.
+  const locateAddress = async () => {
+    if (form.address.trim().length < 5) { toast.error("Saisissez d'abord l'adresse exacte"); return; }
+    setLocating(true);
+    try {
+      const response = await fetch(`https://api-adresse.data.gouv.fr/search/?limit=1&q=${encodeURIComponent(form.address)}`);
+      const body = await response.json() as { features?: Array<{ geometry: { coordinates: [number, number] }; properties: { label: string; city?: string; postcode?: string } }> };
+      const hit = body.features?.[0];
+      if (!hit) { setCoords(null); toast.error("Adresse introuvable : précisez le numéro, la rue et le code postal"); return; }
+      setCoords({ lat: hit.geometry.coordinates[1], lng: hit.geometry.coordinates[0], label: hit.properties.label });
+      if (!form.approxAddress && hit.properties.city) update("approxAddress", `${hit.properties.city}${hit.properties.postcode ? ` (${hit.properties.postcode})` : ""}`);
+    } catch { toast.error("Service d'adresses indisponible, réessayez"); }
+    finally { setLocating(false); }
+  };
   const useDemoPhotos = () => { const demo = ["/parking/parking-3.png", "/parking/parking-4.png", "/parking/parking-9.png"]; setPhotos(demo.map((key) => ({ key, preview: key }))); setMainPhoto(0); };
   const submit = (event: FormEvent, publish: boolean) => {
     event.preventDefault();
-    if (photos.length === 0) { toast.error("Ajoutez au moins une photo"); return; }
+    const draft = { title: form.title, description: form.description, address: form.address, approxAddress: form.approxAddress, accessInstructions: form.access, latitude: coords?.lat ?? 0, longitude: coords?.lng ?? 0, lengthM: number(form.length), widthM: number(form.width), heightCm: Math.round(number(form.height)), hourlyCents: Math.round(number(form.hourly) * 100), dailyCents: Math.round(number(form.daily) * 100), weeklyCents: Math.round(number(form.weekly) * 100), photoCount: photos.length, availability };
+    const problems = validateListing(draft);
+    setErrors(problems);
+    if (problems.length) { toast.error(problems[0]); return; }
     create.mutate({ title: form.title, approxAddress: form.approxAddress, address: form.address, description: form.description, accessInstructions: form.access,
-      latitude: 48.8546 + Math.random() / 100, longitude: 2.3784 + Math.random() / 100, placeType: form.type as "garage" | "residence" | "entreprise" | "parking", covered: form.covered,
+      latitude: coords!.lat, longitude: coords!.lng, placeType: form.type as "garage" | "residence" | "entreprise" | "parking", covered: form.covered, accessible: form.accessible,
       lengthM: number(form.length), widthM: number(form.width), heightCm: Math.round(number(form.height)), hourlyCents: Math.round(number(form.hourly) * 100), dailyCents: Math.round(number(form.daily) * 100), weeklyCents: Math.round(number(form.weekly) * 100),
       bookingMode: form.mode as "instant" | "validation", photos: photos.map((p) => p.key), mainPhoto, availability, blocked, submit: publish });
   };
 
   return <form className="listing-form" onSubmit={(e) => submit(e, true)}>
     <div className="form-notice"><FileCheck2 size={20} /><span><strong>Vérification avant publication.</strong> Enregistrez un brouillon ou envoyez l’annonce complète. Elle ne sera jamais publiée automatiquement.</span></div>
-    <section><h2>1. Présentation</h2><div className="form-grid"><label className="span-2">Titre de l’annonce<input required minLength={4} value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="Ex. Box sécurisé près de Bastille" /></label><label className="span-2">Description<textarea required minLength={20} value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Environnement, largeur de l’accès, repères…" rows={4} /></label><label>Adresse exacte<input required value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="Numéro, rue, code postal" /><small>Jamais affichée avant confirmation</small></label><label>Adresse approximative publique<input required value={form.approxAddress} onChange={(e) => update("approxAddress", e.target.value)} /></label><label>Type de place<select value={form.type} onChange={(e) => update("type", e.target.value)}><option value="garage">Garage / box</option><option value="residence">Résidence</option><option value="entreprise">Entreprise</option><option value="parking">Parking privé</option></select></label><label>Couverture<select value={form.covered ? "oui" : "non"} onChange={(e) => update("covered", e.target.value === "oui")}><option value="oui">Couvert</option><option value="non">Extérieur</option></select></label></div></section>
+    <section><h2>1. Présentation</h2><div className="form-grid"><label className="span-2">Titre de l’annonce<input required minLength={4} value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="Ex. Box sécurisé près de Bastille" /></label><label className="span-2">Description<textarea required minLength={20} value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Environnement, largeur de l’accès, repères…" rows={4} /></label><label>Adresse exacte<input required value={form.address} onChange={(e) => { update("address", e.target.value); setCoords(null); }} placeholder="Numéro, rue, code postal" /><small>Jamais affichée avant confirmation</small><button type="button" className="btn btn-secondary" disabled={locating} onClick={locateAddress}>{locating ? "Recherche…" : "Localiser sur la carte"}</button>{coords && <small>Position trouvée : {coords.label} ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)})</small>}</label><label>Adresse approximative publique<input required value={form.approxAddress} onChange={(e) => update("approxAddress", e.target.value)} /></label><label>Type de place<select value={form.type} onChange={(e) => update("type", e.target.value)}><option value="garage">Garage / box</option><option value="residence">Résidence</option><option value="entreprise">Entreprise</option><option value="parking">Parking privé</option></select></label><label>Couverture<select value={form.covered ? "oui" : "non"} onChange={(e) => update("covered", e.target.value === "oui")}><option value="oui">Couvert</option><option value="non">Extérieur</option></select></label><label className="check-row"><input type="checkbox" checked={form.accessible} onChange={(e) => update("accessible", e.target.checked)} /> Place accessible PMR</label></div></section>
     <section><h2>2. Dimensions et accès</h2><div className="form-grid three"><label>Longueur (m)<input required type="text" inputMode="decimal" value={form.length} onChange={(e) => update("length", e.target.value)} /></label><label>Largeur (m)<input required type="text" inputMode="decimal" value={form.width} onChange={(e) => update("width", e.target.value)} /></label><label>Hauteur max. (cm)<input required type="number" value={form.height} onChange={(e) => update("height", e.target.value)} /></label><label className="span-3">Conditions d’accès<input required value={form.access} onChange={(e) => update("access", e.target.value)} placeholder="Portail, badge, télécommande, niveau…" /></label></div></section>
     <section><div className="section-title-row"><h2>3. Photos</h2><button type="button" className="text-button" onClick={useDemoPhotos}><Camera size={16} />Utiliser des photos démo</button></div><div className="photo-uploader"><label className="upload-zone"><ImagePlus size={26} /><strong>{uploading ? "Envoi des photos…" : "Ajouter plusieurs photos"}</strong><span>JPG ou PNG · 10 Mo maximum chacune</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={uploading} onChange={(e) => addFiles(e.target.files)} /></label>{uploading && <LoaderCircle className="spinning" />}</div><div className="uploaded-photos">{photos.map((photo, index) => <div key={photo.key} className={mainPhoto === index ? "main" : ""}><img src={photo.preview} alt={`Photo ${index + 1}`} /><button type="button" className="main-photo-btn" onClick={() => setMainPhoto(index)}><Star size={14} fill={mainPhoto === index ? "currentColor" : "none"} />{mainPhoto === index ? "Principale" : "Définir principale"}</button><button type="button" className="remove-photo" aria-label="Supprimer la photo" onClick={() => { setPhotos(photos.filter((_, i) => i !== index)); setMainPhoto(0); }}><Trash2 size={15} /></button></div>)}</div></section>
     <section><h2>4. Tarifs et réservation</h2><div className="form-grid three"><label>Prix horaire (€)<input required type="text" inputMode="decimal" value={form.hourly} onChange={(e) => update("hourly", e.target.value)} /></label><label>Prix journée (€)<input required type="text" inputMode="decimal" value={form.daily} onChange={(e) => update("daily", e.target.value)} /></label><label>Prix semaine (€)<input required type="text" inputMode="decimal" value={form.weekly} onChange={(e) => update("weekly", e.target.value)} /></label></div><div className="mode-radio"><label className={form.mode === "instant" ? "active" : ""}><input type="radio" name="mode" checked={form.mode === "instant"} onChange={() => update("mode", "instant")} /><span><strong>Réservation instantanée</strong><small>Confirmation automatique si le créneau est libre</small></span></label><label className={form.mode === "validation" ? "active" : ""}><input type="radio" name="mode" checked={form.mode === "validation"} onChange={() => update("mode", "validation")} /><span><strong>Sur validation du propriétaire</strong><small>Demande expirant après 24 h, débit après acceptation</small></span></label></div></section>
     <section><h2>5. Calendrier</h2><CalendarEditor availability={availability} setAvailability={setAvailability} blocked={blocked} setBlocked={setBlocked} /></section>
+    {errors.length > 0 && <div className="form-notice" role="alert"><X size={19} /><span><strong>À corriger avant l’envoi :</strong> {errors.join(" ")}</span></div>}
     <div className="form-submit-bar"><button type="button" className="btn btn-secondary" disabled={create.isPending} onClick={(e) => submit(e, false)}>Enregistrer comme brouillon</button><button type="submit" className="btn btn-primary" disabled={create.isPending || uploading}>{create.isPending ? "Envoi…" : "Envoyer pour vérification"}<ChevronRight size={17} /></button></div>
   </form>;
 }
