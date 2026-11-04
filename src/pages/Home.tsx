@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -87,6 +87,7 @@ export default function Home() {
   const [view, setView] = useState<"map" | "list">("map");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(true);
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
@@ -499,7 +500,7 @@ export default function Home() {
     const from = userPosition ?? visibleCenter;
     return [...filtered]
       .map((item) => ({ item, meters: distanceMeters(from.lat, from.lng, item.latitude, item.longitude) }))
-      .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
+      .sort((a, b) => a.meters - b.meters)
       .slice(0, 8);
   }, [filtered, userPosition, visibleCenter]);
   // Pendant un trajet : uniquement les places proches du trajet ou de l'arrivée.
@@ -608,7 +609,7 @@ export default function Home() {
           <p className="m-version" aria-label="Version de l’application">Version {__APP_VERSION__}</p>
         </div>}
 
-        <div className="m-sheet">
+        <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
           <div className="m-sheet-head">
             <ul className="m-legend" aria-label="Légende des couleurs des places">
               <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
@@ -635,8 +636,11 @@ export default function Home() {
               <button className="m-card-go" disabled={!online} title={online ? undefined : "La réservation demande une connexion"} onClick={() => navigate(`/reserver/${item.id}`)}>{online ? "Réserver" : "Indisponible hors ligne"}</button>
             </article>)}
           </div></> : <>
-            <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
-            <div className="m-cards">
+            <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((open) => !open)}>
+              <b>{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
+              <span>{filtered.length} {filtered.length > 1 ? "places" : "place"}{sheetOpen ? <ChevronDown size={18} aria-label="Fermer la liste" /> : <ChevronUp size={18} aria-label="Ouvrir la liste" />}</span>
+            </button>
+            <div className="m-cards" hidden={!sheetOpen}>
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
               {searchNote && <div className="m-empty">{searchNote}</div>}
               {searchTruncated && <div className="m-empty">Trop de places dans cette zone : seules les 300 premières sont chargées. Zoomez ou affinez les filtres.</div>}

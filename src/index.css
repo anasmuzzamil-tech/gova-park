@@ -649,3 +649,13 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-legend i.green { background: #12a150; }.m-legend i.red { background: #e5483c; }.m-legend i.orange { background: #f08a14; }.m-legend i.gray { background: #8a8f9c; }
 .m-sheet-head { justify-content: space-between; }
 .m-sheet-head .m-fab { margin-left: auto; }
+
+/* Panneau de résultats repliable */
+.m-sheet-toggle { width: 100%; min-height: 44px; border: 0; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
+.m-sheet-toggle b { font-weight: 800; }
+.m-sheet-toggle span { display: inline-flex; align-items: center; gap: 6px; }
+.m-sheet-toggle svg { color: #17142b; flex: none; }
+.m-sheet .m-cards[hidden] { display: none; }
+@media (max-width: 899px) {
+  .home-screen:has(.m-sheet.is-closed) { --sheet-h: 150px; }
+}
