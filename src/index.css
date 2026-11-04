@@ -679,3 +679,9 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 /* Titre du panneau du bas : en-tête opaque lisible (jamais écrit directement sur la carte) */
 .m-sheet-toggle { width: calc(100% - 28px); margin: 0 14px 8px; padding: 6px 16px; background: #fff; border-radius: 18px; box-shadow: 0 6px 20px #1a143a30; text-shadow: none; color: #17142b; }
 .m-sheet-toggle span { color: #4b4963; }
+
+/* Pastilles de places de la carte 3D : plus grosses, contour blanc épais, ombre marquée (couleurs du statut inchangées) */
+.maplibregl-marker .pk-dot { width: 34px; height: 34px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+.maplibregl-marker .pk-dot::after { font-size: 16px; }
+.maplibregl-marker .pk-pill { min-width: 68px; height: 40px; padding: 0 14px; font-size: 16px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+.maplibregl-marker .pk-cluster { min-width: 46px; height: 46px; border-width: 4px; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }

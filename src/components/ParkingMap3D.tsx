@@ -177,8 +177,8 @@ export default function ParkingMap3D({
           try {
             map.setPaintProperty(l.id, "fill-extrusion-height", heightExpr);
             map.setPaintProperty(l.id, "fill-extrusion-base", baseExpr);
-            map.setPaintProperty(l.id, "fill-extrusion-opacity", 0.92);
-            map.setPaintProperty(l.id, "fill-extrusion-color", ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 9], 0, "#e4dfd6", 40, "#cfc8bb", 120, "#b9b1a3"]);
+            map.setPaintProperty(l.id, "fill-extrusion-opacity", 0.5);
+            map.setPaintProperty(l.id, "fill-extrusion-color", ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 9], 0, "#f4f1ea", 40, "#ece8df", 120, "#e2ddd2"]);
           } catch (error) { console.warn("[GOVAPARK] Réglage des bâtiments 3D", error); }
         });
       } else {
@@ -186,12 +186,12 @@ export default function ParkingMap3D({
         if (source) {
           map.addLayer({
             id: "gp-buildings-3d", type: "fill-extrusion", source, "source-layer": "building", minzoom: 14,
-            paint: { "fill-extrusion-color": "#d9d6cf", "fill-extrusion-height": heightExpr, "fill-extrusion-base": baseExpr, "fill-extrusion-opacity": 0.92 },
+            paint: { "fill-extrusion-color": "#f1eee7", "fill-extrusion-height": heightExpr, "fill-extrusion-base": baseExpr, "fill-extrusion-opacity": 0.5 },
           });
         }
       }
       // Lumière douce depuis l'avant-gauche pour que les volumes ressortent.
-      try { map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.45, position: [1.4, 210, 45] }); } catch { /* facultatif */ }
+      try { map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.25, position: [1.4, 210, 45] }); } catch { /* facultatif */ }
       // Places en plots 3D colorés (même couleur que les pastilles).
       map.addSource("gp-spots", { type: "geojson", data: emptyFc() });
       map.addLayer({
