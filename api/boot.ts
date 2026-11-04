@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { secureHeaders } from "hono/secure-headers";
 import type { HttpBindings } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./router";
@@ -59,6 +60,28 @@ app.use("*", async (c, next) => {
 // bodyless request (DELETE/PATCH on the app's own REST routes) 500s at dispatch.
 // /api/log keeps its own 64KB caps in lib/clientlog.ts, so it needs no middleware.
 app.get("/health", (c) => c.json({ status: "ok", service: "GOVAPARK" }));
+
+// En-tetes de securite (equivalent de Helmet, integre a Hono). La politique CSP est laissee de cote
+// car la carte 3D charge des tuiles et des workers depuis des domaines externes.
+app.use("*", secureHeaders({ crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: "cross-origin" }));
+
+// Limitation de requetes par adresse IP (en memoire, suffisant pour une seule instance Render).
+// Pas de CORS ouvert : l'API n'est utilisable que depuis le site lui-meme.
+const hits = new Map<string, { count: number; resetAt: number }>();
+app.use("/api/*", async (c, next) => {
+  const ip = (c.req.header("x-forwarded-for") ?? "").split(",")[0]?.trim() || "inconnu";
+  const limit = c.req.path.startsWith("/api/log") ? 600 : 300; // par minute
+  const now = Date.now();
+  let entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) { entry = { count: 0, resetAt: now + 60_000 }; hits.set(ip, entry); }
+  entry.count += 1;
+  if (hits.size > 5000) for (const [key, value] of hits) if (value.resetAt < now) hits.delete(key);
+  if (entry.count > limit) {
+    c.header("Retry-After", String(Math.ceil((entry.resetAt - now) / 1000)));
+    return c.json({ error: "Trop de requêtes, réessayez dans une minute." }, 429);
+  }
+  await next();
+});
 app.use("/api/trpc/*", bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 app.use("/api/trpc/*", async (c) => {
