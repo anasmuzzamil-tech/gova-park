@@ -33,7 +33,7 @@ function text(tag: string, value: string, className?: string) {
 }
 
 export default function ParkingMap3D({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   listings: MapListing[];
@@ -50,6 +50,7 @@ export default function ParkingMap3D({
   onMove?: (center: Center) => void;
   userPosition?: GpsPosition | null;
   fuelStations?: Array<{ id: number; lat: number; lng: number; name: string }>;
+  onUnavailable?: () => void;
   vehicleType?: string; vehicleColor?: string; driving?: boolean; altRoutes?: Array<{ id: string; coordinates: LatLng[] }>; onPickRoute?: (id: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -57,11 +58,12 @@ export default function ParkingMap3D({
   const [ready, setReady] = useState(false);
   const [zoom, setZoom] = useState(12);
   const [heading, setHeading] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const detailed = zoom >= 14;
 
   // Callbacks toujours à jour sans recréer les marqueurs.
-  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute });
-  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute };
+  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable });
+  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable };
 
   const listingMarkers = useRef<maplibregl.Marker[]>([]);
   const reportMarkers = useRef<maplibregl.Marker[]>([]);
@@ -74,22 +76,47 @@ export default function ParkingMap3D({
   // Création de la carte (une seule fois).
   useEffect(() => {
     if (!container.current) return;
-    const map = new maplibregl.Map({
-      container: container.current,
-      style: STYLE_URL,
-      center: [center.lng, center.lat],
-      zoom: 12,
-      pitch: REST_PITCH,
-      minZoom: 3,
-      maxZoom: 19,
-      maxPitch: 70,
-      attributionControl: { compact: true },
-    });
+    // Échec de chargement (style OpenFreeMap injoignable, WebGL refusé) : on réessaie 2 fois, puis on prévient la page.
+    let removed = false, loaded = false, failed = false, retryTimer: number | undefined, watchdog: number | undefined;
+    const giveUp = () => {
+      if (failed || loaded || removed) return;
+      failed = true;
+      window.clearTimeout(watchdog);
+      if (attempt < 2) retryTimer = window.setTimeout(() => setAttempt((n) => n + 1), 2000 + attempt * 3000);
+      else cb.current.onUnavailable?.();
+    };
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: container.current,
+        style: STYLE_URL,
+        center: [center.lng, center.lat],
+        zoom: 12,
+        pitch: REST_PITCH,
+        minZoom: 3,
+        maxZoom: 19,
+        maxPitch: 70,
+        failIfMajorPerformanceCaveat: false,
+        attributionControl: { compact: true },
+      });
+    } catch (error) {
+      console.warn("[GOVAPARK] Carte 3D impossible à créer", error);
+      giveUp();
+      return () => { removed = true; window.clearTimeout(retryTimer); };
+    }
     mapRef.current = map;
+    // Seule une erreur de style (sans tuile ni source) bloque vraiment la carte ; une tuile manquante n'est pas fatale.
+    map.on("error", (e) => {
+      const ev = e as unknown as { sourceId?: string; tile?: unknown; error?: Error };
+      if (!loaded && !ev.sourceId && !ev.tile) { console.warn("[GOVAPARK] Erreur de style de carte", ev.error); giveUp(); }
+    });
+    watchdog = window.setTimeout(giveUp, 20000);
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
     map.on("zoomend", () => setZoom(map.getZoom()));
     map.on("moveend", () => { const c = map.getCenter(); cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
     map.on("load", () => {
+      loaded = true;
+      window.clearTimeout(watchdog);
       // Bâtiments en volume : on ajoute la couche si le style n'en a pas.
       const layers = map.getStyle().layers ?? [];
       if (!layers.some((l) => l.type === "fill-extrusion")) {
@@ -117,9 +144,9 @@ export default function ParkingMap3D({
       setZoom(map.getZoom());
       setReady(true);
     });
-    return () => { setReady(false); map.remove(); mapRef.current = null; };
+    return () => { removed = true; window.clearTimeout(retryTimer); window.clearTimeout(watchdog); setReady(false); map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   // Recentrage quand la cible change.
   useEffect(() => {
