@@ -124,7 +124,7 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   listings: MapListing[];
@@ -140,7 +140,7 @@ export default function ParkingMap({
   onMove?: (center: Center) => void;
   userPosition?: GpsPosition | null;
   fuelStations?: Array<{id:number;lat:number;lng:number;name:string}>;
-  vehicleType?: string; vehicleColor?: string; driving?: boolean;
+  vehicleType?: string; vehicleColor?: string; driving?: boolean; altRoutes?: Array<{ id: string; coordinates: [number, number][] }>; onPickRoute?: (id: string) => void;
 }) {
   const [zoom, setZoom] = useState(12);
   const detailed = zoom >= 14;
@@ -156,6 +156,7 @@ export default function ParkingMap({
       <Recenter center={center} />
       <FitRoute coords={routeCoordinates} />
       <MapMove onMove={onMove} />
+      {altRoutes.map((alt) => <Polyline key={alt.id} positions={alt.coordinates} pathOptions={{ color: "#9aa0b4", weight: 6, opacity: 0.85, lineCap: "round", lineJoin: "round" }} eventHandlers={{ click: () => onPickRoute?.(alt.id) }} />)}
       {routeCoordinates && routeCoordinates.length > 1 && <>
         <Polyline positions={routeCoordinates} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.95, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={routeCoordinates} pathOptions={{ color: "#2f6df6", weight: 6.5, opacity: 1, lineCap: "round", lineJoin: "round" }} />

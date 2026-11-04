@@ -41,6 +41,21 @@ const places = [
   ["Place couverte — Pantin", "Pantin · près du canal de l’Ourcq", 48.8954, 2.4013, "parking", true, 170, 1200, 6600, "instant"],
   ["Parking d’entreprise — Ivry", "Ivry-sur-Seine · secteur Ivry-Port", 48.8151, 2.3871, "entreprise", true, 170, 1150, 6400, "validation"],
   ["Box simple — Clichy", "Clichy · secteur Mairie", 48.9018, 2.3041, "garage", true, 200, 1350, 7500, "instant"],
+  ["Place résidence — Versailles Notre-Dame", "Versailles · quartier Notre-Dame", 48.8014, 2.1301, "residence", true, 220, 1500, 8200, "instant"],
+  ["Garage — Versailles Château", "Versailles · près du Château", 48.8049, 2.1204, "garage", true, 260, 1800, 9800, "validation"],
+  ["Parking privé — Le Chesnay", "Le Chesnay-Rocquencourt · centre", 48.8206, 2.1219, "parking", false, 170, 1100, 6200, "instant"],
+  ["Place couverte — Saint-Cloud", "Saint-Cloud · près de la gare", 48.8446, 2.2175, "residence", true, 210, 1400, 7900, "instant"],
+  ["Box — Rueil-Malmaison", "Rueil-Malmaison · centre", 48.8765, 2.1897, "garage", true, 200, 1350, 7500, "validation"],
+  ["Parking entreprise — Nanterre", "Nanterre · secteur Préfecture", 48.8924, 2.2069, "entreprise", true, 180, 1250, 6900, "validation"],
+  ["Place extérieure — Colombes", "Colombes · près de la gare", 48.9226, 2.2523, "residence", false, 150, 1000, 5800, "instant"],
+  ["Garage — Argenteuil", "Argenteuil · centre-ville", 48.9472, 2.2467, "garage", true, 170, 1150, 6400, "instant"],
+  ["Place — Asnières-sur-Seine", "Asnières-sur-Seine · secteur gare", 48.9142, 2.2858, "residence", false, 160, 1100, 6000, "instant"],
+  ["Box — Aubervilliers", "Aubervilliers · secteur Quatre-Chemins", 48.9136, 2.3837, "garage", true, 170, 1150, 6300, "instant"],
+  ["Place — Aubervilliers Mairie", "Aubervilliers · près de la mairie", 48.9145, 2.3841, "parking", false, 140, 950, 5400, "validation"],
+  ["Parking — Saint-Denis Stade", "Saint-Denis · près du Stade de France", 48.9245, 2.3601, "parking", false, 160, 1100, 6000, "instant"],
+  ["Garage — Pierrefitte", "Pierrefitte-sur-Seine · centre", 48.9567, 2.3612, "garage", true, 150, 1000, 5600, "instant"],
+  ["Place — Créteil Soleil", "Créteil · secteur Soleil", 48.7801, 2.4627, "residence", true, 170, 1150, 6400, "validation"],
+  ["Box — Villejuif", "Villejuif · secteur métro", 48.7877, 2.3664, "garage", true, 180, 1250, 6800, "instant"],
 ] as const;
 
 // Annonces telles que la carte les attend (sans adresse exacte ni consignes d'acces).

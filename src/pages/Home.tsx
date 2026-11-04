@@ -269,7 +269,7 @@ export default function Home() {
         const field=({gazole:"gazole_prix",e10:"e10_prix",sp98:"sp98_prix",sp95:"sp95_prix",e85:"e85_prix"} as const)[routeFuelType];const updateField=({gazole:"gazole_maj",e10:"e10_maj",sp98:"sp98_maj",sp95:"sp95_maj",e85:"e85_maj"} as const)[routeFuelType];
         for(const station of fuelData.results??[]){const lat=station.geom?.lat,lng=station.geom?.lon,price=station[field];if(lat==null||lng==null||price==null||distanceToRoute({lat,lng},route.coordinates)>800)continue;const truck=station.services_service?.some(service=>/piste poids lourds/i.test(service))??false;found.push({id:`fuel-${station.id}`,lat,lng,name:`${station.adresse??"Station"}, ${station.ville??""}`.trim(),kind:truck?"truck":"fuel",price,priceUpdated:station[updateField],detail:station.services_service?.join(" · ")});}
       }
-      setRouteServices(found.slice(0,15));
+      setRouteServices(found.slice(0,6));
     }catch{toast.message("Les services routiers sont temporairement indisponibles. Le trajet reste affiché.");}
   };
 
@@ -437,6 +437,13 @@ export default function Home() {
       .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
       .slice(0, 8);
   }, [filtered, userPosition, visibleCenter]);
+  // Pendant un trajet : uniquement les places proches du trajet ou de l'arrivée.
+  const arrival = drivingRoute ? drivingRoute.coordinates[drivingRoute.coordinates.length - 1] : null;
+  const mapListings = useMemo(() => !drivingRoute || !arrival ? filtered : filtered.filter((item) => distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) <= 2500 || distanceToRoute({ lat: item.latitude, lng: item.longitude }, drivingRoute.coordinates) <= 1000), [filtered, drivingRoute, arrival]);
+  const nearArrival = useMemo(() => !arrival ? [] : [...mapListings]
+    .map((item) => ({ item, meters: distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) }))
+    .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
+    .slice(0, 4), [mapListings, arrival]);
   const chooseSuggestion = (suggestion: AddressSuggestion) => {
     // Le départ est mémorisé AVANT que la carte se recentre sur la destination.
     if (!fromChosen.current) originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
@@ -477,7 +484,7 @@ export default function Home() {
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}`}>
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
-          <ParkingMap center={target} listings={filtered} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
+          <ParkingMap center={target} listings={mapListings} altRoutes={routeOptions.filter((o) => o.id !== drivingRoute?.id)} onPickRoute={(id) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } }} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
             driving={!!drivingRoute} routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
             onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />
@@ -535,11 +542,23 @@ export default function Home() {
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
             <button className="m-fab" onClick={() => setReportOpen(true)}><Plus size={20} />Signaler</button>
           </div>
-          {drivingRoute ? <div className="m-route">
+          {drivingRoute ? <><div className="m-route">
             <div className="m-route-main"><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></div>
-            {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>{Math.round(option.duration / 60)} min · {meters(option.distance)}</button>)}</div>}
+            {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.label ? ` · ${option.label}` : ""}</span></button>)}</div>}
             <button className="m-route-stop" onClick={toggleRoute}><X size={18} />Arrêter</button>
-          </div> : <>
+          </div>
+          <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>
+          <div className="m-cards">
+            {nearArrival.length === 0 && <div className="m-empty">Aucune place Govapark près de cette arrivée pour l’instant.</div>}
+            {nearArrival.map(({ item, meters: away }) => <article className="m-card" key={`arr-${item.id}`}>
+              <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
+                <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
+                <span className={`m-state ${item.currentAvailability === "available" ? "free" : "busy"}`}>{item.currentAvailability === "available" ? "Dispo" : "Complet"}</span>
+                <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span></span>
+              </button>
+              <button className="m-card-go" onClick={() => navigate(`/reserver/${item.id}`)}>Réserver</button>
+            </article>)}
+          </div></> : <>
             <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
             <div className="m-cards">
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} />)}
