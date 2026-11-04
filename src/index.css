@@ -652,8 +652,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 
 /* Panneau de résultats repliable */
 .m-sheet-toggle { width: 100%; min-height: 44px; border: 0; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
-.m-sheet-toggle b { font-weight: 800; }
-.m-sheet-toggle span { display: inline-flex; align-items: center; gap: 6px; }
+.m-sheet-toggle b { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
 .m-sheet-toggle svg { color: #17142b; flex: none; }
 .m-sheet .m-cards[hidden] { display: none; }
 @media (max-width: 899px) {

@@ -637,8 +637,8 @@ export default function Home() {
             </article>)}
           </div></> : <>
             <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((open) => !open)}>
-              <b>{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
-              <span>{filtered.length} {filtered.length > 1 ? "places" : "place"}{sheetOpen ? <ChevronDown size={18} aria-label="Fermer la liste" /> : <ChevronUp size={18} aria-label="Ouvrir la liste" />}</span>
+              <b>{sheetOpen ? <ChevronDown size={20} aria-label="Fermer la liste" /> : <ChevronUp size={20} aria-label="Ouvrir la liste" />}{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
+              <span>{filtered.length} {filtered.length > 1 ? "places" : "place"}</span>
             </button>
             <div className="m-cards" hidden={!sheetOpen}>
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
