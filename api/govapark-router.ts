@@ -7,6 +7,7 @@ import { listings, reservations, communityReports, reportVotes, proximityAlerts,
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
+import { checkBooking } from "@contracts/booking";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
@@ -28,24 +29,9 @@ function publicListing<T extends { exactAddress: string; accessInstructions: str
   return safe;
 }
 
-function assertBookable(listing: typeof listings.$inferSelect, startAt: Date, endAt: Date) {
-  if (listing.status !== "published") throw new TRPCError({ code: "NOT_FOUND", message: "Cette annonce n’est pas publiée." });
-  if (startAt >= endAt) throw new TRPCError({ code: "BAD_REQUEST", message: "Le départ doit être postérieur à l’arrivée." });
-  if (startAt.getTime() < Date.now() - 300000) throw new TRPCError({ code: "BAD_REQUEST", message: "Choisissez un créneau à venir." });
-  const blocked = JSON.parse(listing.blocked) as { start: string; end: string }[];
-  if (blocked.some((period) => overlaps(startAt, endAt, new Date(period.start), new Date(period.end)))) {
-    throw new TRPCError({ code: "CONFLICT", message: "Ce créneau est bloqué par le propriétaire." });
-  }
-  const availability = JSON.parse(listing.availability) as { days: number[]; start: string; end: string };
-  if (!availability.days.includes(startAt.getDay()) || !availability.days.includes(endAt.getDay())) {
-    throw new TRPCError({ code: "CONFLICT", message: "La place n’est pas disponible ce jour-là." });
-  }
-  const minutes = (date: Date) => date.getHours() * 60 + date.getMinutes();
-  const open = Number(availability.start.split(":")[0]) * 60 + Number(availability.start.split(":")[1]);
-  const close = Number(availability.end.split(":")[0]) * 60 + Number(availability.end.split(":")[1]);
-  if (minutes(startAt) < open || (minutes(endAt) > close && close !== 1439)) {
-    throw new TRPCError({ code: "CONFLICT", message: `Accès proposé de ${availability.start} à ${availability.end}.` });
-  }
+function assertBookable(listing: typeof listings.$inferSelect, startAt: Date, endAt: Date, activeBookings: Slot[] = []) {
+  const check = checkBooking(listing, startAt, endAt, activeBookings);
+  if (!check.ok) throw new TRPCError({ code: check.code, message: check.message });
 }
 
 const reservationInput = z.object({ listingId: z.number().int().positive(), startAt: z.date(), endAt: z.date() });
@@ -255,18 +241,16 @@ export const govaparkRouter = createRouter({
         const [listing] = await tx.select().from(listings).where(eq(listings.id, input.listingId)).for("update").limit(1);
         if (!listing) throw new TRPCError({ code: "NOT_FOUND" });
         if (listing.ownerId === ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez pas réserver votre propre place." });
-        assertBookable(listing, input.startAt, input.endAt);
-        if (listing.bookingMode === "instant") {
-          const conflicts = await tx.select({ id: reservations.id }).from(reservations).where(and(
-            eq(reservations.listingId, listing.id),
-            or(
-              inArray(reservations.status, ["confirmed", "in_progress"]),
-              and(eq(reservations.status, "payment_pending"), gt(reservations.expiresAt, new Date())),
-            ),
-            lt(reservations.startAt, input.endAt), gt(reservations.endAt, input.startAt),
-          )).for("update").limit(1);
-          if (conflicts.length) throw new TRPCError({ code: "CONFLICT", message: "Ce créneau vient d’être réservé ou est en cours de paiement." });
-        }
+        // Verrou de ligne sur l'annonce (for update) + recherche des créneaux déjà pris : deux utilisateurs ne peuvent pas réserver des créneaux qui se recoupent.
+        const taken = await tx.select({ startAt: reservations.startAt, endAt: reservations.endAt }).from(reservations).where(and(
+          eq(reservations.listingId, listing.id),
+          or(
+            inArray(reservations.status, ["confirmed", "in_progress"]),
+            and(eq(reservations.status, "payment_pending"), gt(reservations.expiresAt, new Date())),
+          ),
+          lt(reservations.startAt, input.endAt), gt(reservations.endAt, input.startAt),
+        ));
+        assertBookable(listing, input.startAt, input.endAt, taken);
         const [settings] = await tx.select().from(companySettings).where(eq(companySettings.id, 1)).limit(1);
         const { startedHours: _hours, ...price } = calculatePrice({ ...input, ...listing, commissionBps: settings?.commissionBps ?? 1200 });
         const [created] = await tx.insert(reservations).values({

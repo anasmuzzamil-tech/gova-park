@@ -30,8 +30,8 @@ export function isOpenAt(schedule: Schedule, blocked: Period[], at: Date): boole
 }
 
 /** Créneau entièrement couvert par les horaires du propriétaire (échantillonné toutes les 15 min, 7 jours max). */
-export function scheduleAllows(schedule: Schedule, blocked: Period[], start: Date, end: Date): boolean {
-  if (end <= start || end.getTime() - start.getTime() > 7 * 24 * 3600000) return false;
+export function scheduleAllows(schedule: Schedule, blocked: Period[], start: Date, end: Date, maxDays = 7): boolean {
+  if (end <= start || end.getTime() - start.getTime() > maxDays * 24 * 3600000) return false;
   for (let t = start.getTime(); t < end.getTime(); t += 15 * 60000) if (!isOpenAt(schedule, blocked, new Date(t))) return false;
   return isOpenAt(schedule, blocked, new Date(end.getTime() - 60000));
 }

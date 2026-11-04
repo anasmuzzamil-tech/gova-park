@@ -1,6 +1,7 @@
 import { env } from "./lib/env";
 import { calculatePrice } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
+import { checkBooking } from "@contracts/booking";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
 
 // MODE DEMO : actif automatiquement tant que DATABASE_URL n'est pas renseignee.
@@ -153,7 +154,8 @@ let nextReservationId = 1;
 export function demoCreateReservation(input: { listingId: number; startAt: Date; endAt: Date; vehiclePlate?: string | null }) {
   const listing = demoListings().find((l) => l.id === input.listingId);
   if (!listing) throw new Error("Annonce introuvable.");
-  if (input.startAt >= input.endAt) throw new Error("Le départ doit être postérieur à l’arrivée.");
+  const check = checkBooking(listing, input.startAt, input.endAt, demoBookedSlots(listing.id));
+  if (!check.ok) throw new Error(check.message);
   const { startedHours: _hours, ...price } = calculatePrice({ ...input, ...listing, commissionBps: 1200 });
   const now = new Date();
   const id = nextReservationId++;
@@ -166,7 +168,8 @@ export function demoCreateReservation(input: { listingId: number; startAt: Date;
 }
 /** Créneaux déjà pris (réservations non annulées) pour une place : utilisés par la recherche et la prévention des doubles réservations. */
 export function demoBookedSlots(listingId?: number) {
-  return reservationsStore.filter((r) => (listingId == null || r.listingId === listingId) && !["cancelled", "refunded"].includes(r.status)).map((r) => ({ listingId: r.listingId, startAt: r.startAt, endAt: r.endAt }));
+  const now = new Date();
+  return reservationsStore.filter((r) => (listingId == null || r.listingId === listingId) && (["confirmed", "in_progress"].includes(r.status) || (r.status === "payment_pending" && r.expiresAt && r.expiresAt > now))).map((r) => ({ listingId: r.listingId, startAt: r.startAt, endAt: r.endAt }));
 }
 export function demoMyReservations() {
   const all = demoListings();
