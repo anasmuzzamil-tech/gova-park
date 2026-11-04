@@ -36,7 +36,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
-body { min-width: 320px; font-size: 16px; line-height: 1.55; overflow-x: hidden; }
+html { overflow-x: hidden; max-width: 100%; }
+body { min-width: 320px; max-width: 100%; font-size: 16px; line-height: 1.55; overflow-x: hidden; }
 button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
@@ -598,3 +599,9 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .offline-ok { color: #12a150; }
 .offline-err { color: #e5483c; }
 .route-offline-note { margin: 4px 0 0; font-size: 12.5px; color: #3b3a46; }
+
+/* iPhone (390 px) : les 4 filtres rapides tiennent dans la largeur, plus de bouton coupe */
+@media (max-width: 430px) {
+  .m-chips { gap: 6px; }
+  .m-chip { padding: 0 10px; font-size: 12.5px; }
+}
