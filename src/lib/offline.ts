@@ -144,7 +144,11 @@ export async function downloadArea(lat: number, lng: number, basemap: "vector" |
   const worker = async () => {
     while (queue.length && !signal.aborted) {
       const url = queue.shift()!;
-      try { const r = await fetch(url, { signal }); await r.arrayBuffer(); } catch (error) { if (signal.aborted) return; }
+      // Une seule nouvelle tentative par tuile (le serveur public répond parfois 503), jamais davantage.
+      for (let attempt = 0; attempt < 2 && !signal.aborted; attempt++) {
+        try { const r = await fetch(url, { signal }); await r.arrayBuffer(); if (r.ok) break; } catch { if (signal.aborted) return; }
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
       onProgress({ done: ++done, total: all.length });
     }
   };

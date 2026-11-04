@@ -124,14 +124,14 @@ export default function Home() {
   const online = useOnlineStatus();
   const [offlineOpen, setOfflineOpen] = useState(false);
   const cacheMode = !online || searchQuery.isError;
-  const cachedPlaces = useMemo(() => (cacheMode && !searchQuery.data ? loadPlaces<NonNullable<typeof searchQuery.data>["items"][number]>() : null), [cacheMode, searchQuery.data]);
-  const placesSavedAt = cacheMode ? (searchQuery.data ? searchQuery.dataUpdatedAt : cachedPlaces?.savedAt ?? 0) : 0;
+  const cachedPlaces = useMemo(() => (cacheMode ? loadPlaces<NonNullable<typeof searchQuery.data>["items"][number]>() : null), [cacheMode]);
+  const placesSavedAt = cacheMode ? (searchQuery.data && searchQuery.dataUpdatedAt ? searchQuery.dataUpdatedAt : cachedPlaces?.savedAt ?? 0) : 0;
   useEffect(() => {
     if (online && !searchQuery.isError && !searchQuery.isPlaceholderData && searchQuery.data?.items.length) savePlaces(searchQuery.data.items);
   }, [online, searchQuery.isError, searchQuery.isPlaceholderData, searchQuery.data]);
   const listingsData = useMemo(() => {
     if (!cacheMode) return searchQuery.data?.items;
-    const base = searchQuery.data?.items ?? cachedPlaces?.items ?? [];
+    const base = searchQuery.data?.items?.length ? searchQuery.data.items : cachedPlaces?.items ?? [];
     const status = offlineStatus(placesSavedAt);
     return base.map((item) => ({ ...item, currentAvailability: "unknown" as unknown as typeof item.currentAvailability, parkingStatus: status as unknown as typeof item.parkingStatus }));
   }, [cacheMode, searchQuery.data, cachedPlaces, placesSavedAt]);
@@ -140,7 +140,8 @@ export default function Home() {
   const listings = useMemo(() => listingsQuery.data ?? [], [listingsQuery.data]);
   const searchNote = searchQuery.data?.note ?? null;
   const searchTruncated = searchQuery.data?.truncated ?? false;
-  const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
+  // Hors ligne : les signalements communautaires (périssables) ne sont pas réaffichés depuis la mémoire.
+  const reports = useMemo(() => (online ? reportsQuery.data ?? [] : []), [online, reportsQuery.data]);
   const filtered = useMemo(() => listings.filter((listing) => {
     const distance = distanceMeters(visibleCenter.lat, visibleCenter.lng, listing.latitude, listing.longitude) / 1000;
     return listing.hourlyCents <= filters.maxPrice && distance <= filters.maxDistance &&
