@@ -4,7 +4,18 @@ import { ArrowLeft, Star, MapPin, LockKeyhole, Ruler, ArrowUpFromLine, ShieldChe
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { bookingModeLabel, euros, placeTypeLabel } from "@/lib/format";
+import { bookingModeLabel, euros, placeTypeLabel, shortDate } from "@/lib/format";
+import { STATUS_COLORS, reliabilityLabel } from "@contracts/parking-status";
+import { parseJson, type Schedule } from "@contracts/parking-search";
+import { navigationLinks } from "@/lib/navigation";
+
+const DAYS = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
+function scheduleText(raw: string) {
+  const s = parseJson<Schedule>(raw, { days: [], start: "", end: "" });
+  if (!s.days.length) return "Non précisés";
+  const days = s.days.length === 7 ? "Tous les jours" : [1, 2, 3, 4, 5, 6, 0].filter((d) => s.days.includes(d)).map((d) => DAYS[d]).join(" ");
+  return `${days} · ${s.start} – ${s.end}`;
+}
 
 const reviews = [
   { name: "Camille L.", date: "Octobre 2026", text: "Accès très simple et place conforme aux dimensions. Le propriétaire a répondu rapidement." },
@@ -37,8 +48,16 @@ export default function PlaceDetail() {
           <section className="detail-section"><h2>Ce qu’il faut savoir</h2><p className="detail-description">{place.description}</p>
             <div className="feature-grid"><div><CarFront size={19} /><span>Type<strong>{placeTypeLabel(place.placeType)}</strong></span></div><div><Ruler size={19} /><span>Dimensions<strong>{place.lengthM.toFixed(1)} × {place.widthM.toFixed(1)} m</strong></span></div><div><ArrowUpFromLine size={19} /><span>Hauteur maximale<strong>{place.heightCm} cm</strong></span></div><div><ShieldCheck size={19} /><span>Environnement<strong>{place.covered ? "Couvert et protégé" : "Extérieur"}</strong></span></div></div>
           </section>
+          <section className="detail-section"><h2>Informations de la place</h2>
+            {place.parkingStatus && <div className="status-card" style={{ borderLeft: `6px solid ${STATUS_COLORS[place.parkingStatus.color]}` }}>
+              <strong>{place.parkingStatus.label}</strong><p>{place.parkingStatus.detail}</p>
+              <dl className="report-facts"><div><dt>Source</dt><dd>{place.parkingStatus.source ?? "Aucune"}</dd></div><div><dt>Dernière mise à jour</dt><dd>{place.parkingStatus.updatedAt ? shortDate(place.parkingStatus.updatedAt) : "—"}</dd></div><div><dt>Fiabilité</dt><dd>{reliabilityLabel(place.parkingStatus.reliability)}</dd></div></dl>
+            </div>}
+            <dl className="report-facts"><div><dt>Catégorie</dt><dd>Stationnement privé (location)</dd></div><div><dt>Horaires autorisés</dt><dd>{scheduleText(place.availability)}</dd></div><div><dt>Tarif</dt><dd>{euros(place.hourlyCents)}/h · {euros(place.dailyCents)}/jour</dd></div><div><dt>Durée maximale</dt><dd>Non précisée par le propriétaire</dd></div><div><dt>Accès PMR</dt><dd>{(place as { accessible?: boolean }).accessible ? "Oui" : "Non indiqué"}</dd></div><div><dt>Restrictions</dt><dd>Hauteur maximale {place.heightCm} cm · accès selon les horaires ci-dessus</dd></div><div><dt>Source de l’annonce</dt><dd>Propriétaire, annonce validée par GOVAPARK</dd></div><div><dt>Annonce publiée</dt><dd>{shortDate(place.createdAt)}</dd></div></dl>
+            <div className="nav-links"><strong>Ouvrir l’itinéraire</strong>{navigationLinks(place.latitude, place.longitude).map((link) => <a key={link.id} className="btn btn-secondary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>)}</div>
+          </section>
           <section className="detail-section"><div className="section-title-row"><h2>Avis</h2><span><Star size={16} fill="currentColor" />{place.rating.toFixed(1)} · {place.reviewCount} avis</span></div>
-            <div className="reviews-list">{reviews.map((review) => <article key={review.name}><div><strong>{review.name}</strong><span>{review.date}</span></div><div className="stars">★★★★★</div><p>{review.text}</p></article>)}</div>
+            {place.reviewCount === 0 ? <p className="detail-description">Aucun avis pour le moment.</p> : <div className="reviews-list">{place.parkingStatus?.source?.startsWith("Simulation") && <p className="field-help">Exemples d’avis (mode démo).</p>}{reviews.map((review) => <article key={review.name}><div><strong>{review.name}</strong><span>{review.date}</span></div><div className="stars">★★★★★</div><p>{review.text}</p></article>)}</div>}
           </section>
         </div>
         <aside className="booking-summary-card">

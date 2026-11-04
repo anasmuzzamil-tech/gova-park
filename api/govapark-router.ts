@@ -156,7 +156,17 @@ export const govaparkRouter = createRouter({
       const [row] = await getDb().select().from(listings).where(and(eq(listings.id, input.id), eq(listings.status, "published"))).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." });
       const [withPhotos] = await withPhotoUrls([row]);
-      return publicListing(withPhotos);
+      const now = new Date();
+      const horizon = new Date(now.getTime() + 60 * 60 * 1000);
+      const bookings = await getDb().select({ startAt: reservations.startAt, endAt: reservations.endAt }).from(reservations).where(and(
+        eq(reservations.listingId, row.id),
+        or(inArray(reservations.status, ["confirmed", "in_progress"]), and(eq(reservations.status, "payment_pending"), gt(reservations.expiresAt, now))),
+        lt(reservations.startAt, horizon), gt(reservations.endAt, now),
+      ));
+      const schedule = parseJson<Schedule>(row.availability, { days: [], start: "00:00", end: "00:00" });
+      const blockedNow = parseJson<Period[]>(row.blocked, []).some((p) => new Date(p.start) < horizon && new Date(p.end) > now);
+      const parkingStatus = listingStatus({ openNow: isOpenAt(schedule, [], now), blockedNow, booked: bookings.length > 0 }, now);
+      return { ...publicListing(withPhotos), parkingStatus };
     }),
     quote: publicQuery.input(reservationInput).query(async ({ input }) => {
       if (isDemoMode) { const found = demoListings().find((item) => item.id === input.listingId); if (!found) throw new TRPCError({ code: "NOT_FOUND" }); return calculatePrice({ ...input, ...found, commissionBps: 1200 }); }
