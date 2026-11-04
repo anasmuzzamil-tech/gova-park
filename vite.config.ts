@@ -9,11 +9,11 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // Identifiant de build : commit Render (RENDER_GIT_COMMIT) + horodatage. Different a chaque deploiement.
 const gitCommit = () => { try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() } catch { return "" } }
-const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || gitCommit() || "local").slice(0, 7)
+const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || gitCommit()).slice(0, 7)
 const builtAt = new Date()
-const buildId = `${commit}-${builtAt.getTime().toString(36)}`
+const buildId = `${commit || "build"}-${builtAt.getTime().toString(36)}`
 const buildDate = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(builtAt).replace(",", "")
-const appVersion = `${commit} · ${buildDate}`
+const appVersion = commit ? `${commit} · ${buildDate}` : buildDate
 
 // Ecrit l'identifiant de build dans dist/public/sw.js : le fichier change a chaque deploiement,
 // le navigateur installe donc le nouveau service worker et renouvelle le cache.
