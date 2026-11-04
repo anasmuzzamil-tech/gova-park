@@ -313,6 +313,29 @@ export default function Home() {
       const data = await response.json() as { routes?: Array<{geometry:{coordinates:[number,number][]};distance:number;duration:number;legs?:Array<{steps?:Array<{distance:number;name?:string;mode?:string;maneuver?:{type?:string;modifier?:string;location:[number,number]}}>}>}>};
       const rawRoutes = data.routes ?? [];
       if (!rawRoutes.length) throw new Error("Aucun itinéraire trouvé");
+      // Le serveur ne propose parfois qu'un seul trajet : on en génère 2 autres en passant par un point décalé de chaque côté.
+      if (rawRoutes.length < 3) {
+        const total = distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng);
+        const offset = Math.min(4000, Math.max(150, total * 0.18));
+        const midLat = (origin.lat + destination.lat) / 2, midLng = (origin.lng + destination.lng) / 2;
+        const dx = (destination.lng - origin.lng) * Math.cos(midLat * Math.PI / 180), dy = destination.lat - origin.lat;
+        const norm = Math.hypot(dx, dy) || 1;
+        const kLat = offset / 111320, kLng = offset / (111320 * Math.cos(midLat * Math.PI / 180));
+        const vias = [1, -1].map((side) => ({ lat: midLat + side * (dx / norm) * kLat, lng: midLng - side * (dy / norm) * kLng }));
+        const extra = await Promise.all(vias.map(async (via) => {
+          try {
+            const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${via.lng},${via.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true`, { signal: AbortSignal.timeout(12000) });
+            if (!r.ok) return null;
+            return ((await r.json()) as typeof data).routes?.[0] ?? null;
+          } catch { return null; }
+        }));
+        const fastestDuration = Math.min(...rawRoutes.map((route) => route.duration));
+        for (const candidate of extra) {
+          if (!candidate || rawRoutes.length >= 3 || candidate.duration > fastestDuration * 1.7 + 120) continue;
+          const duplicate = rawRoutes.some((route) => Math.abs(route.distance - candidate.distance) / route.distance < 0.03 && Math.abs(route.duration - candidate.duration) / Math.max(route.duration, 1) < 0.05);
+          if (!duplicate) rawRoutes.push(candidate);
+        }
+      }
       const mapped: DrivingRoute[] = rawRoutes.slice(0,3).map((route,index) => {
         const rawSteps = route.legs?.flatMap((leg) => leg.steps ?? []) ?? [];
         const steps: RouteStep[] = rawSteps.map((step) => {
