@@ -113,10 +113,18 @@ const youIcon = L.divIcon({
   iconAnchor: [14, 14],
   popupAnchor: [0, -14],
 });
+// Voiture qui avance avec toi pendant un trajet.
+const carIcon = L.divIcon({
+  className: "govapark-marker-wrap",
+  html: `<span class="pk-car"><i></i><b>🚗</b></span>`,
+  iconSize: [44, 44],
+  iconAnchor: [22, 22],
+  popupAnchor: [0, -22],
+});
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb",
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false,
 }: {
   center: Center;
   listings: MapListing[];
@@ -132,7 +140,7 @@ export default function ParkingMap({
   onMove?: (center: Center) => void;
   userPosition?: GpsPosition | null;
   fuelStations?: Array<{id:number;lat:number;lng:number;name:string}>;
-  vehicleType?: string; vehicleColor?: string;
+  vehicleType?: string; vehicleColor?: string; driving?: boolean;
 }) {
   const [zoom, setZoom] = useState(12);
   const detailed = zoom >= 14;
@@ -158,7 +166,7 @@ export default function ParkingMap({
           radius={Math.max(20, Math.min(userPosition.accuracy ?? 35, 120))}
           pathOptions={{ color: "#2563eb", fillColor: "#60a5fa", fillOpacity: 0.12, weight: 1 }}
         />
-        <Marker position={[userPosition.lat, userPosition.lng]} icon={youIcon} zIndexOffset={900}>
+        <Marker position={[userPosition.lat, userPosition.lng]} icon={driving ? carIcon : youIcon} zIndexOffset={900}>
           <Popup>Votre position GPS · {vehicleType}</Popup>
         </Marker>
       </>}

@@ -455,12 +455,12 @@ export default function Home() {
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
           <ParkingMap center={target} listings={filtered} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
-            routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
+            driving={!!drivingRoute} routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
             onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />
         </div>
 
-        <div className="m-top">
+        <div className={`m-top${destinationChosen ? " with-from" : ""}`}>
           <div className="m-search">
             <Search size={20} />
             <input value={search} onChange={(e) => { setSearch(e.target.value); setDestinationChosen(false); }} onFocus={() => setSearchFocused(true)}
@@ -514,7 +514,7 @@ export default function Home() {
           </div>
           {drivingRoute ? <div className="m-route">
             <div className="m-route-main"><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></div>
-            {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>{Math.round(option.duration / 60)} min</button>)}</div>}
+            {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>{Math.round(option.duration / 60)} min · {meters(option.distance)}</button>)}</div>}
             <button className="m-route-stop" onClick={toggleRoute}><X size={18} />Arrêter</button>
           </div> : <>
             <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
