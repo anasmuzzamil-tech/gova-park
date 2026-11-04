@@ -3,6 +3,7 @@ import { MapContainer, Marker, useMap, useMapEvents, TileLayer, Circle, Popup, P
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { clusterPoints } from "@/lib/cluster";
+import { bearingBetween, carBadgeTransform, metersBetween } from "@/lib/heading";
 
 export type MapListing = {
   id: number;
@@ -147,6 +148,26 @@ export default function ParkingMap({
 }) {
   const [zoom, setZoom] = useState(12);
   const detailed = zoom >= 14;
+  // Cap de la voiture, calculé depuis les positions successives (comme sur la carte 3D).
+  const [heading, setHeading] = useState<number | null>(null);
+  const lastFix = useRef<Center | null>(null);
+  const carMarker = useRef<L.Marker | null>(null);
+  useEffect(() => {
+    if (!userPosition) return;
+    const last = lastFix.current;
+    if (!last) { lastFix.current = { lat: userPosition.lat, lng: userPosition.lng }; return; }
+    if (metersBetween(last, userPosition) < 6) return;
+    setHeading(bearingBetween(last, userPosition));
+    lastFix.current = { lat: userPosition.lat, lng: userPosition.lng };
+  }, [userPosition]);
+  useEffect(() => { if (!driving) setHeading(null); }, [driving]);
+  useEffect(() => {
+    if (!driving) return;
+    const badge = carMarker.current?.getElement()?.querySelector<HTMLElement>(".pk-car b");
+    if (!badge) return;
+    badge.style.transform = carBadgeTransform(heading);
+    badge.style.transition = "transform .4s ease";
+  }, [heading, userPosition, driving]);
   return (
     <MapContainer center={[center.lat, center.lng]} zoom={12} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
       <TileLayer
@@ -170,7 +191,7 @@ export default function ParkingMap({
           radius={Math.max(20, Math.min(userPosition.accuracy ?? 35, 120))}
           pathOptions={{ color: "#2563eb", fillColor: "#60a5fa", fillOpacity: 0.12, weight: 1 }}
         />
-        <Marker position={[userPosition.lat, userPosition.lng]} icon={driving ? carIcon : youIcon} zIndexOffset={900}>
+        <Marker ref={carMarker} position={[userPosition.lat, userPosition.lng]} icon={driving ? carIcon : youIcon} zIndexOffset={900}>
           <Popup>Votre position GPS · {vehicleType}</Popup>
         </Marker>
       </>}

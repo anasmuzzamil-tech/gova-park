@@ -1,3 +1,4 @@
+import { bearingBetween, carBadgeTransform, metersBetween } from "@/lib/heading";
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -29,18 +30,6 @@ function text(tag: string, value: string, className?: string) {
   if (className) node.className = className;
   node.textContent = value;
   return node;
-}
-function bearingBetween(a: Center, b: Center) {
-  const rad = Math.PI / 180;
-  const y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
-  const x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
-  return (Math.atan2(y, x) / rad + 360) % 360;
-}
-function metersBetween(a: Center, b: Center) {
-  const rad = Math.PI / 180;
-  const dx = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad) * 6371000;
-  const dy = (b.lat - a.lat) * rad * 6371000;
-  return Math.hypot(dx, dy);
 }
 
 export default function ParkingMap3D({
@@ -210,9 +199,7 @@ export default function ParkingMap3D({
     const badge = carBadge.current;
     if (!badge) return;
     // L'emoji regarde vers la gauche : on le retourne côté est pour qu'il ne soit jamais à l'envers.
-    const h = heading ?? 0;
-    const east = h < 180;
-    badge.style.transform = east ? `rotate(${h - 90}deg) scaleX(-1)` : `rotate(${h - 270}deg)`;
+    badge.style.transform = carBadgeTransform(heading);
     badge.style.transition = "transform .4s ease";
   }, [heading, userPosition, driving, ready]);
 
