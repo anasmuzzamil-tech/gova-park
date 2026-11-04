@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { MapListing, MapReport } from "./ParkingMap";
 import { clusterPoints } from "@/lib/cluster";
+import { STATUS_COLORS } from "@contracts/parking-status";
 
 export type { MapListing, MapReport };
 type Center = { lat: number; lng: number };
@@ -12,8 +13,39 @@ type RouteService = { id: string; lat: number; lng: number; name: string; kind: 
 type LatLng = [number, number];
 
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
-const REST_PITCH = 45;
-const DRIVE_PITCH = 55;
+const REST_PITCH = 60;
+const DRIVE_PITCH = 60;
+const FLAT_PITCH = 0;
+const START_ZOOM = 15;
+const PLOT_COLORS: Record<string, string> = { ...STATUS_COLORS, blue: "#2f6df6" };
+
+// Place en « plot » 3D : petit rectangle (environ 6 m x 3 m) autour de la position, extrudé par MapLibre.
+function plotPolygon(lat: number, lng: number): GeoJSON.Polygon {
+  const dLat = 1.5 / 111320, dLng = 3 / (111320 * Math.cos((lat * Math.PI) / 180));
+  return { type: "Polygon", coordinates: [[[lng - dLng, lat - dLat], [lng + dLng, lat - dLat], [lng + dLng, lat + dLat], [lng - dLng, lat + dLat], [lng - dLng, lat - dLat]]] };
+}
+
+// Bouton « 2D / 3D » : bascule l'inclinaison de la carte.
+class TiltControl implements maplibregl.IControl {
+  private map?: maplibregl.Map; private box?: HTMLDivElement; private button?: HTMLButtonElement;
+  private sync = () => {
+    if (!this.map || !this.button) return;
+    const tilted = this.map.getPitch() > 5;
+    this.button.textContent = tilted ? "2D" : "3D";
+    const label = tilted ? "Passer en vue 2D (à plat)" : "Passer en vue 3D (inclinée)";
+    this.button.title = label; this.button.setAttribute("aria-label", label);
+  };
+  onAdd(map: maplibregl.Map) {
+    this.map = map;
+    this.box = document.createElement("div"); this.box.className = "maplibregl-ctrl maplibregl-ctrl-group gp-tilt";
+    this.button = document.createElement("button"); this.button.type = "button"; this.button.className = "gp-tilt-btn";
+    this.button.onclick = () => map.easeTo({ pitch: map.getPitch() > 5 ? FLAT_PITCH : REST_PITCH, duration: 600 });
+    this.box.append(this.button);
+    map.on("pitch", this.sync); this.sync();
+    return this.box;
+  }
+  onRemove() { this.map?.off("pitch", this.sync); this.box?.remove(); this.map = undefined; }
+}
 
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 const toLine = (coords: LatLng[]): GeoJSON.Feature<GeoJSON.LineString> => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords.map(([lat, lng]) => [lng, lat]) } });
@@ -91,11 +123,14 @@ export default function ParkingMap3D({
         container: container.current,
         style: STYLE_URL,
         center: [center.lng, center.lat],
-        zoom: 12,
+        zoom: START_ZOOM,
         pitch: REST_PITCH,
         minZoom: 3,
         maxZoom: 19,
         maxPitch: 70,
+        dragRotate: true,
+        touchPitch: true,
+        touchZoomRotate: true,
         failIfMajorPerformanceCaveat: false,
         attributionControl: { compact: true },
       });
@@ -111,28 +146,45 @@ export default function ParkingMap3D({
       if (!loaded && !ev.sourceId && !ev.tile) { console.warn("[GOVAPARK] Erreur de style de carte", ev.error); giveUp(); }
     });
     watchdog = window.setTimeout(giveUp, 20000);
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+    // Gestes à deux doigts : pincer = zoom, tourner = cap, glisser verticalement = inclinaison.
+    map.touchZoomRotate.enable(); map.touchZoomRotate.enableRotation(); map.touchPitch.enable(); map.dragRotate.enable();
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showCompass: true, showZoom: true }), "bottom-right");
+    map.addControl(new TiltControl(), "bottom-right");
     map.on("zoomend", () => setZoom(map.getZoom()));
     map.on("moveend", () => { const c = map.getCenter(); cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
     map.on("load", () => {
       loaded = true;
       window.clearTimeout(watchdog);
-      // Bâtiments en volume : on ajoute la couche si le style n'en a pas.
-      const layers = map.getStyle().layers ?? [];
-      if (!layers.some((l) => l.type === "fill-extrusion")) {
+      // Bâtiments en volume bien visibles dès le zoom 15 : on renforce la couche du style (hauteur pleine dès z15), sinon on l'ajoute.
+      const heightExpr: maplibregl.ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["coalesce", ["get", "render_height"], 9]];
+      const baseExpr: maplibregl.ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["coalesce", ["get", "render_min_height"], 0]];
+      const extrusions = (map.getStyle().layers ?? []).filter((l) => l.type === "fill-extrusion");
+      if (extrusions.length) {
+        extrusions.forEach((l) => {
+          try {
+            map.setPaintProperty(l.id, "fill-extrusion-height", heightExpr);
+            map.setPaintProperty(l.id, "fill-extrusion-base", baseExpr);
+            map.setPaintProperty(l.id, "fill-extrusion-opacity", 0.92);
+            map.setPaintProperty(l.id, "fill-extrusion-color", ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 9], 0, "#e4dfd6", 40, "#cfc8bb", 120, "#b9b1a3"]);
+          } catch (error) { console.warn("[GOVAPARK] Réglage des bâtiments 3D", error); }
+        });
+      } else {
         const source = Object.entries(map.getStyle().sources).find(([, s]) => s.type === "vector")?.[0];
         if (source) {
           map.addLayer({
             id: "gp-buildings-3d", type: "fill-extrusion", source, "source-layer": "building", minzoom: 14,
-            paint: {
-              "fill-extrusion-color": "#d9d6cf",
-              "fill-extrusion-height": ["coalesce", ["get", "render_height"], 10],
-              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-              "fill-extrusion-opacity": 0.85,
-            },
+            paint: { "fill-extrusion-color": "#d9d6cf", "fill-extrusion-height": heightExpr, "fill-extrusion-base": baseExpr, "fill-extrusion-opacity": 0.92 },
           });
         }
       }
+      // Lumière douce depuis l'avant-gauche pour que les volumes ressortent.
+      try { map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.45, position: [1.4, 210, 45] }); } catch { /* facultatif */ }
+      // Places en plots 3D colorés (même couleur que les pastilles).
+      map.addSource("gp-spots", { type: "geojson", data: emptyFc() });
+      map.addLayer({
+        id: "gp-spots-3d", type: "fill-extrusion", source: "gp-spots", minzoom: 16,
+        paint: { "fill-extrusion-color": ["get", "color"], "fill-extrusion-height": 2.2, "fill-extrusion-base": 0, "fill-extrusion-opacity": 0.95 },
+      });
       map.addSource("gp-route", { type: "geojson", data: emptyFc() });
       map.addSource("gp-alts", { type: "geojson", data: emptyFc() });
       map.addLayer({ id: "gp-alts-line", type: "line", source: "gp-alts", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#9aa0b4", "line-width": 7, "line-opacity": 0.9 } });
@@ -154,7 +206,7 @@ export default function ParkingMap3D({
     const changed = previousCenter.current.lat !== center.lat || previousCenter.current.lng !== center.lng;
     previousCenter.current = center;
     if (!map || !changed) return;
-    map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), 14), duration: 600 });
+    map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM), duration: 600 });
   }, [center]);
 
   // Cap calculé depuis les positions successives.
@@ -267,6 +319,20 @@ export default function ParkingMap3D({
       return new maplibregl.Marker({ element: node }).setLngLat([listing.longitude, listing.latitude]).setPopup(popup).addTo(map);
     })];
   }, [ready, listings, confirmedIds, detailed, routeListingIds, canBook, Math.floor(zoom)]);
+
+  // Plots 3D des places : vert uniquement si le statut est vert (source fiable), jamais par défaut.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const source = map.getSource("gp-spots") as maplibregl.GeoJSONSource | undefined;
+    source?.setData({
+      type: "FeatureCollection",
+      features: listings.map((listing) => {
+        const key = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
+        return { type: "Feature" as const, properties: { color: PLOT_COLORS[key] ?? PLOT_COLORS.gray }, geometry: plotPolygon(listing.latitude, listing.longitude) };
+      }),
+    });
+  }, [ready, listings, confirmedIds]);
 
   // Signalements.
   useEffect(() => {

@@ -662,3 +662,15 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 /* Carte 3D indisponible : message explicite au lieu d'un repli silencieux */
 .map3d-notice { position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: 132px; max-width: calc(100% - 24px); display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: #fff; color: #17142b; font: 800 12.5px/1.25 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; }
 .map3d-notice button { min-height: 44px; min-width: 44px; padding: 0 12px; border: 0; border-radius: 999px; background: #6d4ae0; color: #fff; font: 800 12.5px "Manrope", sans-serif; }
+
+/* Bouton 2D/3D et boussole */
+.gp-tilt-btn { width: 44px; height: 44px; font: 800 14px "Manrope", sans-serif; color: #17142b; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button { width: 44px; height: 44px; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { opacity: 1; }
+
+/* Pastilles de places en relief (3D-like), couleurs du statut inchangées */
+.pk-pill, .pk-dot { background-image: radial-gradient(circle at 30% 22%, #ffffff66, #ffffff00 55%), linear-gradient(180deg, #ffffff26, #00000030); box-shadow: 0 4px 0 #00000038, 0 9px 14px #1b1e3a66; }
+.pk-pill:hover, .pk-dot:hover { box-shadow: 0 5px 0 #00000038, 0 11px 16px #1b1e3a66; }
+@media (max-width: 899px) {
+  .pk-dot, .pk-pill { box-shadow: 0 4px 0 #00000038, 0 8px 12px #1b1e3a66; }
+}
