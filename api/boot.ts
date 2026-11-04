@@ -82,6 +82,12 @@ app.use("/api/*", async (c, next) => {
   }
   await next();
 });
+// Service worker : toujours revalide (jamais de cache long), servi a la racine pour couvrir tout le site.
+app.use("/sw.js", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-cache");
+  c.header("Service-Worker-Allowed", "/");
+});
 app.use("/api/trpc/*", bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 app.use("/api/trpc/*", async (c) => {

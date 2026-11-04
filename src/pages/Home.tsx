@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +12,8 @@ import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { STATUS_COLORS } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
+import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
+import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
 
 type Filters = { maxPrice: number; maxDistance: number; type: string; covered: string; minHeight: number; minLength: number; minWidth: number; accessible: boolean; priceMode: "tous" | "free" | "paid"; category: "private" | "public" | "collective"; from: string; to: string };
@@ -19,7 +21,7 @@ const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", 
 const reportTitle = { free: "Place signalée libre", occupied: "Place signalée occupée", departure: "Départ annoncé" };
 type RouteStep = { instruction: string; distance: number; location: [number, number] };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
-type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number };
+type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean };
 function distanceToSegmentMeters(point: {lat:number;lng:number}, a: [number,number], b: [number,number]) {
   const latScale = 111320, lngScale = 111320 * Math.cos(point.lat * Math.PI / 180);
   const px = point.lng * lngScale, py = point.lat * latScale;
@@ -117,7 +119,23 @@ export default function Home() {
     };
   }, [visibleCenter.lat, visibleCenter.lng, filters, onlyAvailable, drivingRoute]);
   const searchQuery = trpc.govapark.listings.search.useQuery(searchInput, { staleTime: 10000, refetchInterval: 30000, placeholderData: (previous) => previous });
-  const listingsQuery = { data: searchQuery.data?.items, isLoading: searchQuery.isLoading, error: searchQuery.error, refetch: searchQuery.refetch };
+  // Mode hors ligne : jamais de "disponible" issu d'un cache. Hors ligne (ou serveur en erreur), les places affichées
+  // viennent de la dernière réponse enregistrée localement et passent en gris/inconnu avec la date d'actualisation.
+  const online = useOnlineStatus();
+  const [offlineOpen, setOfflineOpen] = useState(false);
+  const cacheMode = !online || searchQuery.isError;
+  const cachedPlaces = useMemo(() => (cacheMode && !searchQuery.data ? loadPlaces<NonNullable<typeof searchQuery.data>["items"][number]>() : null), [cacheMode, searchQuery.data]);
+  const placesSavedAt = cacheMode ? (searchQuery.data ? searchQuery.dataUpdatedAt : cachedPlaces?.savedAt ?? 0) : 0;
+  useEffect(() => {
+    if (online && !searchQuery.isError && !searchQuery.isPlaceholderData && searchQuery.data?.items.length) savePlaces(searchQuery.data.items);
+  }, [online, searchQuery.isError, searchQuery.isPlaceholderData, searchQuery.data]);
+  const listingsData = useMemo(() => {
+    if (!cacheMode) return searchQuery.data?.items;
+    const base = searchQuery.data?.items ?? cachedPlaces?.items ?? [];
+    const status = offlineStatus(placesSavedAt);
+    return base.map((item) => ({ ...item, currentAvailability: "unknown" as unknown as typeof item.currentAvailability, parkingStatus: status as unknown as typeof item.parkingStatus }));
+  }, [cacheMode, searchQuery.data, cachedPlaces, placesSavedAt]);
+  const listingsQuery = { data: listingsData, isLoading: searchQuery.isLoading, error: cacheMode ? null : searchQuery.error, refetch: searchQuery.refetch };
 
   const listings = useMemo(() => listingsQuery.data ?? [], [listingsQuery.data]);
   const searchNote = searchQuery.data?.note ?? null;
@@ -334,7 +352,13 @@ export default function Home() {
           if (attempt.ok) { response = attempt; break; }
         } catch { /* serveur suivant */ }
       }
-      if (!response) throw new Error("Aucun serveur d’itinéraire ne répond pour le moment. Réessayez dans quelques instants.");
+      if (!response) {
+        // Pas d'itinéraire fabriqué : distance à vol d'oiseau et ligne droite étiquetée, sans guidage.
+        const km = straightLineKm(origin.lat, origin.lng, destination.lat, destination.lng);
+        const line: DrivingRoute = { id: "offline-line", label: navigator.onLine === false ? "Itinéraire indisponible hors ligne" : "Itinéraire indisponible (service injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: km * 1000, duration: 0, destinationId: listingId, steps: [], offline: true };
+        setRouteOptions([line]); setDrivingRoute(line);
+        return;
+      }
       const data = await response.json() as { routes?: Array<{geometry:{coordinates:[number,number][]};distance:number;duration:number;legs?:Array<{steps?:Array<{distance:number;name?:string;mode?:string;maneuver?:{type?:string;modifier?:string;location:[number,number]}}>}>}>};
       const rawRoutes = data.routes ?? [];
       if (!rawRoutes.length) throw new Error("Aucun itinéraire trouvé");
@@ -506,7 +530,9 @@ export default function Home() {
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
   return (
-    <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}`}>
+    <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${online ? "" : " is-offline"}`}>
+      <OfflineBanner online={online} savedAt={placesSavedAt} />
+      {offlineOpen && <OfflineDownloadModal center={visibleCenter} basemap={hasWebGL ? "vector" : "raster"} onClose={() => setOfflineOpen(false)} />}
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
           <Suspense fallback={null}>
@@ -559,6 +585,7 @@ export default function Home() {
           <button onClick={() => { setMenuOpen(false); void enableProximityAlerts(); }}><ThumbsUp size={19} />Alerte place à 800 m</button>
           <button onClick={() => { setMenuOpen(false); void enableBackgroundAlerts(); }}><Clock3 size={19} />Alertes en arrière-plan</button>
           {drivingRoute && <button onClick={() => { setMenuOpen(false); toggleVoice(); }}><Navigation size={19} />{voiceGuidanceEnabled ? "Couper la voix" : "Guidage vocal"}</button>}
+          <button onClick={() => { setMenuOpen(false); setOfflineOpen(true); }}><Download size={19} />Carte hors ligne</button>
           <button onClick={() => navigate("/messages")}><Mail size={19} />Messages</button>
           <button onClick={() => navigate("/mobilite")}><Fuel size={19} />Mobilité</button>
           <p className="m-menu-note"><ShieldAlert size={14} />Voie publique : infos de la communauté, sans garantie de place libre.</p>
@@ -570,10 +597,10 @@ export default function Home() {
             <button className="m-fab" onClick={() => setReportOpen(true)}><Plus size={20} />Signaler</button>
           </div>
           {drivingRoute ? <><div className="m-route">
-            <div className="m-route-main"><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></div>
+            <div className="m-route-main">{drivingRoute.offline ? <><strong>{meters(drivingRoute.distance)}</strong><span>à vol d’oiseau · {drivingRoute.label}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">
 {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.fuelCost != null ? ` · ${option.fuelCost.toFixed(1).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
-<button className="m-route-start" onClick={() => { if (!trackingGps) locate(); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button></div>
+{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={() => { if (!trackingGps) locate(); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute}><X size={18} /><span>Arrêter</span></button>
           </div>
           <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>
@@ -618,7 +645,7 @@ export default function Home() {
           <div className="learned-zone-panel"><strong>Historique intelligent des zones</strong><small>{learnedPredictions.data?.totalObservations ?? 0} observations enregistrées dans un rayon de 5 km · 90 derniers jours</small>{(learnedPredictions.data?.predictions ?? []).slice(0,3).map((zone) => <div key={`${zone.cellKey}-${zone.weekday}-${zone.hour}`}><span>{zone.score}/100 · {zone.confidence === "élevée" ? "confiance élevée" : zone.confidence === "moyenne" ? "confiance moyenne" : "confiance faible"}</span><small>{zone.observations} observations · {zone.freeSignals} libres · {zone.occupiedSignals} occupées</small></div>)}{!learnedPredictions.data?.predictions.length && <small>Le moteur attend davantage de confirmations réelles pour établir des tendances horaires fiables.</small>}</div>
           <small className="prediction-footnote">Indice expérimental. Les prévisions reposent sur les observations communautaires des 90 derniers jours, regroupées par zone, jour et heure. Elles ne garantissent jamais une place libre.</small>
         </section>}
-        {drivingRoute && <section className="route-results"><div><strong>{routeOptions.length > 1 ? `Vos ${routeOptions.length} alternatives de trajet` : "Votre trajet"}</strong><span>{(drivingRoute.distance/1000).toFixed(1)} km · {Math.round(drivingRoute.duration/60)} min</span></div>
+        {drivingRoute && !drivingRoute.offline && <section className="route-results"><div><strong>{routeOptions.length > 1 ? `Vos ${routeOptions.length} alternatives de trajet` : "Votre trajet"}</strong><span>{(drivingRoute.distance/1000).toFixed(1)} km · {Math.round(drivingRoute.duration/60)} min</span></div>
           <div className="route-options">{routeOptions.map((option)=> <button key={option.id} className={`route-option ${drivingRoute.id===option.id?"selected":""}`} onClick={()=>{setDrivingRoute(option);void refreshRouteServices(option);spokenStepIndex.current=0;}}><strong>{option.label}</strong><span>{(option.distance/1000).toFixed(1)} km · {Math.round(option.duration/60)} min</span>{option.fuelPrice!=null?<small>Carburant estimé : {((option.distance/1000)*(fuelConsumption/100)*option.fuelPrice).toFixed(2)} €</small>:<small>Coût carburant indisponible</small>}</button>)}</div>
           <div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destinationChosen)void calculateRoutes(target,search.trim());else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>
           <p>{routeServices.length} services et points d’intérêt repérés autour du trajet sélectionné · {routeListings.length} place(s) privée(s) disponible(s) à moins de 900 m</p>
@@ -635,6 +662,7 @@ export default function Home() {
           <button onClick={() => { setDraftFilters(filters); setFiltersOpen(true); }}>Prix · hauteur</button>
         </div>
         <div className="listing-results">
+          {cacheMode && <div className="empty-state"><p><b>Hors ligne – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; vérifiez la disponibilité une fois reconnecté.</p></div>}
           {listingsQuery.isLoading && [1,2,3].map((item) => <div className="listing-skeleton" key={item} />)}
           {listingsQuery.error && <div className="empty-state"><p>Impossible de charger les annonces.</p><button className="btn btn-secondary" onClick={() => listingsQuery.refetch()}>Réessayer</button></div>}
           {!listingsQuery.isLoading && filtered.length === 0 && <div className="empty-state"><h3>Aucune place ne correspond</h3><p>Élargissez vos filtres ou déplacez la carte.</p><button className="btn btn-secondary" onClick={() => setFilters(initialFilters)}>Réinitialiser les filtres</button></div>}
