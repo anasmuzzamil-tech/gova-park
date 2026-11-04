@@ -578,3 +578,6 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-route-options button.on em { background: #ffffff33; color: #fff; }
 .m-route-stop { flex-shrink: 0; width: 38px; padding: 0; justify-content: center; }
 .m-route-stop span { display: none; }
+
+.m-route-body { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.m-route-start { height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 22px; background: #12a150; color: #fff; font-size: 16px; font-weight: 800; box-shadow: 0 6px 16px #12a15044; }
