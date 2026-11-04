@@ -1,5 +1,6 @@
 import { env } from "./lib/env";
 import { calculatePrice } from "@contracts/pricing";
+import { meterCostCents } from "@contracts/meter";
 
 // MODE DEMO : actif automatiquement tant que DATABASE_URL n'est pas renseignee.
 // Le site s'ouvre directement sur la carte avec des places d'exemple, sans connexion ni base.
@@ -169,3 +170,24 @@ export function demoCancelReservation(id: number) {
   return { status: "cancelled" as const };
 }
 
+
+// Compteur de stationnement en memoire (mode demo) : l'heure de depart est gardee cote serveur,
+// donc le compteur reste coherent apres actualisation de la page (perdu au redemarrage du serveur).
+export type DemoMeter = { id: number; userId: number; label: string; address: string | null; latitude: number | null; longitude: number | null; hourlyCents: number | null; startedAt: Date; endedAt: Date | null; totalCents: number | null };
+const meterStore: DemoMeter[] = [];
+let nextMeterId = 1;
+export function demoMeterCurrent() { return meterStore.find((s) => !s.endedAt) ?? null; }
+export function demoMeterStart(input: { label: string; address?: string | null; latitude?: number | null; longitude?: number | null; hourlyCents?: number | null }) {
+  if (demoMeterCurrent()) throw new Error("Un stationnement est déjà en cours. Arrêtez-le avant d’en démarrer un autre.");
+  const session: DemoMeter = { id: nextMeterId++, userId: demoUser.id, label: input.label, address: input.address ?? null, latitude: input.latitude ?? null, longitude: input.longitude ?? null, hourlyCents: input.hourlyCents ?? null, startedAt: new Date(), endedAt: null, totalCents: null };
+  meterStore.push(session);
+  return session;
+}
+export function demoMeterStop() {
+  const session = demoMeterCurrent();
+  if (!session) throw new Error("Aucun stationnement en cours.");
+  session.endedAt = new Date();
+  session.totalCents = meterCostCents(session.hourlyCents, session.startedAt, session.endedAt);
+  return session;
+}
+export function demoMeterHistory() { return meterStore.filter((s) => s.endedAt).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()).slice(0, 50); }

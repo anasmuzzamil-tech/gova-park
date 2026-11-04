@@ -30,3 +30,7 @@ Mots de passe hachés, routes protégées, validation des entrées, en-têtes de
 
 ## Cartographie et services externes
 Tuiles OpenFreeMap (carte 3D), repli OpenStreetMap, adresses via api-adresse.data.gouv.fr, trajets via OSRM public, prix carburant via data.economie.gouv.fr. Tous gratuits et sans clé ; ne pas multiplier les requêtes inutiles.
+
+## Compteur de stationnement (page /compteur)
+- Mode démo : sessions gardées en mémoire du serveur (perdues au redémarrage).
+- Mode réel (DATABASE_URL) : table `parkingSessions` (créée par `drizzle-kit push` au démarrage, voir `db/migrations/0014_compteur_stationnement.sql`). Heure de départ enregistrée côté serveur, donc cohérente après actualisation ou reconnexion. Le tarif est une estimation au prorata de la minute, jamais un paiement.

@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gt, lt, ne, inArray, or, isNull, desc, count } from "drizzle-orm";
+import { and, eq, gt, lt, ne, inArray, or, isNull, desc, count, sql } from "drizzle-orm";
 import { createRouter, publicQuery, authedQuery, adminQuery, ownerQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices } from "@db/schema";
+import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices, parkingSessions } from "@db/schema";
 import { calculatePrice, overlaps } from "@contracts/pricing";
+import { meterCostCents } from "@contracts/meter";
 import { storage } from "./lib/storage";
-import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture } from "./demo";
+import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -276,6 +277,42 @@ export const govaparkRouter = createRouter({
     }),
   }),
 
+  meter: createRouter({
+    // Compteur de stationnement. L'heure de depart est enregistree cote serveur : le compteur reste
+    // coherent apres actualisation ou reconnexion. serverNow evite les ecarts d'horloge du telephone.
+    current: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return { session: demoMeterCurrent(), serverNow: new Date() };
+      const [session] = await getDb().select().from(parkingSessions).where(and(eq(parkingSessions.userId, ctx.user.id), isNull(parkingSessions.endedAt))).orderBy(desc(parkingSessions.startedAt)).limit(1);
+      return { session: session ?? null, serverNow: new Date() };
+    }),
+    start: authedQuery.input(z.object({
+      label: z.string().trim().min(1).max(160),
+      address: z.string().trim().max(255).optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+      hourlyCents: z.number().int().min(0).max(10000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      if (isDemoMode) { try { return demoMeterStart({ ...input, hourlyCents: input.hourlyCents || null }); } catch (e) { throw new TRPCError({ code: "CONFLICT", message: e instanceof Error ? e.message : "Démarrage impossible." }); } }
+      const [running] = await getDb().select({ id: parkingSessions.id }).from(parkingSessions).where(and(eq(parkingSessions.userId, ctx.user.id), isNull(parkingSessions.endedAt))).limit(1);
+      if (running) throw new TRPCError({ code: "CONFLICT", message: "Un stationnement est déjà en cours. Arrêtez-le avant d’en démarrer un autre." });
+      const [created] = await getDb().insert(parkingSessions).values({ userId: ctx.user.id, label: input.label, address: input.address || null, latitude: input.latitude ?? null, longitude: input.longitude ?? null, hourlyCents: input.hourlyCents || null }).$returningId();
+      const [session] = await getDb().select().from(parkingSessions).where(eq(parkingSessions.id, created.id)).limit(1);
+      return session;
+    }),
+    stop: authedQuery.mutation(async ({ ctx }) => {
+      if (isDemoMode) { try { return demoMeterStop(); } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Arrêt impossible." }); } }
+      const [session] = await getDb().select().from(parkingSessions).where(and(eq(parkingSessions.userId, ctx.user.id), isNull(parkingSessions.endedAt))).orderBy(desc(parkingSessions.startedAt)).limit(1);
+      if (!session) throw new TRPCError({ code: "BAD_REQUEST", message: "Aucun stationnement en cours." });
+      const endedAt = new Date();
+      const totalCents = meterCostCents(session.hourlyCents, session.startedAt, endedAt);
+      await getDb().update(parkingSessions).set({ endedAt, totalCents }).where(eq(parkingSessions.id, session.id));
+      return { ...session, endedAt, totalCents };
+    }),
+    history: authedQuery.query(async ({ ctx }) => {
+      if (isDemoMode) return demoMeterHistory();
+      return getDb().select().from(parkingSessions).where(and(eq(parkingSessions.userId, ctx.user.id), sql`${parkingSessions.endedAt} is not null`)).orderBy(desc(parkingSessions.startedAt)).limit(50);
+    }),
+  }),
   owner: createRouter({
     submitVerification: ownerQuery.input(z.object({ legalName: z.string().trim().min(2).max(180), phone: z.string().trim().min(6).max(40) })).mutation(async ({ ctx, input }) => {
       await getDb().insert(ownerVerifications).values({ userId: ctx.user.id, status: "pending", legalName: input.legalName, phone: input.phone, submittedAt: new Date(), reviewedAt: null, adminNote: null }).onDuplicateKeyUpdate({ set: { status: "pending", legalName: input.legalName, phone: input.phone, submittedAt: new Date(), reviewedAt: null, adminNote: null } });

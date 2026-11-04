@@ -274,3 +274,18 @@ export const pushDevices = mysqlTable("pushDevices", {
   lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ userActiveIndex: index("push_devices_user_active_idx").on(table.userId, table.isActive) }));
+
+// Compteur de stationnement : une session par stationnement suivi (endedAt vide = en cours).
+export const parkingSessions = mysqlTable("parkingSessions", {
+  id: serial("id").primaryKey(),
+  userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+  label: varchar("label", { length: 160 }).notNull(),
+  address: varchar("address", { length: 255 }),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  hourlyCents: int("hourlyCents"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  endedAt: timestamp("endedAt"),
+  totalCents: int("totalCents"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ userIndex: index("parking_sessions_user_idx").on(table.userId, table.endedAt) }));

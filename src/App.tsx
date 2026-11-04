@@ -16,6 +16,7 @@ import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 import Messages from "@/pages/Messages";
 import Mobility from "@/pages/Mobility";
+import Meter from "@/pages/Meter";
 import { useAuth } from "@/hooks/useAuth";
 
 function ResumeAfterLogin() {
@@ -39,6 +40,7 @@ export default function App() {
       <Route path="/reserver/:id" element={<BookingFlow />} />
       <Route path="/reservations" element={<Reservations />} />
       <Route path="/messages" element={<Messages />} />
+      <Route path="/compteur" element={<Meter />} />
       <Route path="/mobilite" element={<Mobility />} />
       <Route path="/proposer" element={<Owner />} />
       <Route path="/profil" element={<Profile />} />
