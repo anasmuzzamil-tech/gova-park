@@ -107,6 +107,8 @@ export default function ParkingMap3D({
   const carBadge = useRef<HTMLElement | null>(null);
   const lastFix = useRef<Center | null>(null);
   const previousCenter = useRef(center);
+  const initialCenter = useRef(center);
+  const autoFitDone = useRef(false); // cadrage initial : une seule fois, jamais après une action de l'utilisateur
 
   // Création de la carte (une seule fois).
   useEffect(() => {
@@ -160,6 +162,7 @@ export default function ParkingMap3D({
     map.touchZoomRotate.enable(); map.touchZoomRotate.enableRotation(); map.touchPitch.enable(); map.dragRotate.enable();
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showCompass: true, showZoom: true }), "bottom-right");
     map.addControl(new TiltControl(), "bottom-right");
+    map.on("movestart", (e) => { if ((e as { originalEvent?: unknown }).originalEvent) autoFitDone.current = true; });
     map.on("zoomend", () => setZoom(map.getZoom()));
     map.on("moveend", () => { const c = map.getCenter(); lastView.current = { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
     map.on("load", () => {
@@ -215,6 +218,7 @@ export default function ParkingMap3D({
     const map = mapRef.current;
     const changed = previousCenter.current.lat !== center.lat || previousCenter.current.lng !== center.lng;
     previousCenter.current = center;
+    if (changed) autoFitDone.current = true;
     if (!map || !changed) return;
     map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM), duration: 600 });
   }, [center]);
@@ -251,6 +255,33 @@ export default function ParkingMap3D({
     map.fitBounds(bounds, { padding: { top: 150, bottom: 170, left: 60, right: 60 }, maxZoom: 16, pitch: REST_PITCH, bearing: 0, duration: 800 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, routeCoordinates, following, routeFocus]);
+
+  // Cadrage initial (sans trajet ni recherche) : les places les plus proches du centre sont visibles, au-dessus du panneau du bas et sous la barre du haut.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || autoFitDone.current || listings.length === 0) return;
+    if (routeCoordinates && routeCoordinates.length > 1) { autoFitDone.current = true; return; }
+    if (userPosition) { autoFitDone.current = true; return; }
+    autoFitDone.current = true;
+    const from = initialCenter.current;
+    const nearest = [...listings]
+      .map((l) => ({ l, d: metersBetween(from, { lat: l.latitude, lng: l.longitude }) }))
+      .sort((a, b) => a.d - b.d).slice(0, 4);
+    const bounds = new maplibregl.LngLatBounds([from.lng, from.lat], [from.lng, from.lat]);
+    nearest.forEach(({ l }) => bounds.extend([l.longitude, l.latitude]));
+    const box = map.getContainer().getBoundingClientRect();
+    const sheet = document.querySelector(".m-sheet")?.getBoundingClientRect();
+    const chips = document.querySelector(".m-chips")?.getBoundingClientRect();
+    const top = Math.round(Math.max(110, (chips ? chips.bottom - box.top : 0) + 16));
+    const bottom = Math.round(Math.max(120, sheet ? box.bottom - sheet.top + 24 : 260));
+    const padding = { top, bottom: Math.min(bottom, Math.round(box.height * 0.6)), left: 50, right: 50 };
+    try {
+      const cam = map.cameraForBounds(bounds, { padding, maxZoom: 16 });
+      const zoom = Math.max(cam?.zoom ?? START_ZOOM, 14.4); // pas trop éloigné : les bâtiments 3D restent visibles
+      if (cam?.center) map.easeTo({ center: cam.center, zoom, pitch: REST_PITCH, bearing: 0, duration: 700 });
+    } catch (error) { console.warn("[GOVAPARK] Cadrage initial impossible", error); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, listings, routeCoordinates, userPosition]);
 
   // Caméra qui suit la voiture en 3D.
   useEffect(() => {
