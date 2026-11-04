@@ -633,7 +633,7 @@ export default function Home() {
           </div></> : <>
             <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
             <div className="m-cards">
-              {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} />)}
+              {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
               {searchNote && <div className="m-empty">{searchNote}</div>}
               {searchTruncated && <div className="m-empty">Trop de places dans cette zone : seules les 300 premières sont chargées. Zoomez ou affinez les filtres.</div>}
               {!listingsQuery.isLoading && !searchNote && nearby.length === 0 && <div className="m-empty">Aucune place avec ces filtres. <button onClick={() => { setFilters(initialFilters); setOnlyAvailable(false); }}>Tout afficher</button></div>}
@@ -681,7 +681,7 @@ export default function Home() {
           {cacheMode && <div className="empty-state">{online
             ? <p><b>Serveur injoignable pour le moment – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; réessayez dans un instant.</p>
             : <p><b>Hors ligne – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; vérifiez la disponibilité une fois reconnecté.</p>}</div>}
-          {listingsQuery.isLoading && [1,2,3].map((item) => <div className="listing-skeleton" key={item} />)}
+          {listingsQuery.isLoading && [1,2,3].map((item) => <div className="listing-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
           {listingsQuery.error && <div className="empty-state"><p>Impossible de charger les annonces.</p><button className="btn btn-secondary" onClick={() => listingsQuery.refetch()}>Réessayer</button></div>}
           {!listingsQuery.isLoading && filtered.length === 0 && <div className="empty-state"><h3>Aucune place ne correspond</h3><p>Élargissez vos filtres ou déplacez la carte.</p><button className="btn btn-secondary" onClick={() => setFilters(initialFilters)}>Réinitialiser les filtres</button></div>}
           {filtered.map((listing) => <button className="listing-row" key={listing.id} onClick={() => navigate(`/place/${listing.id}`)}>

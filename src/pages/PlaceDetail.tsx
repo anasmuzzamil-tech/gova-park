@@ -33,7 +33,15 @@ export default function PlaceDetail() {
   const favoriteIds = trpc.govapark.favorites.ids.useQuery(undefined, { enabled: isAuthenticated });
   const toggleFavorite = trpc.govapark.favorites.toggle.useMutation({ onSuccess: () => favoriteIds.refetch() });
   const query = trpc.govapark.listings.byId.useQuery({ id: Number(id) }, { enabled: Boolean(id) });
-  if (query.isLoading) return <div className="page-loading"><span className="loader" />Chargement de la place…</div>;
+  if (query.isLoading) return (
+    <div className="detail-page" role="status" aria-busy="true" aria-label="Chargement de la place">
+      <div className="detail-topbar"><span className="skel skel-btn" /></div>
+      <div className="detail-grid">
+        <div><div className="skel skel-photo" /><span className="skel skel-line w60" /><span className="skel skel-line" /><span className="skel skel-line" /><span className="skel skel-line w60" /></div>
+        <aside><div className="skel skel-card" /></aside>
+      </div>
+    </div>
+  );
   if (query.error || !query.data) return <div className="empty-state page-empty"><h1>Annonce introuvable</h1><button className="btn btn-primary" onClick={() => navigate("/")}>Retour à la carte</button></div>;
   const place = query.data;
   const isFavorite = favoriteIds.data?.includes(place.id) ?? false;
