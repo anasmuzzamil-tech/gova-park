@@ -8,7 +8,7 @@ import ParkingMap, { type MapReport } from "@/components/ParkingMap";
 import { Map3DBoundary } from "@/components/Map3DBoundary";
 import { detectWebGL, importWithRetry } from "@/lib/webgl";
 const ParkingMap3D = lazy(() => importWithRetry(() => import("@/components/ParkingMap3D")));
-const hasWebGL = detectWebGL();
+const initialWebGL = detectWebGL();
 import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { STATUS_COLORS } from "@contracts/parking-status";
@@ -557,12 +557,13 @@ export default function Home() {
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: setVisibleCenter,
   };
   // Carte 3D : si elle ne peut pas s'afficher, on l'explique (au lieu d'un repli silencieux) et on réessaie automatiquement.
-  const [map3dFail, setMap3dFail] = useState<null | "webgl" | "load">(hasWebGL ? null : "webgl");
+  const [map3dFail, setMap3dFail] = useState<null | "webgl" | "load">(initialWebGL ? null : "webgl");
   const [map3dKey, setMap3dKey] = useState(0);
-  const retry3D = () => { setMap3dFail(null); setMap3dKey((k) => k + 1); };
+  // Nouveau test WebGL à chaque essai : sur iPhone, le contexte peut revenir après une perte ou une mise en veille.
+  const retry3D = () => { if (!detectWebGL()) { setMap3dFail("webgl"); return; } setMap3dFail(null); setMap3dKey((k) => k + 1); };
   const autoRetries = useRef(0);
   useEffect(() => {
-    if (map3dFail !== "load" || !hasWebGL || autoRetries.current >= 3) return;
+    if (!map3dFail || autoRetries.current >= 3) return;
     const timer = window.setTimeout(() => { autoRetries.current += 1; retry3D(); }, 20000);
     return () => window.clearTimeout(timer);
   }, [map3dFail]);
@@ -570,12 +571,12 @@ export default function Home() {
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />
-      {offlineOpen && <OfflineDownloadModal center={visibleCenter} basemap={hasWebGL ? "vector" : "raster"} onClose={() => setOfflineOpen(false)} />}
+      {offlineOpen && <OfflineDownloadModal center={visibleCenter} basemap={map3dFail === "webgl" ? "raster" : "vector"} onClose={() => setOfflineOpen(false)} />}
       <section className="map-workspace" aria-label="Recherche de stationnement">
         <div className={`map-area ${view === "list" ? "mobile-hidden" : ""}`}>
           {map3dFail && <div className="map3d-notice" role="status">
             <span>{map3dFail === "webgl" ? "Carte 3D indisponible sur cet appareil (WebGL)" : "Carte 3D indisponible pour le moment (chargement impossible)"}</span>
-            {map3dFail === "load" && hasWebGL && <button type="button" onClick={retry3D}>Réessayer</button>}
+            {map3dFail && <button type="button" onClick={retry3D}>Réessayer</button>}
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>

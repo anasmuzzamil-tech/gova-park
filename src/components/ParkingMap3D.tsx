@@ -91,6 +91,8 @@ export default function ParkingMap3D({
   const [zoom, setZoom] = useState(12);
   const [heading, setHeading] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [generation, setGeneration] = useState(0); // recréation après une perte de contexte WebGL (iPhone)
+  const lastView = useRef<{ center: [number, number]; zoom: number; pitch: number; bearing: number } | null>(null);
   const detailed = zoom >= 14;
 
   // Callbacks toujours à jour sans recréer les marqueurs.
@@ -122,9 +124,10 @@ export default function ParkingMap3D({
       map = new maplibregl.Map({
         container: container.current,
         style: STYLE_URL,
-        center: [center.lng, center.lat],
-        zoom: START_ZOOM,
-        pitch: REST_PITCH,
+        center: lastView.current?.center ?? [center.lng, center.lat],
+        zoom: lastView.current?.zoom ?? START_ZOOM,
+        pitch: lastView.current?.pitch ?? REST_PITCH,
+        bearing: lastView.current?.bearing ?? 0,
         minZoom: 3,
         maxZoom: 19,
         maxPitch: 70,
@@ -146,12 +149,18 @@ export default function ParkingMap3D({
       if (!loaded && !ev.sourceId && !ev.tile) { console.warn("[GOVAPARK] Erreur de style de carte", ev.error); giveUp(); }
     });
     watchdog = window.setTimeout(giveUp, 20000);
+    // Contexte WebGL perdu (mémoire, veille) : MapLibre le restaure seul ; sinon, après 4 s, on recrée la carte à la même vue.
+    let lostTimer: number | undefined;
+    const canvas = map.getCanvas();
+    const onLost = () => { window.clearTimeout(lostTimer); lostTimer = window.setTimeout(() => { if (!removed) setGeneration((n) => n + 1); }, 4000); };
+    const onRestored = () => window.clearTimeout(lostTimer);
+    canvas.addEventListener("webglcontextlost", onLost); canvas.addEventListener("webglcontextrestored", onRestored);
     // Gestes à deux doigts : pincer = zoom, tourner = cap, glisser verticalement = inclinaison.
     map.touchZoomRotate.enable(); map.touchZoomRotate.enableRotation(); map.touchPitch.enable(); map.dragRotate.enable();
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showCompass: true, showZoom: true }), "bottom-right");
     map.addControl(new TiltControl(), "bottom-right");
     map.on("zoomend", () => setZoom(map.getZoom()));
-    map.on("moveend", () => { const c = map.getCenter(); cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
+    map.on("moveend", () => { const c = map.getCenter(); lastView.current = { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
     map.on("load", () => {
       loaded = true;
       window.clearTimeout(watchdog);
@@ -196,9 +205,9 @@ export default function ParkingMap3D({
       setZoom(map.getZoom());
       setReady(true);
     });
-    return () => { removed = true; window.clearTimeout(retryTimer); window.clearTimeout(watchdog); setReady(false); map.remove(); mapRef.current = null; };
+    return () => { removed = true; window.clearTimeout(retryTimer); window.clearTimeout(watchdog); window.clearTimeout(lostTimer); canvas.removeEventListener("webglcontextlost", onLost); canvas.removeEventListener("webglcontextrestored", onRestored); setReady(false); map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt]);
+  }, [attempt, generation]);
 
   // Recentrage quand la cible change.
   useEffect(() => {
