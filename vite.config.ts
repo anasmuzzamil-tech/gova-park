@@ -1,13 +1,15 @@
 import devServer from "@hono/vite-dev-server"
 import path from "path"
 import fs from "fs"
+import { execSync } from "child_process"
 const __dirname = import.meta.dirname
 import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // Identifiant de build : commit Render (RENDER_GIT_COMMIT) + horodatage. Different a chaque deploiement.
-const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "local").slice(0, 7)
+const gitCommit = () => { try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() } catch { return "" } }
+const commit = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || gitCommit() || "local").slice(0, 7)
 const builtAt = new Date()
 const buildId = `${commit}-${builtAt.getTime().toString(36)}`
 const buildDate = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(builtAt).replace(",", "")
