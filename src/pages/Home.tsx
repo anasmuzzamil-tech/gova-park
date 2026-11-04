@@ -11,10 +11,11 @@ const MapView = hasWebGL ? ParkingMap3D : ParkingMap;
 import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { STATUS_COLORS } from "@contracts/parking-status";
+import { bboxAround } from "@contracts/parking-search";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
 
-type Filters = { maxPrice: number; maxDistance: number; type: string; covered: string; minHeight: number };
-const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", covered: "tous", minHeight: 0 };
+type Filters = { maxPrice: number; maxDistance: number; type: string; covered: string; minHeight: number; minLength: number; minWidth: number; accessible: boolean; priceMode: "tous" | "free" | "paid"; category: "private" | "public" | "collective"; from: string; to: string };
+const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", covered: "tous", minHeight: 0, minLength: 0, minWidth: 0, accessible: false, priceMode: "tous", category: "private", from: "", to: "" };
 const reportTitle = { free: "Place signalée libre", occupied: "Place signalée occupée", departure: "Départ annoncé" };
 type RouteStep = { instruction: string; distance: number; location: [number, number] };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
@@ -51,7 +52,6 @@ export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
-  const listingsQuery = trpc.govapark.listings.list.useQuery(undefined, { staleTime: 10000, refetchInterval: 30000 });
   const reportsQuery = trpc.govapark.community.list.useQuery(undefined, { refetchInterval: 30000 });
   const myReservations = trpc.govapark.reservations.mine.useQuery(undefined, { enabled: isAuthenticated });
   const [view, setView] = useState<"map" | "list">("map");
@@ -99,8 +99,29 @@ export default function Home() {
   const [fromSuggestions, setFromSuggestions] = useState<AddressSuggestion[]>([]);
   const [departureUpdate, setDepartureUpdate] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
   const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: userPosition?.lat ?? visibleCenter.lat, longitude: userPosition?.lng ?? visibleCenter.lng, radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
+  // Chargement par zone : seule la zone affichée (ou le trajet) est demandée au serveur, avec les filtres et une limite.
+  const searchInput = useMemo(() => {
+    const round = (v: number) => Math.round(v * 100) / 100;
+    let bbox = bboxAround(visibleCenter.lat, visibleCenter.lng, filters.maxDistance);
+    if (drivingRoute && drivingRoute.coordinates.length > 1) {
+      const lats = drivingRoute.coordinates.map((c) => c[0]), lngs = drivingRoute.coordinates.map((c) => c[1]);
+      bbox = { south: Math.min(...lats) - 0.012, north: Math.max(...lats) + 0.012, west: Math.min(...lngs) - 0.018, east: Math.max(...lngs) + 0.018 };
+    }
+    const from = filters.from ? new Date(filters.from) : undefined, to = filters.to ? new Date(filters.to) : undefined;
+    return {
+      bbox: { south: round(bbox.south), north: round(bbox.north), west: round(bbox.west), east: round(bbox.east) }, limit: 300, category: filters.category,
+      maxHourlyCents: filters.maxPrice < 350 ? filters.maxPrice : undefined, placeType: filters.type === "tous" ? undefined : filters.type as "garage" | "residence" | "entreprise" | "parking",
+      covered: filters.covered === "tous" ? undefined : filters.covered === "couvert", accessible: filters.accessible || undefined, priceMode: filters.priceMode === "tous" ? undefined : filters.priceMode,
+      minLengthM: filters.minLength || undefined, minWidthM: filters.minWidth || undefined, minHeightCm: filters.minHeight || undefined,
+      onlyAvailable: onlyAvailable || undefined, from: from && to && to > from ? from : undefined, to: from && to && to > from ? to : undefined,
+    };
+  }, [visibleCenter.lat, visibleCenter.lng, filters, onlyAvailable, drivingRoute]);
+  const searchQuery = trpc.govapark.listings.search.useQuery(searchInput, { staleTime: 10000, refetchInterval: 30000, placeholderData: (previous) => previous });
+  const listingsQuery = { data: searchQuery.data?.items, isLoading: searchQuery.isLoading, error: searchQuery.error, refetch: searchQuery.refetch };
 
   const listings = useMemo(() => listingsQuery.data ?? [], [listingsQuery.data]);
+  const searchNote = searchQuery.data?.note ?? null;
+  const searchTruncated = searchQuery.data?.truncated ?? false;
   const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
   const filtered = useMemo(() => listings.filter((listing) => {
     const distance = distanceMeters(visibleCenter.lat, visibleCenter.lng, listing.latitude, listing.longitude) / 1000;
@@ -570,7 +591,9 @@ export default function Home() {
             <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
             <div className="m-cards">
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} />)}
-              {!listingsQuery.isLoading && nearby.length === 0 && <div className="m-empty">Aucune place avec ces filtres. <button onClick={() => { setFilters(initialFilters); setOnlyAvailable(false); }}>Tout afficher</button></div>}
+              {searchNote && <div className="m-empty">{searchNote}</div>}
+              {searchTruncated && <div className="m-empty">Trop de places dans cette zone : seules les 300 premières sont chargées. Zoomez ou affinez les filtres.</div>}
+              {!listingsQuery.isLoading && !searchNote && nearby.length === 0 && <div className="m-empty">Aucune place avec ces filtres. <button onClick={() => { setFilters(initialFilters); setOnlyAvailable(false); }}>Tout afficher</button></div>}
               {nearby.map(({ item, meters: away }) => <article className="m-card" key={item.id}>
                 <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                   <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
@@ -633,6 +656,14 @@ export default function Home() {
           <label>Type de place<select value={draftFilters.type} onChange={(e) => setDraftFilters({ ...draftFilters, type: e.target.value })}><option value="tous">Tous les types</option><option value="garage">Garage / box</option><option value="residence">Résidence</option><option value="entreprise">Entreprise</option><option value="parking">Parking privé</option></select></label>
           <label>Couverture<select value={draftFilters.covered} onChange={(e) => setDraftFilters({ ...draftFilters, covered: e.target.value })}><option value="tous">Couvert ou extérieur</option><option value="couvert">Couvert</option><option value="exterieur">Extérieur</option></select></label>
           <label>Hauteur minimale de la place<div className="input-suffix"><input type="number" min="0" max="450" value={draftFilters.minHeight || ""} placeholder="Indifférent" onChange={(e) => setDraftFilters({ ...draftFilters, minHeight: Number(e.target.value) })} /><span>cm</span></div></label>
+          <label>Catégorie<select value={draftFilters.category} onChange={(e) => setDraftFilters({ ...draftFilters, category: e.target.value as Filters["category"] })}><option value="private">Places privées à louer</option><option value="public">Stationnement public (voirie)</option><option value="collective">Parkings collectifs</option></select></label>
+          {draftFilters.category !== "private" && <p className="field-help">Aucune donnée réelle n’est encore branchée pour cette catégorie : rien n’est affiché plutôt que d’inventer des places.</p>}
+          <label>Tarif<select value={draftFilters.priceMode} onChange={(e) => setDraftFilters({ ...draftFilters, priceMode: e.target.value as Filters["priceMode"] })}><option value="tous">Gratuit ou payant</option><option value="free">Gratuit</option><option value="paid">Payant</option></select></label>
+          <label className="check-row"><input type="checkbox" checked={draftFilters.accessible} onChange={(e) => setDraftFilters({ ...draftFilters, accessible: e.target.checked })} /> Accessible PMR uniquement</label>
+          <label>Longueur minimale<div className="input-suffix"><input type="number" min="0" max="20" step="0.1" value={draftFilters.minLength || ""} placeholder="Indifférent" onChange={(e) => setDraftFilters({ ...draftFilters, minLength: Number(e.target.value) })} /><span>m</span></div></label>
+          <label>Largeur minimale<div className="input-suffix"><input type="number" min="0" max="5" step="0.1" value={draftFilters.minWidth || ""} placeholder="Indifférent" onChange={(e) => setDraftFilters({ ...draftFilters, minWidth: Number(e.target.value) })} /><span>m</span></div></label>
+          <label>Libre à partir de<input type="datetime-local" value={draftFilters.from} onChange={(e) => setDraftFilters({ ...draftFilters, from: e.target.value })} /></label>
+          <label>Jusqu’à<input type="datetime-local" value={draftFilters.to} onChange={(e) => setDraftFilters({ ...draftFilters, to: e.target.value })} /></label>
           <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setDraftFilters(initialFilters)}>Réinitialiser</button><button className="btn btn-primary" onClick={() => { setFilters(draftFilters); setFiltersOpen(false); }}>Afficher les résultats</button></div>
         </div>
       </Modal>}

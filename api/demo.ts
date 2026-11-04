@@ -72,6 +72,7 @@ export function demoListings() {
     longitude: p[3],
     placeType: p[4],
     covered: p[5],
+    accessible: i % 5 === 0,
     lengthM: i % 4 === 0 ? 5.2 : 4.8,
     widthM: i % 3 === 0 ? 2.6 : 2.4,
     heightCm: p[5] ? (i % 2 === 0 ? 190 : 205) : 450,
@@ -162,6 +163,10 @@ export function demoCreateReservation(input: { listingId: number; startAt: Date;
     expiresAt: new Date(now.getTime() + (listing.bookingMode === "validation" ? 24 * 3600000 : 30 * 60000)), createdAt: now, updatedAt: now,
   });
   return { id, mode: listing.bookingMode };
+}
+/** Créneaux déjà pris (réservations non annulées) pour une place : utilisés par la recherche et la prévention des doubles réservations. */
+export function demoBookedSlots(listingId?: number) {
+  return reservationsStore.filter((r) => (listingId == null || r.listingId === listingId) && !["cancelled", "refunded"].includes(r.status)).map((r) => ({ listingId: r.listingId, startAt: r.startAt, endAt: r.endAt }));
 }
 export function demoMyReservations() {
   const all = demoListings();

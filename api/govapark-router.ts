@@ -7,8 +7,9 @@ import { listings, reservations, communityReports, reportVotes, proximityAlerts,
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
+import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
-import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory } from "./demo";
+import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -104,16 +105,65 @@ export const govaparkRouter = createRouter({
       ));
       const occupiedIds = new Set(activeBookings.map((booking) => Number(booking.listingId)));
       const enriched = rows.map((row) => {
-        const schedule = JSON.parse(row.availability) as { days: number[]; start: string; end: string };
-        const minute = now.getHours() * 60 + now.getMinutes();
-        const toMinute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-        const openNow = schedule.days.includes(now.getDay()) && minute >= toMinute(schedule.start) && minute < toMinute(schedule.end);
-        const blockedNow = (JSON.parse(row.blocked) as { start: string; end: string }[]).some((period) => new Date(period.start) < horizon && new Date(period.end) > now);
+        const schedule = parseJson<Schedule>(row.availability, { days: [], start: "00:00", end: "00:00" });
+        const openNow = isOpenAt(schedule, [], now); // heure de Paris, pas celle du serveur
+        const blockedNow = parseJson<Period[]>(row.blocked, []).some((period) => new Date(period.start) < horizon && new Date(period.end) > now);
         const parkingStatus = listingStatus({ openNow, blockedNow, booked: occupiedIds.has(Number(row.id)) }, now);
         const currentAvailability: "available" | "unavailable" = parkingStatus.availability === "available" ? "available" : "unavailable";
         return { ...row, currentAvailability, parkingStatus };
       });
       return (await withPhotoUrls(enriched)).map(publicListing);
+    }),
+    search: publicQuery.input(z.object({
+      bbox: z.object({ south: z.number().min(-90).max(90), north: z.number().min(-90).max(90), west: z.number().min(-180).max(180), east: z.number().min(-180).max(180) }),
+      limit: z.number().int().min(1).max(300).default(200),
+      category: z.enum(["public", "private", "collective"]).default("private"),
+      maxHourlyCents: z.number().int().min(0).optional(), placeType: z.enum(["garage", "residence", "entreprise", "parking"]).optional(),
+      covered: z.boolean().optional(), accessible: z.boolean().optional(), priceMode: z.enum(["free", "paid"]).optional(),
+      minLengthM: z.number().min(0).max(20).optional(), minWidthM: z.number().min(0).max(5).optional(), minHeightCm: z.number().int().min(0).max(600).optional(),
+      onlyAvailable: z.boolean().optional(), from: z.date().optional(), to: z.date().optional(),
+    })).query(async ({ input }) => {
+      // Catégories jamais mélangées : cette requête ne renvoie que des places privées à louer.
+      // Le stationnement public et les parkings collectifs n'ont pas encore de source de données branchée (voir docs/DONNEES.md).
+      if (input.category !== "private") return { items: [], truncated: false, category: input.category, note: "Aucune donnée réelle n'est encore branchée pour cette catégorie : voir docs/DONNEES.md." };
+      if (input.bbox.south > input.bbox.north) throw new TRPCError({ code: "BAD_REQUEST", message: "Zone invalide." });
+      const { limit, category: _category, ...filters } = input;
+      const now = new Date();
+      let rows: Array<ReturnType<typeof demoListings>[number]>;
+      const slotsByListing = new Map<number, Slot[]>();
+      if (isDemoMode) {
+        rows = demoListings();
+        for (const slot of demoBookedSlots()) slotsByListing.set(slot.listingId, [...(slotsByListing.get(slot.listingId) ?? []), slot]);
+      } else {
+        const db = getDb();
+        const conditions = [eq(listings.status, "published"), gt(listings.latitude, input.bbox.south - 1e-9), lt(listings.latitude, input.bbox.north + 1e-9), gt(listings.longitude, input.bbox.west - 1e-9), lt(listings.longitude, input.bbox.east + 1e-9)];
+        if (input.maxHourlyCents != null) conditions.push(sql`${listings.hourlyCents} <= ${input.maxHourlyCents}`);
+        if (input.placeType) conditions.push(eq(listings.placeType, input.placeType));
+        if (input.covered != null) conditions.push(eq(listings.covered, input.covered));
+        if (input.accessible) conditions.push(eq(listings.accessible, true));
+        if (input.minHeightCm != null) conditions.push(sql`${listings.heightCm} >= ${input.minHeightCm}`);
+        rows = (await db.select().from(listings).where(and(...conditions)).limit(limit * 3)) as unknown as typeof rows;
+        const ids = rows.map((r) => Number(r.id));
+        const bookings = ids.length ? await db.select({ listingId: reservations.listingId, startAt: reservations.startAt, endAt: reservations.endAt }).from(reservations).where(and(
+          inArray(reservations.listingId, ids),
+          or(inArray(reservations.status, ["confirmed", "in_progress"]), and(eq(reservations.status, "payment_pending"), gt(reservations.expiresAt, now))),
+          gt(reservations.endAt, now),
+        )) : [];
+        for (const b of bookings) slotsByListing.set(Number(b.listingId), [...(slotsByListing.get(Number(b.listingId)) ?? []), { startAt: b.startAt, endAt: b.endAt }]);
+      }
+      const horizon = new Date(now.getTime() + 60 * 60 * 1000);
+      const enriched = rows.map((row) => {
+        if (isDemoMode) return row;
+        const schedule = parseJson<Schedule>(row.availability, { days: [], start: "00:00", end: "00:00" });
+        const booked = (slotsByListing.get(Number(row.id)) ?? []).some((s) => s.startAt < horizon && s.endAt > now);
+        const blockedNow = parseJson<Period[]>(row.blocked, []).some((p) => new Date(p.start) < horizon && new Date(p.end) > now);
+        const parkingStatus = listingStatus({ openNow: isOpenAt(schedule, [], now), blockedNow, booked }, now);
+        return { ...row, parkingStatus, currentAvailability: (parkingStatus.availability === "available" ? "available" : "unavailable") as "available" | "unavailable" };
+      });
+      const matching = enriched.filter((row) => matchesFilters({ ...row, accessible: row.accessible }, filters, slotsByListing.get(Number(row.id)) ?? []));
+      const truncated = matching.length > limit;
+      const items = isDemoMode ? matching.slice(0, limit) : await withPhotoUrls(matching.slice(0, limit));
+      return { items: items.map(publicListing), truncated, category: "private" as const, note: null };
     }),
     byId: publicQuery.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
       if (isDemoMode) { const found = demoListings().find((item) => item.id === input.id); if (!found) throw new TRPCError({ code: "NOT_FOUND", message: "Annonce introuvable." }); return found; }
@@ -138,7 +188,7 @@ export const govaparkRouter = createRouter({
       title: z.string().min(4).max(180), description: z.string().min(20),
       address: z.string().min(5), approxAddress: z.string().min(3),
       accessInstructions: z.string().min(5), latitude: z.number(), longitude: z.number(),
-      placeType: z.enum(["garage", "residence", "entreprise", "parking"]), covered: z.boolean(),
+      placeType: z.enum(["garage", "residence", "entreprise", "parking"]), covered: z.boolean(), accessible: z.boolean().default(false),
       lengthM: z.number().positive(), widthM: z.number().positive(), heightCm: z.number().int().positive(),
       hourlyCents: z.number().int().positive(), dailyCents: z.number().int().positive(), weeklyCents: z.number().int().positive(),
       bookingMode: z.enum(["instant", "validation"]), photos: z.array(z.string()).min(1).max(8), mainPhoto: z.number().int().min(0),
@@ -153,7 +203,7 @@ export const govaparkRouter = createRouter({
       const [created] = await getDb().insert(listings).values({
         ownerId: ctx.user.id, title: input.title, description: input.description,
         approxAddress: input.approxAddress, exactAddress: input.address, accessInstructions: input.accessInstructions,
-        latitude: input.latitude, longitude: input.longitude, placeType: input.placeType, covered: input.covered,
+        latitude: input.latitude, longitude: input.longitude, placeType: input.placeType, covered: input.covered, accessible: input.accessible,
         lengthM: input.lengthM, widthM: input.widthM, heightCm: input.heightCm,
         hourlyCents: input.hourlyCents, dailyCents: input.dailyCents, weeklyCents: input.weeklyCents,
         bookingMode: input.bookingMode, status: input.submit ? "pending" : "draft",

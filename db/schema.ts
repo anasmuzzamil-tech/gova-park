@@ -39,6 +39,7 @@ export const listings = mysqlTable("listings", {
   longitude: double("longitude").notNull(),
   placeType: mysqlEnum("placeType", ["garage", "residence", "entreprise", "parking"]).notNull(),
   covered: boolean("covered").default(true).notNull(),
+  accessible: boolean("accessible").default(false).notNull(),
   lengthM: double("lengthM").notNull(),
   widthM: double("widthM").notNull(),
   heightCm: int("heightCm").notNull(),
@@ -55,7 +56,10 @@ export const listings = mysqlTable("listings", {
   rating: double("rating").default(0).notNull(),
   reviewCount: int("reviewCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Recherche par zone affichée : filtre sur la fourchette de latitude puis de longitude.
+  geoIndex: index("listings_geo_idx").on(table.status, table.latitude, table.longitude),
+}));
 
 export const reservations = mysqlTable("reservations", {
   id: serial("id").primaryKey(),
