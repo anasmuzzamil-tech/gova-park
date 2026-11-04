@@ -641,3 +641,11 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
   .govapark-marker-wrap .pk-pill { margin: -3px 0 0 -2px; }
   .pk-pill { min-width: 60px; height: 36px; padding: 0 13px; font-size: 15px; border-width: 3px; box-shadow: 0 3px 12px #1b1e3a66; }
 }
+
+/* Légende des couleurs */
+.m-legend { margin: 0; padding: 7px 12px; list-style: none; display: grid; grid-template-columns: auto auto; gap: 3px 14px; background: #fff; border-radius: 16px; box-shadow: 0 6px 20px #1a143a30; color: #17142b; font-size: 12px; font-weight: 800; line-height: 1.2; }
+.m-legend li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.m-legend i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #1a143a33; }
+.m-legend i.green { background: #12a150; }.m-legend i.red { background: #e5483c; }.m-legend i.orange { background: #f08a14; }.m-legend i.gray { background: #8a8f9c; }
+.m-sheet-head { justify-content: space-between; }
+.m-sheet-head .m-fab { margin-left: auto; }

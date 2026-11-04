@@ -610,6 +610,9 @@ export default function Home() {
 
         <div className="m-sheet">
           <div className="m-sheet-head">
+            <ul className="m-legend" aria-label="Légende des couleurs des places">
+              <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
+            </ul>
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
             <button className="m-fab" onClick={() => setReportOpen(true)}><Plus size={20} />Signaler</button>
           </div>
