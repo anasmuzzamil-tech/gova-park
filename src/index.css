@@ -681,7 +681,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-sheet-toggle span { color: #4b4963; }
 
 /* Pastilles de places de la carte 3D : plus grosses, contour blanc épais, ombre marquée (couleurs du statut inchangées) */
-.maplibregl-marker .pk-dot { width: 34px; height: 34px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
-.maplibregl-marker .pk-dot::after { font-size: 16px; }
-.maplibregl-marker .pk-pill { min-width: 68px; height: 40px; padding: 0 14px; font-size: 16px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
-.maplibregl-marker .pk-cluster { min-width: 46px; height: 46px; border-width: 4px; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+.pk-dot.maplibregl-marker { width: 34px; height: 34px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+.pk-dot.maplibregl-marker::after { font-size: 16px; }
+.pk-pill.maplibregl-marker { min-width: 68px; height: 40px; padding: 0 14px; font-size: 16px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+.pk-cluster.maplibregl-marker { min-width: 46px; height: 46px; border-width: 4px; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
