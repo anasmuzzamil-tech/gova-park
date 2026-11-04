@@ -65,7 +65,7 @@ function text(tag: string, value: string, className?: string) {
 }
 
 export default function ParkingMap3D({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   listings: MapListing[];
@@ -76,6 +76,7 @@ export default function ParkingMap3D({
   canBook?: boolean;
   onRoute: (id: number) => void;
   routeCoordinates?: LatLng[];
+  routeFocus?: number;
   routeListingIds?: Set<number>;
   routeServices?: RouteService[];
   onReport: (report: MapReport) => void;
@@ -249,7 +250,7 @@ export default function ParkingMap3D({
     routeCoordinates.forEach(([lat, lng]) => bounds.extend([lng, lat]));
     map.fitBounds(bounds, { padding: { top: 150, bottom: 170, left: 60, right: 60 }, maxZoom: 16, pitch: REST_PITCH, bearing: 0, duration: 800 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, routeCoordinates, following]);
+  }, [ready, routeCoordinates, following, routeFocus]);
 
   // Caméra qui suit la voiture en 3D.
   useEffect(() => {

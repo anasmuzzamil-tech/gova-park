@@ -111,6 +111,8 @@ export default function Home() {
   const [vehiclePrefs] = useState(() => { try { return JSON.parse(localStorage.getItem("govapark.preferences.v1") || "{}"); } catch { return {}; } });
   const [trackingGps, setTrackingGps] = useState(false);
   const [originNote, setOriginNote] = useState<string | null>(null);
+  const [gpsNote, setGpsNote] = useState<string | null>(null);
+  const [routeFocus, setRouteFocus] = useState(0);
   const [drivingRoute, setDrivingRoute] = useState<DrivingRoute | null>(null);
   const [routeOptions, setRouteOptions] = useState<DrivingRoute[]>([]);
   const [routeServices, setRouteServices] = useState<RouteService[]>([]);
@@ -252,8 +254,10 @@ export default function Home() {
   const stopDeparture = trpc.govapark.community.stopDeparture.useMutation({ onSuccess: () => { toast.success("Départ arrêté et retiré de la carte"); setSelectedReportId(null); utils.govapark.community.list.invalidate(); } });
   const autoRelease = trpc.govapark.community.autoRelease.useMutation({ onSuccess: () => { toast.success("Votre départ a été détecté : la place est signalée libre, à confirmer par la communauté."); setSelectedReportId(null); utils.govapark.community.list.invalidate(); }, onError: (error) => toast.error(error.message) });
 
-  const locate = () => {
-    if (!navigator.geolocation) { toast.error("La géolocalisation n’est pas disponible sur cet appareil"); return; }
+  const GPS_NOTE = "Activez la localisation pour le suivi en direct";
+  // soft = true (bouton Démarrer) : aucun toast d'erreur, juste un message court non bloquant.
+  const locate = (soft = false) => {
+    if (!navigator.geolocation) { if (soft) setGpsNote(GPS_NOTE); else toast.error("La géolocalisation n’est pas disponible sur cet appareil"); return; }
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
@@ -268,7 +272,7 @@ export default function Home() {
       const next = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy };
       setUserPosition(next);
       setSpeedKmh(position.coords.speed == null ? null : Math.max(0, Math.round(position.coords.speed * 3.6)));
-      setTrackingGps(true);
+      setTrackingGps(true); setGpsNote(null);
       if (!gpsInitialized.current) {
         setTarget({ lat: next.lat, lng: next.lng });
         setVisibleCenter({ lat: next.lat, lng: next.lng });
@@ -285,12 +289,13 @@ export default function Home() {
     };
     const onError = (error: GeolocationPositionError) => {
       setLocating(false);
+      if (soft) { setGpsNote(GPS_NOTE); return; }
       if (error.code === error.PERMISSION_DENIED) toast.error(/iPhone|iPad/i.test(navigator.userAgent) ? "Localisation refusée. Dans Safari : bouton « aA » de la barre d’adresse, Réglages du site web, Localisation, Autoriser. Tu peux aussi taper ton adresse de départ." : "Localisation refusée. Clique sur le cadenas à gauche de l’adresse du site pour l’autoriser, ou tape ton adresse de départ.");
       else if (error.code === error.POSITION_UNAVAILABLE) toast.error("Position introuvable. Active le GPS ou le Wi‑Fi de ton appareil et réessaie.");
       // Délai dépassé : on laisse le suivi continuer sans message.
     };
     // 1) un point rapide (réseau/Wi‑Fi) pour centrer la carte tout de suite, 2) un suivi précis qui prend le relais.
-    navigator.geolocation.getCurrentPosition(onPosition, () => {}, { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 });
+    navigator.geolocation.getCurrentPosition(onPosition, () => { if (soft) setGpsNote(GPS_NOTE); }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 });
     watchId.current = navigator.geolocation.watchPosition(onPosition, onError, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
   };
   useEffect(() => () => { if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current); }, []);
@@ -548,7 +553,7 @@ export default function Home() {
     onPickRoute: (id: string) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } },
     reports, userPosition, confirmedIds, fuelStations: [] as Array<{ id: number; lat: number; lng: number; name: string }>,
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
-    driving: !!drivingRoute, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
+    driving: !!drivingRoute, routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
     onListing: (id: number) => navigate(`/place/${id}`), onBook: (id: number) => navigate(`/reserver/${id}`), canBook: online, onRoute: startRoute,
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: setVisibleCenter,
   };
@@ -594,7 +599,7 @@ export default function Home() {
               {!searchingAddress && suggestions.length === 0 && <p>Aucun résultat. Essaie une adresse, une ville ou un quartier.</p>}
             </div>}
           </div>
-          <button className={`m-round ${trackingGps ? "on" : ""}`} onClick={locate} aria-label={trackingGps ? "Arrêter le suivi GPS" : "Me localiser"}><LocateFixed size={22} className={locating ? "spinning" : ""} /></button>
+          <button className={`m-round ${trackingGps ? "on" : ""}`} onClick={() => locate()} aria-label={trackingGps ? "Arrêter le suivi GPS" : "Me localiser"}><LocateFixed size={22} className={locating ? "spinning" : ""} /></button>
           <button className="m-round" onClick={() => setMenuOpen((open) => !open)} aria-label="Plus d’options" aria-expanded={menuOpen}><SlidersHorizontal size={21} /></button>
         </div>
 
@@ -642,8 +647,9 @@ export default function Home() {
             <div className="m-route-main">{drivingRoute.offline ? <><strong>{meters(drivingRoute.distance)}</strong><span>à vol d’oiseau · {drivingRoute.label}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">
 {originNote && <small className="route-origin-note">{originNote}</small>}
+{gpsNote && !trackingGps && <small className="route-origin-note">{gpsNote}</small>}
 {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.fuelCost != null ? ` · ${option.fuelCost.toFixed(1).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
-{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={() => { if (!trackingGps) locate(); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button>}</div>
+{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={() => { setRouteFocus((n) => n + 1); if (!trackingGps) locate(true); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
           </div>
           <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>

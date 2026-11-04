@@ -34,12 +34,12 @@ function ZoomTracker({ onZoom }: { onZoom: (zoom: number) => void }) {
 }
 
 // Cadre automatiquement le trajet entier dans la carte.
-function FitRoute({ coords }: { coords?: [number, number][] }) {
+function FitRoute({ coords, focus = 0 }: { coords?: [number, number][]; focus?: number }) {
   const map = useMap();
   useEffect(() => {
     if (!coords || coords.length < 2) return;
     map.fitBounds(L.latLngBounds(coords), { paddingTopLeft: [60, 150], paddingBottomRight: [60, 170], maxZoom: 16 });
-  }, [coords, map]);
+  }, [coords, map, focus]);
   return null;
 }
 
@@ -128,7 +128,7 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   listings: MapListing[];
@@ -139,6 +139,7 @@ export default function ParkingMap({
   canBook?: boolean;
   onRoute: (id: number) => void;
   routeCoordinates?: [number, number][];
+  routeFocus?: number;
   routeListingIds?: Set<number>;
   routeServices?: RouteService[];
   onReport: (report: MapReport) => void;
@@ -179,7 +180,7 @@ export default function ParkingMap({
       <ZoomControl position="bottomright" />
       <ZoomTracker onZoom={setZoom} />
       <Recenter center={center} />
-      <FitRoute coords={routeCoordinates} />
+      <FitRoute coords={routeCoordinates} focus={routeFocus} />
       <MapMove onMove={onMove} />
       {altRoutes.map((alt) => <Polyline key={alt.id} positions={alt.coordinates} pathOptions={{ color: "#9aa0b4", weight: 6, opacity: 0.85, lineCap: "round", lineJoin: "round" }} eventHandlers={{ click: () => onPickRoute?.(alt.id) }} />)}
       {routeCoordinates && routeCoordinates.length > 1 && <>
