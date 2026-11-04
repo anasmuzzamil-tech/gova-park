@@ -3,7 +3,10 @@ import { fr } from "date-fns/locale";
 
 export const euros = (cents: number) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(cents / 100);
 export const shortDate = (date: Date | string) => format(new Date(date), "d MMM · HH:mm", { locale: fr });
-export const fullDate = (date: Date | string) => format(new Date(date), "EEEE d MMMM à HH:mm", { locale: fr });
+export const fullDate = (date: Date | string) => {
+  const text = format(new Date(date), "EEEE d MMMM à HH:mm", { locale: fr });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 export const ago = (date: Date | string) => formatDistanceToNow(new Date(date), { addSuffix: true, locale: fr });
 export const placeTypeLabel = (type: string) => ({ garage: "Garage / box", residence: "Place en résidence", entreprise: "Parking d’entreprise", parking: "Parking privé" }[type] ?? type);
 export const bookingModeLabel = (mode: string) => mode === "instant" ? "Réservation instantanée" : "Sur validation du propriétaire";
