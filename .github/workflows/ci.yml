@@ -37,7 +37,7 @@ jobs:
         continue-on-error: true
         run: npx tsc -b
 
-      - name: Tests (vitest : api/*.test.ts, règles de contracts/)
+      - name: "Tests (vitest, api/*.test.ts et règles de contracts/)"
         run: npm test
 
       - name: Build (site + serveur)
