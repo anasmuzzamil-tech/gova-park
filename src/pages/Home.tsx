@@ -10,6 +10,7 @@ const hasWebGL = (() => { try { const c = document.createElement("canvas"); retu
 const MapView = hasWebGL ? ParkingMap3D : ParkingMap;
 import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
+import { STATUS_COLORS } from "@contracts/parking-status";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
 
 type Filters = { maxPrice: number; maxDistance: number; type: string; covered: string; minHeight: number };
@@ -560,7 +561,7 @@ export default function Home() {
             {nearArrival.map(({ item, meters: away }) => <article className="m-card" key={`arr-${item.id}`}>
               <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                 <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
-                <span className={`m-state ${item.currentAvailability === "available" ? "free" : "busy"}`}>{item.currentAvailability === "available" ? "Dispo" : "Complet"}</span>
+                <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
                 <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span></span>
               </button>
               <button className="m-card-go" onClick={() => navigate(`/reserver/${item.id}`)}>Réserver</button>
@@ -573,7 +574,7 @@ export default function Home() {
               {nearby.map(({ item, meters: away }) => <article className="m-card" key={item.id}>
                 <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                   <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
-                  <span className={`m-state ${item.currentAvailability === "available" ? "free" : "busy"}`}>{item.currentAvailability === "available" ? "Dispo" : "Complet"}</span>
+                  <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
                   <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span><span className="m-sub">{item.covered ? "Couvert" : "Extérieur"} · ★ {item.rating.toFixed(1)}</span></span>
                 </button>
                 <button className="m-card-go" onClick={() => void startRoute(item.id)}><Navigation size={16} />Y aller</button>
@@ -649,8 +650,8 @@ export default function Home() {
       </Modal>}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>
-        <div className={`report-detail-head ${selectedReport.kind}`}><span className="report-status-dot" /><div><strong>{selectedReport.address}</strong><p>Information communautaire · disponibilité non garantie</p></div></div>
-        <dl className="report-facts"><div><dt>Mise à jour</dt><dd>{ago(selectedReport.updatedAt)} · {shortDate(selectedReport.updatedAt)}</dd></div><div><dt>Source</dt><dd>{selectedReport.source}</dd></div><div><dt>Confiance</dt><dd>{selectedReport.confidence}% · {selectedReport.confidence >= 75 ? "élevée" : selectedReport.confidence >= 50 ? "modérée" : "à vérifier"}</dd></div></dl>
+        <div className={`report-detail-head ${selectedReport.kind}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedReport.parkingStatus?.color ?? "gray"] }} /><div><strong>{selectedReport.address}</strong><p>{selectedReport.parkingStatus?.label} · {selectedReport.parkingStatus?.detail}</p></div></div>
+        <dl className="report-facts"><div><dt>Mise à jour</dt><dd>{ago(selectedReport.updatedAt)} · {shortDate(selectedReport.updatedAt)}</dd></div><div><dt>Source</dt><dd>{selectedReport.source}</dd></div><div><dt>Fiabilité</dt><dd>{selectedReport.confidence}% · {selectedReport.confidence >= 75 ? "moyenne à bonne" : selectedReport.confidence >= 50 ? "modérée" : "faible"}</dd></div><div><dt>Expire</dt><dd>{selectedReport.parkingStatus?.expiresAt ? shortDate(selectedReport.parkingStatus.expiresAt) : "—"}</dd></div></dl>
         <div className="confidence-track"><span style={{ width: `${selectedReport.confidence}%` }} /></div>
         {selectedReport.kind === "departure" && <DeparturePanel report={selectedReport} isOwner={selectedReport.userId === user?.id} update={departureUpdate} setUpdate={setDepartureUpdate}
           onUpdate={() => updateDeparture.mutate({ id: selectedReport.id, estimatedDeparture: new Date(departureUpdate) })} onStop={() => stopDeparture.mutate({ id: selectedReport.id })}

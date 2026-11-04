@@ -1,6 +1,7 @@
 import { env } from "./lib/env";
 import { calculatePrice } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
+import { listingStatus, reportStatus } from "@contracts/parking-status";
 
 // MODE DEMO : actif automatiquement tant que DATABASE_URL n'est pas renseignee.
 // Le site s'ouvre directement sur la carte avec des places d'exemple, sans connexion ni base.
@@ -87,6 +88,7 @@ export function demoListings() {
     reviewCount: 7 + i * 2,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     currentAvailability: (i % 6 === 3 ? "unavailable" : "available") as "available" | "unavailable",
+    parkingStatus: listingStatus({ openNow: true, blockedNow: false, booked: i % 6 === 3, demo: true }),
   }));
 }
 
@@ -129,7 +131,9 @@ export function demoReports() {
   const cutoff = now - 30 * 60000;
   return [...fixed, ...userReports.filter((r) => r.updatedAt.getTime() > cutoff).map((r) => ({ ...base, ...r, contradictions: 0, confirmations: 0 }))]
     .filter((r) => !removedReports.has(r.id))
-    .map((r) => { const v = votes.get(r.id); return v ? { ...r, confirmations: r.confirmations + v.c, contradictions: r.contradictions + v.x } : r; });
+    .map((r) => { const v = votes.get(r.id); return v ? { ...r, confirmations: r.confirmations + v.c, contradictions: r.contradictions + v.x } : r; })
+    .map((r) => ({ ...r, parkingStatus: reportStatus(r) }))
+    .filter((r) => !r.parkingStatus.stale);
 }
 
 // Favoris et reservations gardes en memoire (perdus au redemarrage du serveur).

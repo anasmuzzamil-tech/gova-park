@@ -9,6 +9,7 @@ export type MapListing = {
   latitude: number;
   longitude: number;
   currentAvailability?: "available" | "unavailable" | "unknown";
+  parkingStatus?: { color: "green" | "red" | "orange" | "gray"; label: string };
   hourlyCents?: number;
   approxAddress?: string;
 };
@@ -18,6 +19,7 @@ export type MapReport = {
   latitude: number;
   longitude: number;
   address: string;
+  parkingStatus?: { color: "green" | "red" | "orange" | "gray"; label: string };
 };
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
@@ -85,7 +87,7 @@ function dotIcon(color: string, label: string) {
   });
 }
 // Bulle ronde de signalement, avec un halo qui pulse.
-function reportBubble(kind: "free" | "occupied" | "departure", symbol: string, label: string, small = false) {
+function reportBubble(kind: "green" | "red" | "orange" | "gray", symbol: string, label: string, small = false) {
   const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
   return L.divIcon({
     className: "govapark-marker-wrap",
@@ -172,21 +174,13 @@ export default function ParkingMap({
         </Marker>
       </>}
       {listings.map((listing) => {
-        const statusColor = listing.currentAvailability === "available"
-          ? "green"
-          : listing.currentAvailability === "unavailable"
-            ? "red"
-            : confirmedIds.has(listing.id) ? "blue" : "violet";
-        const statusText = listing.currentAvailability === "available"
-          ? "Disponible actuellement"
-          : listing.currentAvailability === "unavailable"
-            ? "Indisponible actuellement"
-            : "Disponibilité à vérifier";
+        const statusColor = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
+        const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
         return <Marker
           key={`l-${listing.id}`}
           position={[listing.latitude, listing.longitude]}
           title={`${listing.title} — ${statusText}`}
-          icon={detailed ? pricePill(statusColor, listing.currentAvailability === "unavailable" ? "Complet" : formatRate(listing.hourlyCents), `${listing.title} — ${statusText}`) : dotIcon(statusColor, `${listing.title} — ${statusText}`)}
+          icon={detailed ? pricePill(statusColor, formatRate(listing.hourlyCents), `${listing.title} — ${statusText}`) : dotIcon(statusColor, `${listing.title} — ${statusText}`)}
         >
           <Popup>
             <div className="map-listing-popup"><strong>{listing.title}</strong>{listing.hourlyCents != null && <b className="popup-price">{formatRate(listing.hourlyCents)}</b>}<span>{statusText}</span>{listing.approxAddress && <small>{listing.approxAddress}</small>}
@@ -204,12 +198,12 @@ export default function ParkingMap({
       {fuelStations.map((station) => <Marker key={`fuel-${station.id}`} position={[station.lat,station.lng]} icon={markerIcon("blue", "⛽", station.name)}><Popup><strong>{station.name}</strong><br/>Station-service · données OpenStreetMap</Popup></Marker>)}
       {reports.map((report) => {
         const color = report.kind === "free" ? "green" : report.kind === "occupied" ? "red" : "orange";
-        const text = report.kind === "free" ? "✓" : report.kind === "occupied" ? "×" : "↗";
+        const text = report.kind === "free" ? "?" : report.kind === "occupied" ? "×" : "↗";
         return <Marker
           key={`r-${report.id}`}
           position={[report.latitude, report.longitude]}
           title={report.address}
-          icon={reportBubble(report.kind, text, report.address, !detailed)}
+          icon={reportBubble(report.parkingStatus?.color ?? "gray", text, `${report.address} — ${report.parkingStatus?.label ?? "Disponibilité inconnue"}`, !detailed)}
           eventHandlers={{ click: () => onReport(report) }}
         />;
       })}

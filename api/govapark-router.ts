@@ -6,6 +6,7 @@ import { getDb } from "./queries/connection";
 import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices, parkingSessions } from "@db/schema";
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
+import { listingStatus, reportStatus } from "@contracts/parking-status";
 import { storage } from "./lib/storage";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory } from "./demo";
 
@@ -108,8 +109,9 @@ export const govaparkRouter = createRouter({
         const toMinute = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
         const openNow = schedule.days.includes(now.getDay()) && minute >= toMinute(schedule.start) && minute < toMinute(schedule.end);
         const blockedNow = (JSON.parse(row.blocked) as { start: string; end: string }[]).some((period) => new Date(period.start) < horizon && new Date(period.end) > now);
-        const currentAvailability: "available" | "unavailable" = openNow && !blockedNow && !occupiedIds.has(Number(row.id)) ? "available" : "unavailable";
-        return { ...row, currentAvailability };
+        const parkingStatus = listingStatus({ openNow, blockedNow, booked: occupiedIds.has(Number(row.id)) }, now);
+        const currentAvailability: "available" | "unavailable" = parkingStatus.availability === "available" ? "available" : "unavailable";
+        return { ...row, currentAvailability, parkingStatus };
       });
       return (await withPhotoUrls(enriched)).map(publicListing);
     }),
@@ -558,11 +560,11 @@ export const govaparkRouter = createRouter({
         gt(communityReports.updatedAt, cutoff), or(isNull(communityReports.expiresAt), gt(communityReports.expiresAt, new Date())),
       )).orderBy(desc(communityReports.updatedAt));
       const votes = await db.select().from(reportVotes);
-      return reports.map((report) => ({
-        ...report,
-        confirmations: votes.filter((vote) => vote.reportId === report.id && vote.vote === "confirm").length,
-        contradictions: votes.filter((vote) => vote.reportId === report.id && vote.vote === "contradict").length,
-      }));
+      return reports.map((report) => {
+        const confirmations = votes.filter((vote) => vote.reportId === report.id && vote.vote === "confirm").length;
+        const contradictions = votes.filter((vote) => vote.reportId === report.id && vote.vote === "contradict").length;
+        return { ...report, confirmations, contradictions, parkingStatus: reportStatus({ ...report, confirmations, contradictions }) };
+      }).filter((report) => !report.parkingStatus.stale);
     }),
     create: authedQuery.input(z.object({
       kind: z.enum(["free", "occupied", "departure"]), latitude: z.number(), longitude: z.number(),

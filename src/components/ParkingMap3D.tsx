@@ -221,11 +221,11 @@ export default function ParkingMap3D({
     if (!map || !ready) return;
     listingMarkers.current.forEach((m) => m.remove());
     listingMarkers.current = listings.map((listing) => {
-      const color = listing.currentAvailability === "available" ? "green" : listing.currentAvailability === "unavailable" ? "red" : confirmedIds.has(listing.id) ? "blue" : "violet";
-      const statusText = listing.currentAvailability === "available" ? "Disponible actuellement" : listing.currentAvailability === "unavailable" ? "Indisponible actuellement" : "Disponibilité à vérifier";
+      const color = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
+      const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
       const label = `${listing.title} — ${statusText}`;
       const node = detailed
-        ? text("span", listing.currentAvailability === "unavailable" ? "Complet" : formatRate(listing.hourlyCents), `pk-pill pk-${color}`)
+        ? text("span", formatRate(listing.hourlyCents), `pk-pill pk-${color}`)
         : el("span", `pk-dot pk-${color}`);
       node.setAttribute("aria-label", label); node.title = label; node.style.cursor = "pointer";
       const box = el("div", "map-listing-popup");
@@ -249,9 +249,9 @@ export default function ParkingMap3D({
     if (!map || !ready) return;
     reportMarkers.current.forEach((m) => m.remove());
     reportMarkers.current = reports.map((report) => {
-      const symbol = report.kind === "free" ? "✓" : report.kind === "occupied" ? "×" : "↗";
-      const node = el("span", `pk-bubble pk-b-${report.kind}${detailed ? "" : " pk-sm"}`, `<i class="pk-ring"></i><b>${detailed ? symbol : ""}</b>`);
-      node.title = report.address; node.setAttribute("aria-label", report.address); node.style.cursor = "pointer";
+      const symbol = report.kind === "free" ? "?" : report.kind === "occupied" ? "×" : "↗";
+      const node = el("span", `pk-bubble pk-b-${report.parkingStatus?.color ?? "gray"}${detailed ? "" : " pk-sm"}`, `<i class="pk-ring"></i><b>${detailed ? symbol : ""}</b>`);
+      const rlabel = `${report.address} — ${report.parkingStatus?.label ?? "Disponibilité inconnue"}`; node.title = rlabel; node.setAttribute("aria-label", rlabel); node.style.cursor = "pointer";
       node.addEventListener("click", (e) => { e.stopPropagation(); cb.current.onReport(report); });
       return new maplibregl.Marker({ element: node }).setLngLat([report.longitude, report.latitude]).addTo(map);
     });
