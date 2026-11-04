@@ -160,9 +160,9 @@ export default function Home() {
   const listingsData = useMemo(() => {
     if (!cacheMode) return searchQuery.data?.items;
     const base = searchQuery.data?.items?.length ? searchQuery.data.items : cachedPlaces?.items ?? [];
-    const status = offlineStatus(placesSavedAt);
+    const status = offlineStatus(placesSavedAt, online ? "server" : "offline");
     return base.map((item) => ({ ...item, currentAvailability: "unknown" as unknown as typeof item.currentAvailability, parkingStatus: status as unknown as typeof item.parkingStatus }));
-  }, [cacheMode, searchQuery.data, cachedPlaces, placesSavedAt]);
+  }, [cacheMode, online, searchQuery.data, cachedPlaces, placesSavedAt]);
   const listingsQuery = { data: listingsData, isLoading: searchQuery.isLoading, error: cacheMode ? null : searchQuery.error, refetch: searchQuery.refetch };
 
   const listings = useMemo(() => listingsQuery.data ?? [], [listingsQuery.data]);
@@ -554,7 +554,7 @@ export default function Home() {
           <Suspense fallback={null}>
           <MapView center={target} listings={mapListings} altRoutes={routeOptions.filter((o) => o.id !== drivingRoute?.id)} onPickRoute={(id) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } }} reports={reports} userPosition={userPosition} confirmedIds={confirmedIds} fuelStations={[]} vehicleType={vehiclePrefs.vehicle || "car"} vehicleColor={vehiclePrefs.vehicleColor || "#2563eb"}
             driving={!!drivingRoute} routeCoordinates={drivingRoute?.coordinates} routeListingIds={routeListingIds} routeServices={routeServices}
-            onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} onRoute={startRoute}
+            onListing={(id) => navigate(`/place/${id}`)} onBook={(id) => navigate(`/reserver/${id}`)} canBook={online} onRoute={startRoute}
             onReport={(report) => setSelectedReportId(report.id)} onMove={setVisibleCenter} />
           </Suspense>
         </div>
@@ -628,7 +628,7 @@ export default function Home() {
                 <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
                 <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span></span>
               </button>
-              <button className="m-card-go" onClick={() => navigate(`/reserver/${item.id}`)}>Réserver</button>
+              <button className="m-card-go" disabled={!online} title={online ? undefined : "La réservation demande une connexion"} onClick={() => navigate(`/reserver/${item.id}`)}>{online ? "Réserver" : "Indisponible hors ligne"}</button>
             </article>)}
           </div></> : <>
             <div className="m-sheet-title">{userPosition ? "Autour de toi" : "Près du centre de la carte"}<span>{filtered.length} places</span></div>
@@ -678,7 +678,9 @@ export default function Home() {
           <button onClick={() => { setDraftFilters(filters); setFiltersOpen(true); }}>Prix · hauteur</button>
         </div>
         <div className="listing-results">
-          {cacheMode && <div className="empty-state"><p><b>Hors ligne – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; vérifiez la disponibilité une fois reconnecté.</p></div>}
+          {cacheMode && <div className="empty-state">{online
+            ? <p><b>Serveur injoignable pour le moment – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; réessayez dans un instant.</p>
+            : <p><b>Hors ligne – disponibilité non actualisée.</b> Places enregistrées lors de la dernière connexion ; vérifiez la disponibilité une fois reconnecté.</p>}</div>}
           {listingsQuery.isLoading && [1,2,3].map((item) => <div className="listing-skeleton" key={item} />)}
           {listingsQuery.error && <div className="empty-state"><p>Impossible de charger les annonces.</p><button className="btn btn-secondary" onClick={() => listingsQuery.refetch()}>Réessayer</button></div>}
           {!listingsQuery.isLoading && filtered.length === 0 && <div className="empty-state"><h3>Aucune place ne correspond</h3><p>Élargissez vos filtres ou déplacez la carte.</p><button className="btn btn-secondary" onClick={() => setFilters(initialFilters)}>Réinitialiser les filtres</button></div>}

@@ -128,7 +128,7 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, altRoutes = [], onPickRoute,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   listings: MapListing[];
@@ -136,6 +136,7 @@ export default function ParkingMap({
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
+  canBook?: boolean;
   onRoute: (id: number) => void;
   routeCoordinates?: [number, number][];
   routeListingIds?: Set<number>;
@@ -208,7 +209,7 @@ export default function ParkingMap({
           <Popup>
             <div className="map-listing-popup"><strong>{listing.title}</strong>{listing.hourlyCents != null && <b className="popup-price">{formatRate(listing.hourlyCents)}</b>}<span>{statusText}</span>{listing.approxAddress && <small>{listing.approxAddress}</small>}
               {routeListingIds?.has(listing.id) && <small className="route-nearby-tag">Sur votre trajet</small>}
-              <div className="map-popup-actions"><button type="button" onClick={() => onRoute(listing.id)}>Itinéraire</button><button type="button" onClick={() => onBook(listing.id)}>Réserver</button></div>
+              <div className="map-popup-actions"><button type="button" onClick={() => onRoute(listing.id)}>Itinéraire</button>{canBook && <button type="button" onClick={() => onBook(listing.id)}>Réserver</button>}</div>
             </div>
           </Popup>
         </Marker>;

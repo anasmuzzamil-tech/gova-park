@@ -8,6 +8,7 @@ import { bookingModeLabel, euros, placeTypeLabel, shortDate } from "@/lib/format
 import { STATUS_COLORS, reliabilityLabel } from "@contracts/parking-status";
 import { parseJson, type Schedule } from "@contracts/parking-search";
 import { navigationLinks } from "@/lib/navigation";
+import { useOnlineStatus } from "@/lib/offline";
 
 const DAYS = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 function scheduleText(raw: string) {
@@ -27,6 +28,7 @@ export default function PlaceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [photo, setPhoto] = useState(0);
+  const online = useOnlineStatus();
   const { isAuthenticated } = useAuth();
   const favoriteIds = trpc.govapark.favorites.ids.useQuery(undefined, { enabled: isAuthenticated });
   const toggleFavorite = trpc.govapark.favorites.toggle.useMutation({ onSuccess: () => favoriteIds.refetch() });
@@ -70,7 +72,7 @@ export default function PlaceDetail() {
             {place.bookingMode === "instant" ? <Zap size={21} /> : <UserCheck size={21} />}
             <div><strong>{bookingModeLabel(place.bookingMode)}</strong><p>{place.bookingMode === "instant" ? "Le créneau ne sera confirmé qu’après paiement sécurisé. Cette fonction n’est pas encore activée." : "Le propriétaire dispose de 24 h pour répondre. La réservation ne sera définitive qu’après activation et validation du paiement sécurisé."}</p></div>
           </div>
-          <button className="btn btn-primary btn-full btn-large" onClick={() => navigate(`/reserver/${place.id}`)}>Choisir mes horaires</button>
+          <button className="btn btn-primary btn-full btn-large" disabled={!online} onClick={() => navigate(`/reserver/${place.id}`)}>{online ? "Choisir mes horaires" : "Réservation indisponible hors ligne"}</button>
           <p className="summary-foot"><Check size={15} />Prix calculé avant tout paiement · annulation selon conditions</p>
         </aside>
       </div>

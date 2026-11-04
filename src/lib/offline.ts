@@ -51,12 +51,12 @@ export function savePlaces<T extends { id: number }>(fresh: T[]) {
 }
 
 /** Statut affiché pour une place issue du cache : toujours gris/inconnu, avec la date de dernière actualisation. */
-export function offlineStatus(savedAt: number) {
+export function offlineStatus(savedAt: number, reason: "offline" | "server" = "offline") {
   const when = savedAt ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(savedAt)) : "date inconnue";
   return {
     color: "gray" as const,
     availability: "unknown" as const,
-    label: "Hors ligne – disponibilité non actualisée",
+    label: reason === "offline" ? "Hors ligne – disponibilité non actualisée" : "Serveur injoignable – disponibilité non actualisée",
     detail: `Dernière actualisation des places : ${when}. Disponibilité non confirmée.`,
     source: null,
     updatedAt: savedAt ? new Date(savedAt).toISOString() : null,

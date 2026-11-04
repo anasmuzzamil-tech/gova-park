@@ -33,7 +33,7 @@ function text(tag: string, value: string, className?: string) {
 }
 
 export default function ParkingMap3D({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, altRoutes = [], onPickRoute,
+  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   listings: MapListing[];
@@ -41,6 +41,7 @@ export default function ParkingMap3D({
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
+  canBook?: boolean;
   onRoute: (id: number) => void;
   routeCoordinates?: LatLng[];
   routeListingIds?: Set<number>;
@@ -232,12 +233,13 @@ export default function ParkingMap3D({
       if (routeListingIds?.has(listing.id)) box.append(text("small", "Sur votre trajet", "route-nearby-tag"));
       const actions = el("div", "map-popup-actions");
       const go = text("button", "Itinéraire"); go.type = "button"; go.onclick = () => cb.current.onRoute(listing.id);
-      const book = text("button", "Réserver"); book.type = "button"; book.onclick = () => cb.current.onBook(listing.id);
-      actions.append(go, book); box.append(actions);
+      actions.append(go);
+      if (canBook) { const book = text("button", "Réserver"); book.type = "button"; book.onclick = () => cb.current.onBook(listing.id); actions.append(book); }
+      box.append(actions);
       const popup = new maplibregl.Popup({ offset: 18, closeButton: true, maxWidth: "260px" }).setDOMContent(box);
       return new maplibregl.Marker({ element: node }).setLngLat([listing.longitude, listing.latitude]).setPopup(popup).addTo(map);
     })];
-  }, [ready, listings, confirmedIds, detailed, routeListingIds, Math.floor(zoom)]);
+  }, [ready, listings, confirmedIds, detailed, routeListingIds, canBook, Math.floor(zoom)]);
 
   // Signalements.
   useEffect(() => {
