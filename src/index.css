@@ -675,3 +675,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 @media (max-width: 899px) {
   .pk-dot, .pk-pill { box-shadow: 0 4px 0 #00000038, 0 8px 12px #1b1e3a66; }
 }
+
+/* Titre du panneau du bas : en-tête opaque lisible (jamais écrit directement sur la carte) */
+.m-sheet-toggle { width: calc(100% - 28px); margin: 0 14px 8px; padding: 6px 16px; background: #fff; border-radius: 18px; box-shadow: 0 6px 20px #1a143a30; text-shadow: none; color: #17142b; }
+.m-sheet-toggle span { color: #4b4963; }
