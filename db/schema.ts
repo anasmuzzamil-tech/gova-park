@@ -293,3 +293,22 @@ export const parkingSessions = mysqlTable("parkingSessions", {
   totalCents: int("totalCents"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ userIndex: index("parking_sessions_user_idx").on(table.userId, table.endedAt) }));
+
+// Places gratuites en rue signalées par la communauté (couche « Places en rue », séparée des places privées).
+// Pas de nom d'utilisateur affiché : userId sert uniquement à l'anti-abus. Expiration calculée côté serveur.
+// Non testé faute de base de données.
+export const streetReports = mysqlTable("streetReports", {
+  id: serial("id").primaryKey(),
+  latitude: double("latitude").notNull(),
+  longitude: double("longitude").notNull(),
+  status: mysqlEnum("streetStatus", ["free", "taken"]).notNull(),
+  userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  reliability: int("reliability").default(50).notNull(),
+}, (table) => ({
+  geoIndex: index("street_reports_geo_idx").on(table.latitude, table.longitude),
+  createdIndex: index("street_reports_created_idx").on(table.createdAt),
+  userIndex: index("street_reports_user_idx").on(table.userId, table.createdAt),
+}));
+export type StreetReportRecord = typeof streetReports.$inferSelect;

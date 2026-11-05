@@ -1,17 +1,18 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gt, lt, ne, inArray, or, isNull, desc, count, sql } from "drizzle-orm";
+import { and, eq, gt, gte, lte, lt, ne, inArray, or, isNull, desc, count, sql } from "drizzle-orm";
 import { createRouter, publicQuery, authedQuery, adminQuery, ownerQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices, parkingSessions } from "@db/schema";
+import { listings, reservations, communityReports, reportVotes, proximityAlerts, files, favorites, users, messages, notifications, parkingObservations, ownerVerifications, companySettings, disputes, predictionEvaluations, adminAuditLogs, refundRequests, ownerVerificationDocuments, pushDevices, parkingSessions, streetReports } from "@db/schema";
 import { calculatePrice, overlaps } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
 import { checkBooking } from "@contracts/booking";
+import { parseStreetListInput, parseStreetReportInput, prepareStreetReport, resolveStreetSpots, STREET_RULES, type StreetReportRow } from "@contracts/street-reports";
 import { validateListing } from "@contracts/listing-validation";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
-import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
+import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -341,6 +342,47 @@ export const govaparkRouter = createRouter({
       await getDb().update(reservations).set({ status: "dispute" }).where(eq(reservations.id, input.id));
       await getDb().insert(disputes).values({ reservationId: input.id, openedBy: ctx.user.id, reason: input.reason }).onDuplicateKeyUpdate({ set: { reason: input.reason, status: "open", updatedAt: new Date() } });
       return { ok: true };
+    }),
+  }),
+
+  // Places gratuites EN RUE signalées par la communauté (couche séparée des places privées).
+  // Mode démo : stockage mémoire, signalements étiquetés « exemple », aucune place pré-remplie.
+  // Mode base réelle : écrit mais NON TESTÉ faute de base de données.
+  street: createRouter({
+    list: publicQuery.input((raw) => parseStreetListInput(raw)).query(async ({ input }) => {
+      const now = new Date();
+      const { limit, ...bbox } = input;
+      if (isDemoMode) return { serverNow: now, spots: demoStreetList(bbox, limit, now) };
+      const margin = 0.0005; // marge pour que les signalements d'une même place au bord de la zone restent groupés
+      const rows = await getDb().select().from(streetReports).where(and(
+        gt(streetReports.expiresAt, now), gt(streetReports.createdAt, new Date(now.getTime() - STREET_RULES.freeMaxMinutes * 60000)),
+        gte(streetReports.latitude, bbox.south - margin), lte(streetReports.latitude, bbox.north + margin),
+        gte(streetReports.longitude, bbox.west - margin), lte(streetReports.longitude, bbox.east + margin),
+      )).orderBy(desc(streetReports.createdAt)).limit(1000);
+      const mapped: StreetReportRow[] = rows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
+      return { serverNow: now, spots: resolveStreetSpots(mapped, bbox, limit, now, false) };
+    }),
+    // Connexion requise (en démo : visiteur démo). Dates et expiration calculées ici, jamais fournies par le client.
+    create: authedQuery.input((raw) => parseStreetReportInput(raw)).mutation(async ({ ctx, input }) => {
+      const now = new Date();
+      if (isDemoMode) {
+        const result = demoStreetCreate(input, now);
+        if (!result.ok) throw new TRPCError({ code: result.code, message: result.message });
+        return { id: result.id, expiresAt: result.expiresAt, reliability: result.reliability, example: true };
+      }
+      const db = getDb();
+      const recentOwn = await db.select({ latitude: streetReports.latitude, longitude: streetReports.longitude, createdAt: streetReports.createdAt }).from(streetReports)
+        .where(and(eq(streetReports.userId, ctx.user.id), gt(streetReports.createdAt, new Date(now.getTime() - STREET_RULES.rateSeconds * 1000))));
+      const nearbyRows = await db.select().from(streetReports).where(and(
+        gt(streetReports.expiresAt, now), gt(streetReports.createdAt, new Date(now.getTime() - STREET_RULES.freeMaxMinutes * 60000)),
+        gte(streetReports.latitude, input.latitude - 0.0005), lte(streetReports.latitude, input.latitude + 0.0005),
+        gte(streetReports.longitude, input.longitude - 0.001), lte(streetReports.longitude, input.longitude + 0.001),
+      )).limit(100);
+      const nearby: StreetReportRow[] = nearbyRows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
+      const prepared = prepareStreetReport(input, ctx.user.id, recentOwn, nearby, now);
+      if (!prepared.ok) throw new TRPCError({ code: prepared.code, message: prepared.message });
+      const [created] = await db.insert(streetReports).values({ ...prepared.row, userId: ctx.user.id }).$returningId();
+      return { id: created.id, expiresAt: prepared.row.expiresAt, reliability: prepared.row.reliability, example: false };
     }),
   }),
 

@@ -3,6 +3,7 @@ import { calculatePrice } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { checkBooking } from "@contracts/booking";
 import { listingStatus, reportStatus } from "@contracts/parking-status";
+import { isActive, prepareStreetReport, resolveStreetSpots, type StreetBBox, type StreetReportInput, type StreetReportRow } from "@contracts/street-reports";
 
 // MODE DEMO : actif automatiquement tant que DATABASE_URL n'est pas renseignee.
 // Le site s'ouvre directement sur la carte avec des places d'exemple, sans connexion ni base.
@@ -136,6 +137,24 @@ export function demoReports() {
     .map((r) => { const v = votes.get(r.id); return v ? { ...r, confirmations: r.confirmations + v.c, contradictions: r.contradictions + v.x } : r; })
     .map((r) => ({ ...r, parkingStatus: reportStatus(r) }))
     .filter((r) => !r.parkingStatus.stale);
+}
+
+// Places en rue (couche communautaire) en memoire : AUCUNE place n'est pre-remplie, seuls les signalements faits
+// pendant la vie du serveur apparaissent, et ils sont etiquetes « exemple » (donnees de demonstration, perdues au redemarrage).
+const streetStore: Array<StreetReportRow & { userId: number }> = [];
+let nextStreetId = 1;
+export function demoStreetList(bbox: StreetBBox, limit: number, now = new Date()) {
+  return resolveStreetSpots(streetStore, bbox, limit, now, true);
+}
+export function demoStreetCreate(input: StreetReportInput, now = new Date()) {
+  for (let i = streetStore.length - 1; i >= 0; i--) if (!isActive(streetStore[i], now)) streetStore.splice(i, 1);
+  const recentOwn = streetStore.filter((r) => r.userId === demoUser.id);
+  const nearby = streetStore.filter((r) => Math.abs(r.latitude - input.latitude) < 0.001 && Math.abs(r.longitude - input.longitude) < 0.002);
+  const prepared = prepareStreetReport(input, demoUser.id, recentOwn, nearby, now);
+  if (!prepared.ok) return prepared;
+  const id = nextStreetId++;
+  streetStore.push({ id, userId: demoUser.id, ...prepared.row });
+  return { ok: true as const, id, expiresAt: prepared.row.expiresAt, reliability: prepared.row.reliability };
 }
 
 // Favoris et reservations gardes en memoire (perdus au redemarrage du serveur).
