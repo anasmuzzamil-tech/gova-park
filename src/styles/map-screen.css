@@ -138,3 +138,18 @@
 .m-places-note { display: block; margin: var(--gp-s-1) var(--gp-s-2) 0; color: var(--gp-ink-2); font-size: var(--gp-t-12); }
 .m-places-hint { display: flex; align-items: center; justify-content: space-between; gap: var(--gp-s-3); padding: var(--gp-s-2); font-size: var(--gp-t-14); font-weight: 600; color: var(--gp-ink); }
 .search-suggestions .m-places-hint button { width: auto; min-height: var(--gp-touch); padding: 0 var(--gp-s-3); color: var(--gp-accent); font-weight: 700; justify-content: center; }
+
+/* ═══ Trajets comparés : une carte par itinéraire proposé par le service (3 au plus) ═══ */
+.m-route:has(.m-trip-list) .m-route-main { display: none; }
+.m-trip-list { flex: 1; min-width: 0; display: grid; gap: var(--gp-s-2); order: 0; }
+.m-trip-card { width: 100%; min-height: var(--gp-touch); display: grid; gap: 2px; padding: var(--gp-s-2) var(--gp-s-3); border: 1.5px solid var(--gp-line); border-radius: var(--gp-r-2); background: var(--gp-surface); color: var(--gp-ink); text-align: left; }
+.m-trip-card:active { transform: scale(.98); }
+.m-trip-card.on { border-color: var(--gp-accent); background: var(--gp-surface-2); box-shadow: 0 0 0 1px var(--gp-accent) inset; }
+.m-trip-top { display: flex; align-items: baseline; gap: var(--gp-s-2); min-width: 0; }
+.m-trip-top b { font-size: var(--gp-t-20); font-weight: 700; }
+.m-trip-top span { color: var(--gp-ink-2); font-size: var(--gp-t-14); font-weight: 600; }
+.m-trip-top em { margin-left: auto; padding: 2px 9px; border-radius: var(--gp-r-pill); background: var(--gp-accent); color: #fff; font-style: normal; font-size: var(--gp-t-12); font-weight: 700; white-space: nowrap; }
+.m-trip-line { color: var(--gp-ink-2); font-size: var(--gp-t-14); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-trip-zfe { color: var(--gp-ink); font-size: var(--gp-t-12); font-weight: 600; }
+.m-trip-zfe::before { content: ""; display: inline-block; width: 10px; height: 0; margin-right: 6px; border-top: 2px dashed var(--gp-accent); vertical-align: middle; }
+.m-trip-note { color: var(--gp-ink-2); font-size: var(--gp-t-12); }

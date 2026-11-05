@@ -16,7 +16,7 @@ import { STATUS_COLORS, statePillLabel } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
-import { DEFAULT_CONSUMPTION, NO_TRAFFIC, DEFAULT_FUEL_PRICE_EUR_L, bikeDurationSeconds, isSamePlace, routeEndpoints, straightLineEstimate, summaryLine, tripCostEur } from "@/lib/route-calc";
+import { DEFAULT_CONSUMPTION, NO_TRAFFIC, DEFAULT_FUEL_PRICE_EUR_L, formatDistance, formatDuration, formatEuro, bikeDurationSeconds, isSamePlace, routeEndpoints, straightLineEstimate, summaryLine, tripCostEur } from "@/lib/route-calc";
 import { getGeolocDiag, noteGeolocError, subscribeGeolocDiag, refreshPermissionState } from "@/lib/geoloc";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
@@ -40,6 +40,7 @@ import { addRecent, getFavorite, loadPlaces, removeFavorite, removeRecent, saveP
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
+import { capAlternatives, routeCrossesZfe, tripTag, viaRoad } from "@/lib/route-compare";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -49,7 +50,7 @@ type Filters = { maxPrice: number; maxDistance: number; type: string; covered: s
 const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", covered: "tous", minHeight: 0, minLength: 0, minWidth: 0, accessible: false, priceMode: "tous", category: "private", from: "", to: "" };
 const reportTitle = { free: "Place signalée libre", occupied: "Place signalée occupée", departure: "Départ annoncé" };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
-type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean; costEur?: number; costAssumed?: boolean; profile?: VehicleType; estimate?: boolean };
+type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean; costEur?: number; costAssumed?: boolean; profile?: VehicleType; estimate?: boolean; via?: string | null };
 function distanceToSegmentMeters(point: {lat:number;lng:number}, a: [number,number], b: [number,number]) {
   const latScale = 111320, lngScale = 111320 * Math.cos(point.lat * Math.PI / 180);
   const px = point.lng * lngScale, py = point.lat * latScale;
@@ -264,7 +265,9 @@ export default function Home() {
   // Zone à faibles émissions de Paris : limite seulement, désactivée par défaut ; liens de l'arrêté lus dans le fichier généré.
   const [zfeOn, setZfeOn] = useState(initialLayers.zfe);
   const [zfeFile, setZfeFile] = useState<ZfeFile | null>(null);
-  useEffect(() => { if (zfeOn) void loadZfe().then(setZfeFile); }, [zfeOn]);
+  // Le périmètre sert aussi à dire si un trajet le traverse, même si la couche ZFE est masquée (petit fichier du site, aucun service externe).
+  useEffect(() => { if (zfeOn || routeOptions.length > 0) void loadZfe().then(setZfeFile); }, [zfeOn, routeOptions.length]);
+  const zfeCrossing = useMemo(() => Object.fromEntries(routeOptions.map((o) => [o.id, !o.offline && o.profile !== "bike" && routeCrossesZfe(o.coordinates, zfeFile?.ring)])) as Record<string, boolean>, [routeOptions, zfeFile]);
   // Bornes de recharge (IRVE) : couche « Bornes de recharge » OU type « Électrique » du sélecteur (affichage seulement, ni signalement ni disponibilité).
   const [chargeOn, setChargeOn] = useState(initialLayers.charge);
   const [irveDate, setIrveDate] = useState<string | null>(null);
@@ -547,33 +550,11 @@ export default function Home() {
       const data = await response.json() as { routes?: Array<{geometry:{coordinates:[number,number][]};distance:number;duration:number;legs?:Array<{steps?:Array<{distance:number;name?:string;mode?:string;maneuver?:{type?:string;modifier?:string;location:[number,number]}}>}>}>};
       const rawRoutes = data.routes ?? [];
       if (!rawRoutes.length) throw new Error("Aucun itinéraire trouvé");
-      // Le serveur ne propose parfois qu'un seul trajet : on en génère 2 autres en passant par un point décalé de chaque côté.
-      if (rawRoutes.length < 3 && vehicle !== "bike") {
-        const total = distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng);
-        const offset = Math.min(4000, Math.max(150, total * 0.18));
-        const midLat = (origin.lat + destination.lat) / 2, midLng = (origin.lng + destination.lng) / 2;
-        const dx = (destination.lng - origin.lng) * Math.cos(midLat * Math.PI / 180), dy = destination.lat - origin.lat;
-        const norm = Math.hypot(dx, dy) || 1;
-        const kLat = offset / 111320, kLng = offset / (111320 * Math.cos(midLat * Math.PI / 180));
-        const vias = [1, -1].map((side) => ({ lat: midLat + side * (dx / norm) * kLat, lng: midLng - side * (dy / norm) * kLng }));
-        const extra = await Promise.all(vias.map(async (via) => {
-          try {
-            const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${via.lng},${via.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true`, { signal: AbortSignal.timeout(12000) });
-            if (!r.ok) return null;
-            return ((await r.json()) as typeof data).routes?.[0] ?? null;
-          } catch { return null; }
-        }));
-        const fastestDuration = Math.min(...rawRoutes.map((route) => route.duration));
-        for (const candidate of extra) {
-          if (!candidate || rawRoutes.length >= 3 || candidate.duration > fastestDuration * 1.7 + 120) continue;
-          const duplicate = rawRoutes.some((route) => Math.abs(route.distance - candidate.distance) / route.distance < 0.03 && Math.abs(route.duration - candidate.duration) / Math.max(route.duration, 1) < 0.05);
-          if (!duplicate) rawRoutes.push(candidate);
-        }
-      }
-      const mapped: DrivingRoute[] = rawRoutes.slice(0,3).map((route,index) => {
+      // Alternatives : uniquement celles que le service d'itinéraire renvoie (3 au plus). Aucun trajet n'est fabriqué par un point de passage décalé ; une seule route reçue = une seule route montrée.
+      const mapped: DrivingRoute[] = capAlternatives(rawRoutes.map((route) => ({ route, distance: route.distance, duration: route.duration, coordinates: route.geometry.coordinates }))).map(({ route }, index) => {
         const rawSteps = route.legs?.flatMap((leg) => leg.steps ?? []) ?? [];
         const steps: RouteStep[] = mapOsrmSteps(rawSteps as Parameters<typeof mapOsrmSteps>[0], [destination.lat, destination.lng]);
-        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps, profile: vehicle };
+        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps, profile: vehicle, via: viaRoad(steps) };
       });
       if (vehicle === "bike") {
         // Vélo : durée du service (sinon 15 km/h), coût 0 €, pas de carburant ni de station. Les alternatives du service sont gardées telles quelles.
@@ -957,8 +938,16 @@ export default function Home() {
             <div className="m-route-body">
 {originNote && <small className="route-origin-note">{originNote}</small>}
 {gpsNote && !trackingGps && <small className="route-origin-note">{gpsNote}</small>}
-{routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.costEur != null ? ` · ${option.costEur.toFixed(option.costEur === 0 ? 0 : 2).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
-{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Démarrer</button>}</div>
+{!drivingRoute.offline && <div className="m-trip-list" role="group" aria-label="Trajets comparés">
+  {routeOptions.map((option) => { const tag = tripTag(option.label); const bike = option.profile === "bike"; return <button type="button" key={option.id} className={`m-trip-card${drivingRoute.id === option.id ? " on" : ""}`} aria-pressed={drivingRoute.id === option.id} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>
+    <span className="m-trip-top"><b>{formatDuration(option.duration)}</b><span>{formatDistance(option.distance)}</span>{tag && <em>{tag}</em>}</span>
+    {option.via && <span className="m-trip-line">via {option.via}</span>}
+    <span className="m-trip-line">{bike ? "0 € · vélo" : `${formatEuro(option.costEur ?? 0)}${option.costAssumed ? " (prix supposé)" : ""} de carburant${option.profile === "moto" ? " · estimation" : ""}`}</span>
+    {zfeCrossing[option.id] && <span className="m-trip-zfe">Traverse la zone à faibles émissions de Paris</span>}
+  </button>; })}
+  <small className="m-trip-note">{routeOptions.length > 1 ? "Durées" : "Un seul itinéraire proposé pour ce trajet. Durée"} {NO_TRAFFIC}.</small>
+</div>}
+{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Y aller</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
           </div>
           <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>
