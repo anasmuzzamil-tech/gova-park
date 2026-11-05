@@ -157,3 +157,64 @@
 
 @media (prefers-reduced-motion: reduce) { .m-round, .bottom-nav a { transition: none; } .m-scard:active, .m-card-open:active { transform: none; } }
 @media (min-width: 900px) { .m-street-bar { max-width: 520px; } .m-sheet-toggle { max-width: 520px; } }
+
+/* ═══ Rapprochement de la maquette fournie par Anas (écran carte mobile). Voir docs/DESIGN.md, « Maquette d'Anas ». Couleurs de statut et de type de véhicule inchangées. ═══ */
+/* Regroupements de places privées : goutte bleue avec le nombre (pointe sur le lieu, ancrage « bottom » dans ParkingMap3D) ; place isolée : petit carré arrondi « P » (couleur = statut, gris sans signalement). */
+.pk-cluster, .pk-cluster.maplibregl-marker { display: block; width: 40px; min-width: 40px; height: 50px; padding: 9px 0 0; border: 0; border-radius: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 50'%3E%3Cpath d='M20 48C20 48 3 31 3 19a17 17 0 0 1 34 0c0 12-17 29-17 29z' fill='%232563EB' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E") center / 100% 100% no-repeat; box-shadow: none; filter: drop-shadow(0 3px 4px #1a143a55); color: #fff; font: 800 14px/20px "Manrope", sans-serif; text-align: center; }
+.pk-dot, .pk-dot.maplibregl-marker { border-radius: 9px; }
+/* Position : point bleu avec halo */
+.pk-you { width: 48px; height: 48px; }
+.pk-you i { opacity: .2; border: 1.5px solid #2f6df68c; }
+.pk-you b { width: 18px; height: 18px; }
+
+@media (max-width: 899px) {
+  /* Haut : surface blanche arrondie sous la recherche et les puces */
+  .map-workspace::before { content: ""; position: absolute; z-index: 450; top: 0; left: 0; right: 0; height: calc(max(14px, env(safe-area-inset-top, 0px)) + 126px); background: linear-gradient(#fffffff5, #ffffffe6); border-radius: 0 0 var(--gp-r-3) var(--gp-r-3); box-shadow: 0 6px 24px #1a143a1f; pointer-events: none; }
+  .home-screen.is-offline .map-workspace::before { height: calc(max(14px, env(safe-area-inset-top, 0px)) + 156px); }
+  .home-screen.is-navigating .map-workspace::before, .view-list .map-workspace::before { display: none; }
+  .m-layers-btn { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 140px); }
+  .m-layers { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 196px); }
+  /* Puces : pictogramme + libellé, 44 px ; actif = couleur du type (voiture = bleu, fixé par docs/DESIGN.md) */
+  .m-chip[data-vt] { height: 44px; gap: 8px; padding: 0 16px 0 14px; }
+  .m-chip[data-vt]::before { display: none; }
+  .m-chip svg { flex: none; color: var(--vt); }
+  .m-chip.on svg { color: #fff; }
+  /* Boutons ronds flottants à droite de la carte : 2D/3D puis boussole (et zoom, conservé) */
+  .maplibregl-ctrl-bottom-right { display: flex; flex-direction: column; align-items: flex-end; }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl { float: none; margin: 0 14px 10px 0; }
+  .maplibregl-ctrl-bottom-right .gp-tilt { order: -1; }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { display: grid; gap: 10px; background: transparent; box-shadow: none; border-radius: 0; }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button { width: 48px; height: 48px; border: 0; border-radius: 50%; background-color: #fff; box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+  .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button { border-top: 0; }
+  .gp-tilt-btn { font-size: 15px; }
+  /* Panneau du bas : carte blanche arrondie (titre, « Voir la liste », première place) puis les deux gros boutons */
+  .m-panel { margin: 0 14px 10px; padding: 4px 0 8px; border-radius: var(--gp-r-3); background: #fff; box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+  .m-panel .m-sheet-toggle { width: 100%; min-height: 48px; margin: 0; padding: 6px 16px; border-radius: 0; background: transparent; box-shadow: none; }
+  .m-panel .m-sheet-toggle b { font-size: 18px; font-weight: 800; }
+  .m-panel .m-sheet-toggle > span { display: inline-flex; align-items: center; gap: 2px; color: var(--gp-accent-ink); font-size: var(--gp-t-14); font-weight: 700; }
+  .m-sheet.is-closed .m-panel .m-grip { display: none; }
+  .m-peek { width: 100%; min-height: var(--gp-touch); display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: var(--gp-s-3); padding: var(--gp-s-2) var(--gp-s-4) var(--gp-s-1); border: 0; background: transparent; color: var(--gp-ink); text-align: left; font-family: inherit; }
+  .m-peek-thumb { width: 56px; height: 56px; display: grid; place-items: center; border-radius: var(--gp-r-1); object-fit: cover; background: var(--vt, var(--gp-v-car)); color: #fff; font: 800 26px/1 "Manrope", sans-serif; }
+  .m-peek-thumb[data-vt="car"] { --vt: var(--gp-v-car); } .m-peek-thumb[data-vt="moto"] { --vt: var(--gp-v-moto); } .m-peek-thumb[data-vt="delivery"] { --vt: var(--gp-v-delivery); } .m-peek-thumb[data-vt="bike"] { --vt: var(--gp-v-bike); }
+  .m-peek-main { display: grid; gap: 2px; min-width: 0; }
+  .m-peek-main strong { font-size: var(--gp-t-16); font-weight: 800; letter-spacing: -.01em; }
+  .m-peek-main small { color: var(--gp-ink-2); font-size: var(--gp-t-14); line-height: 1.3; }
+  .m-peek .m-state { position: static; }
+  .m-peek-main .m-state { padding: 1px 8px 1px 6px; }
+  .m-peek-price { padding: 8px 14px; border-radius: var(--gp-r-pill); background: var(--gp-surface-2); font-size: var(--gp-t-16); font-weight: 800; white-space: nowrap; }
+  .m-peek-price small { color: var(--gp-ink-3); font-size: var(--gp-t-14); }
+  .m-street-btn.taken { background: var(--gp-accent-ink); }
+  .m-street-more { display: none; }
+  .m-sheet.is-closed:has(> .m-panel) { display: flex; flex-direction: column; padding-bottom: 6px; }
+  .m-sheet.is-closed:has(> .m-panel) .m-meta { position: static; order: 0; padding: 0 14px 6px; }
+  .m-sheet.is-closed:has(> .m-panel) > .m-panel { order: 1; }
+  .m-sheet.is-closed:has(> .m-panel) .m-street-bar { order: 2; position: static; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gp-s-3); margin: 0 14px 6px; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .m-sheet.is-closed:has(> .m-panel) .m-street-bar .sp-pill { position: absolute; left: 14px; bottom: calc(100% + 6px); width: 56px; height: 56px; min-height: 56px; margin: 0; border-radius: 50%; }
+  .m-sheet.is-closed:has(> .m-panel) .m-street-btn { width: auto; min-width: 0; height: 56px; min-height: 56px; padding: 0 var(--gp-s-2); border-radius: 28px; font-size: 15px; box-shadow: var(--gp-shadow-2); }
+  .m-sheet.is-closed:has(> .m-panel) .m-street-more { display: inline; }
+  .home-screen:has(.m-sheet.is-closed > .m-panel) { --sheet-h: calc(68px + env(safe-area-inset-bottom, 0px) + 262px); }
+  /* Onglets du bas : surface blanche arrondie, onglet actif en pastille lavande (onglets et routes inchangés) */
+  .bottom-nav { padding-top: 8px; border-radius: var(--gp-r-3) var(--gp-r-3) 0 0; background: #fff; box-shadow: 0 -1px 0 var(--gp-line), 0 -10px 30px #1a143a14; }
+  .bottom-nav a { border-radius: 18px; }
+  .bottom-nav a.active { background: #ece8fd; color: var(--gp-accent-ink); }
+}

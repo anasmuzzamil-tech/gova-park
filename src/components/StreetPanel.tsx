@@ -53,7 +53,7 @@ export function StreetPanel({ vehicle, state, spots, reference, hasPosition, bus
   return (
     <section className="m-street-bar" aria-label="Places gratuites en rue : signaler">
       {pill}
-      <button type="button" className="m-street-btn free" aria-label="Je libère ma place" disabled={busy} onClick={() => { setLast("free"); onFree(); }}>{busy && last === "free" ? <Loader2 size={18} className="gp-spin" aria-hidden="true" /> : done === "free" ? <Check size={18} className="gp-check" aria-hidden="true" /> : <MapPin size={18} />}<span>{busy && busyLabel ? busyLabel : "Je libère"}</span></button>
+      <button type="button" className="m-street-btn free" aria-label="Je libère ma place" disabled={busy} onClick={() => { setLast("free"); onFree(); }}>{busy && last === "free" ? <Loader2 size={18} className="gp-spin" aria-hidden="true" /> : done === "free" ? <Check size={18} className="gp-check" aria-hidden="true" /> : <MapPin size={18} />}<span>{busy && busyLabel ? busyLabel : <>Je libère<span className="m-street-more"> une place</span></>}</span></button>
       <button type="button" className="m-street-btn taken" aria-label={`Je me gare${VEHICLE_PARK_SUFFIX[vehicle]}`} disabled={busy} onClick={() => { setLast("taken"); onTaken(); }}>{busy && last === "taken" ? <Loader2 size={18} className="gp-spin" aria-hidden="true" /> : done === "taken" ? <Check size={18} className="gp-check" aria-hidden="true" /> : vehicle === "car" ? <Car size={18} /> : <span aria-hidden="true">{VEHICLE_ICON[vehicle]}</span>}<span>{busy && busyLabel ? busyLabel : "Je me gare"}</span></button>
     </section>
   );

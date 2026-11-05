@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info, Layers, Briefcase, MapPin, Home as HomeIcon, Trash2 } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info, Layers, Briefcase, MapPin, Home as HomeIcon, Trash2, ChevronRight, Car as CarIcon, Bike as BikeIcon, Package as PackageIcon, Zap as ZapIcon, Accessibility as AccessibilityIcon } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -116,6 +116,10 @@ async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSug
 
 /** Types d'affichage seulement proposés dans le sélecteur. */
 const DISPLAY_CHIPS: DisplayType[] = ["pmr", "ev"];
+/** Pictogrammes des puces « Mon véhicule » (lucide n'a pas de moto sûre dans la version utilisée : petit dessin local). */
+const MotoIcon = ({ size = 18 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="5" cy="17" r="3" /><circle cx="19" cy="17" r="3" /><path d="M5 17h4l3-6h4l3 6M12 11 10 7H7M15 7h3" /></svg>;
+const CHIP_ICON: Record<VehicleType, JSX.Element> = { car: <CarIcon size={18} aria-hidden="true" />, moto: <MotoIcon />, delivery: <PackageIcon size={18} aria-hidden="true" />, bike: <BikeIcon size={18} aria-hidden="true" /> };
+const DISPLAY_ICON: Record<DisplayType, JSX.Element> = { pmr: <AccessibilityIcon size={18} aria-hidden="true" />, ev: <ZapIcon size={18} aria-hidden="true" /> };
 
 export default function Home() {
   const navigate = useNavigate();
@@ -880,6 +884,16 @@ export default function Home() {
     : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
     : `${parisLoad.mode === "overview" ? "Zoomez pour voir chaque emplacement." : ""}${parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""}`.trim();
 
+  // Première ligne du panneau replié : la place la plus proche, sans disponibilité inventée (place en rue : couleur ET mot d'un signalement ; place privée : photo, prix de l'annonce, statut seulement si une source le donne).
+  const peekRow = nearStreet[0] ? (() => { const { spot, meters: away } = nearStreet[0]; return <button type="button" className="m-peek" onClick={() => setSelectedStreetId(spot.id)}>
+    <span className="m-peek-thumb" data-vt={vehicle} aria-hidden="true">P</span>
+    <span className="m-peek-main"><strong>{spot.label}</strong><small>{meters(away)} · Place en rue · signalée par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
+    <span className={`m-state ${spot.color}`}>{spot.color === "orange" ? "Peut-être libre" : spot.status === "free" ? "Libre" : "Prise"}</span>
+  </button>; })() : nearby[0] ? (() => { const { item, meters: away } = nearby[0]; const pill = statePillLabel(item.parkingStatus); return <button type="button" className="m-peek" onClick={() => navigate(`/place/${item.id}`)}>
+    <img className="m-peek-thumb" src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
+    <span className="m-peek-main"><strong>{item.title}</strong><small>{meters(away)} · Place privée{pill && <> · <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{pill}</span></>}</small></span>
+    <span className="m-peek-price">{euros(item.hourlyCents)}<small>/h</small></span>
+  </button>; })() : null;
   const placesNear = nearLabel(filtered.length + nearStreet.length, { hasPosition: !!userPosition, address: destination?.label });
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
@@ -940,8 +954,8 @@ export default function Home() {
         </div>
 
         <div className="m-chips">
-          {VEHICLE_TYPES.map((v) => <button key={v} data-vt={v} className={`m-chip ${vehicle === v && !displayType ? "on" : ""}`} aria-pressed={vehicle === v && !displayType} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false, display: null })}>{VEHICLE_CHIP[v]}</button>)}
-          {DISPLAY_CHIPS.map((d) => <button key={d} data-vt={d} className={`m-chip ${displayType === d ? "on" : ""}`} aria-pressed={displayType === d} aria-label={d === "pmr" ? "Afficher les places PMR (affichage seulement)" : "Afficher les bornes de recharge (affichage seulement)"} onClick={() => chooseVehicle({ vehicle, all: false, display: displayType === d ? null : d })}>{DISPLAY_CHIP[d]}</button>)}
+          {VEHICLE_TYPES.map((v) => <button key={v} data-vt={v} className={`m-chip ${vehicle === v && !displayType ? "on" : ""}`} aria-pressed={vehicle === v && !displayType} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false, display: null })}>{CHIP_ICON[v]}{VEHICLE_CHIP[v]}</button>)}
+          {DISPLAY_CHIPS.map((d) => <button key={d} data-vt={d} className={`m-chip ${displayType === d ? "on" : ""}`} aria-pressed={displayType === d} aria-label={d === "pmr" ? "Afficher les places PMR (affichage seulement)" : "Afficher les bornes de recharge (affichage seulement)"} onClick={() => chooseVehicle({ vehicle, all: false, display: displayType === d ? null : d })}>{DISPLAY_ICON[d]}{DISPLAY_CHIP[d]}</button>)}
           <button data-vt="all" className={`m-chip ${vehicleChoice.all && !displayType ? "on" : ""}`} aria-pressed={vehicleChoice.all && !displayType} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all, display: null })}>Tout</button>
         </div>
 
@@ -1070,11 +1084,14 @@ export default function Home() {
               </button>)}
             </div>
           </> : <>
+            <div className="m-panel">
             <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} aria-label={`${placesNear}. ${sheetMode === "closed" ? "Ouvrir la liste" : sheetMode === "half" ? "Agrandir la liste" : "Fermer la liste"}`} onClick={() => setSheetMode((mode) => (mode === "closed" ? "half" : mode === "half" ? "full" : "closed"))}>
               <i className="m-grip" aria-hidden="true" />
               <b>{placesNear}</b>
-              <span aria-hidden="true">{sheetMode === "full" ? <ChevronDown size={20} /> : <ChevronUp size={20} />}</span>
+              <span aria-hidden="true">{sheetMode === "closed" ? <>Voir la liste<ChevronRight size={18} /></> : sheetMode === "full" ? <ChevronDown size={20} /> : <ChevronUp size={20} />}</span>
             </button>
+            {!sheetOpen && peekRow}
+            </div>
             <div className="m-cards" hidden={!sheetOpen}>
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
               {searchNote && <div className="m-empty">{searchNote}</div>}

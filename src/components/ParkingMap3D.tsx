@@ -14,7 +14,7 @@ import { isWorkActive } from "@contracts/paris-works";
 import { mapDiag } from "@/lib/map-diag";
 import { zfeLine } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
-import { DISPLAY_COLORS, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, hexToRgba, spotTypeColor, typeColor, type TypeColorKey } from "@contracts/vehicle-types";
+import { DISPLAY_COLORS, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, spotTypeColor, typeColor, type TypeColorKey } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 
@@ -93,6 +93,19 @@ function parisIcon(color: string, glyph: string, ring: string = "#ffffff"): Imag
   g.fillStyle = "#ffffff"; g.font = `800 ${glyph.length > 1 ? 21 : 34}px Manrope, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
   return g.getImageData(0, 0, size, size);
 }
+/** Épingle en goutte (pointe en bas) de la couleur du type affiché, contour blanc : sert aux regroupements numérotés (le nombre est un texte posé dessus). */
+function pinImage(color: string): ImageData | null {
+  const w = 64, h = 80, canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const g = canvas.getContext("2d");
+  if (!g) return null;
+  const path = new Path2D("M32 77C32 77 5 49 5 31a27 27 0 0 1 54 0c0 18-27 46-27 46z");
+  g.shadowColor = "rgba(26,20,58,.35)"; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.fillStyle = color; g.fill(path);
+  g.shadowColor = "transparent"; g.lineWidth = 4; g.strokeStyle = "#ffffff"; g.stroke(path);
+  return g.getImageData(0, 0, w, h);
+}
+const PIN_KEYS: TypeColorKey[] = ["car", "moto", "delivery", "bike", "all", "pmr", "ev"];
 // Contours des emprises en POINTILLÉS (zoom rue) et séparateurs INDICATIFS : sous les icônes et les compteurs, couleur = statut d'un signalement récent, sinon gris.
 const colorByStatus = (): maplibregl.ExpressionSpecification => ["match", ["get", "c"], "green", STATUS_COLORS.green, "orange", STATUS_COLORS.orange, "red", STATUS_COLORS.red, "#6b7080"] as maplibregl.ExpressionSpecification;
 function addPolygonLayers(map: maplibregl.Map) {
@@ -173,16 +186,17 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
       if (img && !map.hasImage(`ps-${name}-${t}`)) map.addImage(`ps-${name}-${t}`, img, { pixelRatio: 2 });
     }
     // Source regroupée par MapLibre : le total d'un groupe additionne `w` = nombre de PLACES (celles du tronçon, ou le total d'une cellule de la vue d'ensemble `a` = 1).
+    for (const key of PIN_KEYS) { const pin = pinImage(typeColor(key)); if (pin && !map.hasImage(`gp-pin-${key}`)) map.addImage(`gp-pin-${key}`, pin, { pixelRatio: 2 }); }
     map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 40, clusterMaxZoom: 15, clusterProperties: { total: ["+", ["get", "w"]] } });
     map.addSource("gp-paris-hot", { type: "geojson", data: emptyFc() });
     // Groupes légers : disque violet translucide, contour fin, petits chiffres (1,8k au-delà de 1000) — jamais de grosse tache sombre.
-    const group = "rgba(109, 74, 224, 0.84)";
-    const radius = (field: string): maplibregl.ExpressionSpecification => ["step", ["get", field], 12, 10, 14, 100, 17, 1000, 20];
+    // Regroupements : épingles en goutte (couleur du type affiché, voiture = bleu par défaut), le nombre de PLACES est posé dans la tête de la goutte.
+    const pinLayout = { "icon-image": "gp-pin-car", "icon-anchor": "bottom", "icon-allow-overlap": true, "icon-ignore-placement": true } as maplibregl.SymbolLayerSpecification["layout"];
     const countText = (field: string): maplibregl.ExpressionSpecification => ["case", [">=", ["get", field], 1000], ["concat", ["number-format", ["/", ["get", field], 1000], { locale: "fr-FR", "max-fraction-digits": 1 }], "k"], ["to-string", ["get", field]]] as maplibregl.ExpressionSpecification;
-    const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 11, "text-allow-overlap": true, "text-ignore-placement": true };
-    map.addLayer({ id: "gp-paris-cluster", type: "circle", source: "gp-paris", filter: ["has", "point_count"], paint: { "circle-color": group, "circle-radius": radius("total"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+    const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 12, "text-offset": [0, -2.05], "text-allow-overlap": true, "text-ignore-placement": true };
+    map.addLayer({ id: "gp-paris-cluster", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: pinLayout });
     map.addLayer({ id: "gp-paris-cluster-n", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: { ...textLayout, "text-field": countText("total") }, paint: { "text-color": "#ffffff" } });
-    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], paint: { "circle-color": group, "circle-radius": radius("w"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+    map.addLayer({ id: "gp-paris-agg", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], layout: pinLayout });
     map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], layout: { ...textLayout, "text-field": countText("w") }, paint: { "text-color": "#ffffff" } });
     // Un marqueur par tronçon, anti-chevauchement : MapLibre masque une icône qui en recouvrirait une autre (la plus grosse en places gagne) ; plus on zoome, plus elles apparaissent.
     // Pas de groupes numérotés à partir du zoom 16 (clusterMaxZoom 15) : les places s'affichent une à une, icônes petites. Le nombre de places s'affiche à côté de l'icône, discret, dès le zoom 17 seulement (masqué s'il gêne, jamais empilé).
@@ -561,7 +575,7 @@ export default function ParkingMap3D({
       const node = text("span", String(g.items.length), "pk-cluster");
       node.title = `${g.items.length} places dans cette zone : toucher pour zoomer`; node.setAttribute("aria-label", node.title); node.style.cursor = "pointer";
       node.addEventListener("click", (e) => { e.stopPropagation(); map.easeTo({ center: [g.lng, g.lat], zoom: Math.min(map.getZoom() + 2, 16), duration: 500 }); });
-      return new maplibregl.Marker({ element: node }).setLngLat([g.lng, g.lat]).addTo(map);
+      return new maplibregl.Marker({ element: node, anchor: "bottom" }).setLngLat([g.lng, g.lat]).addTo(map);
     });
     const freshListings = singles.filter((l) => !seenListings.current.has(String(l.id)));
     const popListings = reducedMotion() || freshListings.length > 40 ? new Set<string>() : new Set(freshListings.map((l) => String(l.id)));
@@ -692,8 +706,7 @@ export default function ParkingMap3D({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const color = hexToRgba(typeColor(typeColorKey), 0.92);
-    for (const id of ["gp-paris-cluster", "gp-paris-agg"]) { try { if (map.getLayer(id)) map.setPaintProperty(id, "circle-color", color); } catch { /* couche absente : couleur d'origine */ } }
+    for (const id of ["gp-paris-cluster", "gp-paris-agg"]) { try { if (map.getLayer(id)) map.setLayoutProperty(id, "icon-image", `gp-pin-${typeColorKey}`); } catch { /* couche absente : épingle d'origine */ } }
   }, [ready, typeColorKey]);
   // Zone à faibles émissions : limite seulement.
   useEffect(() => {
