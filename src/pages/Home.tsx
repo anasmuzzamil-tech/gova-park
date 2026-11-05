@@ -30,6 +30,8 @@ import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { FORBIDDEN_ATTRIBUTION, FORBIDDEN_SOURCE } from "@contracts/paris-forbidden";
 import { spotContextLines } from "@/lib/spot-context";
 import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
+import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
+import { loadTariffs } from "@/lib/paris-tariffs";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -234,6 +236,9 @@ export default function Home() {
   // Chantiers (Ville de Paris, non exhaustifs, peuvent être périmés) : couche désactivée par défaut ; la date des données vient du fichier généré.
   const [worksOn, setWorksOn] = useState(false);
   const [worksDate, setWorksDate] = useState<string | null>(null);
+  // Tarifs de stationnement : date du fichier pour le panneau « i » (la ligne de fiche n'apparaît que pour une place payante).
+  const [tariffDate, setTariffDate] = useState<string | null | undefined>(undefined);
+  useEffect(() => { if (parisOn) void loadTariffs().then((file) => setTariffDate(file ? file.dataDate : undefined)); }, [parisOn]);
   useEffect(() => { if (worksOn) void loadLayerIndex("/data/paris-works").then((index) => setWorksDate(index?.dataDate ?? null)).catch(() => setWorksDate(null)); }, [worksOn]);
   // Lignes de contexte de la fiche (ex. stationnement interdit), lues dans les couches de données autour de la place sélectionnée.
   const [spotExtra, setSpotExtra] = useState<string[]>([]);
@@ -241,7 +246,7 @@ export default function Home() {
     setSpotExtra([]);
     if (!selectedParis) return;
     let cancelled = false;
-    void spotContextLines(selectedParis.lat, selectedParis.lng).then((lines) => { if (!cancelled) setSpotExtra(lines); });
+    void spotContextLines(selectedParis.lat, selectedParis.lng, selectedParis.t).then((lines) => { if (!cancelled) setSpotExtra(lines); });
     return () => { cancelled = true; };
   }, [selectedParis]);
   const streetInput = useMemo(() => {
@@ -823,7 +828,9 @@ export default function Home() {
               {parisOn && <p>{PARIS_POLYGONS_ATTRIBUTION}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
               {parisOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
+              {parisOn && tariffDate !== undefined && <p>{tariffAttribution(tariffDate)}</p>}
               {worksOn && <p>{worksAttribution(worksDate)}</p>}
+              {parisOn && tariffDate !== undefined && <a href={TARIFF_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des tarifs : data.gouv.fr</a>}
               {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}
               {parisOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
               {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}

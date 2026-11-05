@@ -2,7 +2,9 @@
 // Une ligne n'apparaît QUE si la donnée la justifie ; aucune donnée ou fichiers absents = aucune ligne (jamais « autorisé »).
 import { FORBIDDEN_NEAR_METERS, forbiddenCardLine, forbiddenNear } from "@contracts/paris-forbidden";
 import { WORKS_NEAR_METERS, workCardLine, worksNear } from "@contracts/paris-works";
+import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayer } from "@/lib/geo-layers";
+import { loadTariffs } from "@/lib/paris-tariffs";
 
 const FORBIDDEN_BASE = "/data/paris-forbidden";
 const WORKS_BASE = "/data/paris-works";
@@ -12,8 +14,13 @@ const around = (lat: number, lng: number, meters: number) => {
 };
 
 /** Lignes à ajouter à la fiche d'une place de Paris. Ne lève jamais d'erreur : une couche indisponible n'ajoute simplement aucune ligne. */
-export async function spotContextLines(lat: number, lng: number): Promise<string[]> {
+export async function spotContextLines(lat: number, lng: number, spotType: number = 0): Promise<string[]> {
   const lines: string[] = [];
+  try {
+    // Tarif visiteur : seulement pour une place PAYANTE (voiture ou moto) située dans une des 2 zones ; sinon aucune ligne.
+    const line = tariffLineFor(await loadTariffs(), spotType, lat, lng);
+    if (line) lines.push(line);
+  } catch { /* tarifs indisponibles : pas de ligne */ }
   try {
     const result = await loadLayer(FORBIDDEN_BASE, around(lat, lng, FORBIDDEN_NEAR_METERS + 5), { lat, lng }, 500);
     if (result.status === "ok") {
