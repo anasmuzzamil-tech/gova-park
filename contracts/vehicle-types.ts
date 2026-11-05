@@ -27,11 +27,24 @@ export const VEHICLE_PARK_SUFFIX: Record<VehicleType, string> = { car: "", moto:
 export const VEHICLE_COLORS: Record<VehicleType, string> = { car: "#2563EB", moto: "#7C3AED", delivery: "#DB2777", bike: "#0E7490" };
 /** « Tout » : ardoise foncée. */
 export const ALL_TYPES_COLOR = "#1F2937";
-export type TypeColorKey = VehicleType | "all";
-export const typeColor = (key: TypeColorKey): string => (key === "all" ? ALL_TYPES_COLOR : VEHICLE_COLORS[key]);
 
-/** Couleur du type d'un emplacement (voiture, moto, livraison, vélo), ou null (autocar, PMR, réservé, autre : pas de couleur de type). */
+/**
+ * Types d'AFFICHAGE SEULEMENT (décision d'Anas) : « PMR » (places réservées GIG/GIC de la Ville de Paris) et « Électrique » (bornes de recharge).
+ * Ils sont dans le sélecteur « Mon véhicule » mais ne sont PAS des types de signalement : aucun « Je libère » / « Je me gare » (VEHICLE_TYPES, l'enum du serveur et la migration restent à 4 types).
+ * Couleurs distinctes des 5 ci-dessus, du violet d'accent et des statuts (écart de couleur testé) : PMR brun, Électrique fuchsia. Texte blanc dessus >= 4,5:1.
+ */
+export const DISPLAY_TYPES = ["pmr", "ev"] as const;
+export type DisplayType = (typeof DISPLAY_TYPES)[number];
+export const DISPLAY_COLORS: Record<DisplayType, string> = { pmr: "#78350F", ev: "#A21CAF" };
+export const DISPLAY_CHIP: Record<DisplayType, string> = { pmr: "PMR", ev: "Électrique" };
+export const isDisplayType = (v: unknown): v is DisplayType => typeof v === "string" && (DISPLAY_TYPES as readonly string[]).includes(v);
+
+export type TypeColorKey = VehicleType | DisplayType | "all";
+export const typeColor = (key: TypeColorKey): string => (key === "all" ? ALL_TYPES_COLOR : key === "pmr" || key === "ev" ? DISPLAY_COLORS[key] : VEHICLE_COLORS[key]);
+
+/** Couleur du type d'un emplacement (voiture, moto, livraison, vélo, PMR), ou null (autocar, réservé, autre : pas de couleur de type). */
 export function spotTypeColor(spotType: number): string | null {
+  if (spotType === SPOT_TYPE.pmr) return DISPLAY_COLORS.pmr;
   const v = vehicleTypesForSpot(spotType)[0];
   return v ? VEHICLE_COLORS[v] : null;
 }

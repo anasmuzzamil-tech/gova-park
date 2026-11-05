@@ -59,6 +59,12 @@ export function vehicleOfRegime(prioritaire: string | null | undefined, particul
   return vehicleTypesForSpot(interpretRegime(prioritaire, particulier).t)[0] ?? null;
 }
 
+/** Emprise de place PMR (GIG/GIC : Standard, Élargie, Standard piétonne) : jeu de contours à part (`tiles/pmr/`), affichage seulement, jamais de signalement. */
+export const PMR_GROUP = "pmr";
+export function isPmrRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
+  return interpretRegime(prioritaire, particulier).t === SPOT_TYPE.pmr;
+}
+
 /** Une voiture ordinaire peut-elle s'y garer ? MÊME règle que l'affichage par défaut des emplacements (interpretRegime) : payant mixte / rotatif, gratuit. */
 export function isCarRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
   return interpretRegime(prioritaire, particulier).cars === true;

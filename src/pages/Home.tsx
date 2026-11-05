@@ -22,9 +22,9 @@ import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
-import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, formatStreet, interpretRegime, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
+import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE, SPOT_TYPE_CODES, formatStreet, interpretRegime, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
-import { DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
+import { DEFAULT_VEHICLE, DISPLAY_CHIP, isDisplayType, type DisplayType, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { PlaceSheet } from "@/components/PlaceSheet";
 import { parisSheetContent, type ParisSpotInfo } from "@/lib/place-sheet";
@@ -107,6 +107,9 @@ async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSug
   const local = unique.filter((item) => inIleDeFrance(item.lat, item.lng));
   return (local.length > 0 ? local : unique).slice(0, 5);
 }
+
+/** Types d'affichage seulement proposés dans le sélecteur. */
+const DISPLAY_CHIPS: DisplayType[] = ["pmr"];
 
 export default function Home() {
   const navigate = useNavigate();
@@ -226,21 +229,24 @@ export default function Home() {
   const [forbiddenOn, setForbiddenOn] = useState(initialLayers.forbidden);
   // Par défaut : seulement les emplacements où une voiture peut se garer (payant, mixte, gratuit) ; livraison, vélos, deux-roues, autocars, PMR et le reste s'activent par le filtre.
   // « Mon véhicule » : voiture par défaut ; mémorisé dans le navigateur seulement (aucun champ de profil serveur n'existe pour le type de véhicule). « Tout » affiche tous les types sur la carte.
-  const [vehicleChoice, setVehicleChoice] = useState<{ vehicle: VehicleType; all: boolean }>(() => {
+  // `display` : type d'AFFICHAGE SEULEMENT (PMR) : il montre les places de ce type, sans signalement (le véhicule de signalement reste celui d'avant).
+  type VehicleChoice = { vehicle: VehicleType; all: boolean; display?: DisplayType | null };
+  const [vehicleChoice, setVehicleChoice] = useState<VehicleChoice>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("govapark.mapVehicle.v1") || "null");
-      if (saved && isVehicleType(saved.vehicle)) return { vehicle: saved.vehicle, all: saved.all === true };
+      if (saved && isVehicleType(saved.vehicle)) return { vehicle: saved.vehicle, all: saved.all === true, display: isDisplayType(saved.display) ? saved.display : null };
     } catch { /* stockage indisponible : choix par défaut */ }
-    return { vehicle: fromProfileVehicle(vehiclePrefs.vehicle) ?? DEFAULT_VEHICLE, all: false };
+    return { vehicle: fromProfileVehicle(vehiclePrefs.vehicle) ?? DEFAULT_VEHICLE, all: false, display: null };
   });
   const vehicle = vehicleChoice.vehicle;
-  const chooseVehicle = (next: { vehicle: VehicleType; all: boolean }) => {
+  const displayType = vehicleChoice.display ?? null;
+  const chooseVehicle = (next: VehicleChoice) => {
     setVehicleChoice(next);
     try { localStorage.setItem("govapark.mapVehicle.v1", JSON.stringify(next)); } catch { /* facultatif */ }
   };
   // Consommation et carburant par défaut selon le véhicule (réglables ensuite dans le panneau de trajet).
   useEffect(() => { setFuelConsumption(DEFAULT_CONSUMPTION[vehicle] || DEFAULT_CONSUMPTION.car); setRouteFuelType(vehicle === "moto" ? "e10" : "gazole"); }, [vehicle]);
-  const parisTypes = useMemo(() => spotTypesToShow(vehicle, vehicleChoice.all, SPOT_TYPE_CODES), [vehicle, vehicleChoice.all]);
+  const parisTypes = useMemo(() => (displayType === "pmr" ? new Set<number>([SPOT_TYPE.pmr]) : displayType ? new Set<number>() : spotTypesToShow(vehicle, vehicleChoice.all, SPOT_TYPE_CODES)), [vehicle, vehicleChoice.all, displayType]);
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
   const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
@@ -281,7 +287,8 @@ export default function Home() {
   const streetPanelState: StreetPanelState = !streetOn ? "off" : !online ? "offline" : streetInput === null ? "zoom" : streetQuery.isError ? "error" : streetQuery.isLoading ? "loading" : "ok";
   const selectedStreet = streetSpots.find((spot) => spot.id === selectedStreetId) ?? null;
   // Compteur, liste « Places près de… » et « Je me gare » : seulement les signalements du type de véhicule choisi. La carte montre tous les types avec « Tout ».
-  const streetOfVehicle = useMemo(() => streetSpots.filter((spot) => spot.vehicleType === vehicle), [streetSpots, vehicle]);
+  // Type d'affichage seulement (PMR) : aucun signalement possible, donc aucune place en rue, aucun compteur, aucune barre « Je libère / Je me gare ».
+  const streetOfVehicle = useMemo(() => (displayType ? [] : streetSpots.filter((spot) => spot.vehicleType === vehicle)), [streetSpots, vehicle, displayType]);
   useEffect(() => {
     if (!parisOn || !visibleBounds) { setParisLoad(null); return; }
     let cancelled = false;
@@ -299,7 +306,7 @@ export default function Home() {
     const merged = mergeByVehicle(officials, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt, vehicleType: r.vehicleType })));
     return { gray: merged.spots.filter((x) => x.reportId === 0), hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
   }, [parisLoad, streetSpots]);
-  const streetSpotsOnMap = useMemo(() => (vehicleChoice.all ? streetSpots : streetOfVehicle).filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, streetOfVehicle, vehicleChoice.all, parisMerged]);
+  const streetSpotsOnMap = useMemo(() => (displayType ? [] : vehicleChoice.all ? streetSpots : streetOfVehicle).filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, streetOfVehicle, vehicleChoice.all, displayType, parisMerged]);
   const [streetDone, setStreetDone] = useState<"free" | "taken" | null>(null);
   useEffect(() => { if (!streetDone) return; const t = window.setTimeout(() => setStreetDone(null), 1500); return () => window.clearTimeout(t); }, [streetDone]);
   const streetCreate = trpc.govapark.street.create.useMutation({
@@ -796,7 +803,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} typeColorKey={vehicleChoice.all ? "all" : vehicle} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} typeColorKey={displayType ?? (vehicleChoice.all ? "all" : vehicle)} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -820,8 +827,9 @@ export default function Home() {
         </div>
 
         <div className="m-chips">
-          {VEHICLE_TYPES.map((v) => <button key={v} data-vt={v} className={`m-chip ${vehicle === v ? "on" : ""}`} aria-pressed={vehicle === v} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false })}>{VEHICLE_CHIP[v]}</button>)}
-          <button data-vt="all" className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
+          {VEHICLE_TYPES.map((v) => <button key={v} data-vt={v} className={`m-chip ${vehicle === v && !displayType ? "on" : ""}`} aria-pressed={vehicle === v && !displayType} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false, display: null })}>{VEHICLE_CHIP[v]}</button>)}
+          {DISPLAY_CHIPS.map((d) => <button key={d} data-vt={d} className={`m-chip ${displayType === d ? "on" : ""}`} aria-pressed={displayType === d} aria-label={d === "pmr" ? "Afficher les places PMR (affichage seulement)" : "Afficher les bornes de recharge (affichage seulement)"} onClick={() => chooseVehicle({ vehicle, all: false, display: displayType === d ? null : d })}>{DISPLAY_CHIP[d]}</button>)}
+          <button data-vt="all" className={`m-chip ${vehicleChoice.all && !displayType ? "on" : ""}`} aria-pressed={vehicleChoice.all && !displayType} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all, display: null })}>Tout</button>
         </div>
 
         <button type="button" className={`m-round m-layers-btn${layersOpen ? " on" : ""}`} aria-label="Couches de la carte" aria-expanded={layersOpen} onClick={() => setLayersOpen((open) => !open)}><Layers size={22} /></button>
@@ -882,10 +890,10 @@ export default function Home() {
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
           </div>
-          <StreetPanel vehicle={vehicle} state={streetPanelState} spots={streetOfVehicle} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
+          {!displayType && <StreetPanel vehicle={vehicle} state={streetPanelState} spots={streetOfVehicle} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
             busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"} done={streetDone}
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
-            onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />
+            onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />}
           {drivingRoute ? <><div className="m-route">
             <div className="m-route-main">{drivingRoute.offline ? <><strong>{drivingRoute.estimate ? `${meters(drivingRoute.distance)} · ${Math.max(1, Math.round(drivingRoute.duration / 60))} min` : meters(drivingRoute.distance)}</strong><span>{drivingRoute.estimate ? `${drivingRoute.label} · 0 € · Vélo · ${NO_TRAFFIC}` : `à vol d’oiseau · ${drivingRoute.label}`}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{summaryLine({ vehicle: drivingRoute.profile ?? vehicle, distanceM: drivingRoute.distance, durationS: drivingRoute.duration, costEur: drivingRoute.costEur ?? 0, costAssumed: drivingRoute.costAssumed }).split(" · ").slice(1).join(" · ")}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">

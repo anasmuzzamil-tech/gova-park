@@ -10,7 +10,8 @@
 // Produit <out>/polygons/index.json et <out>/polygons/tiles/<type>/<ix>_<iy>.json (format version 2, voir contracts/paris-polygons.ts).
 // - Sont gardées les emprises reliées à un type de véhicule (contracts/vehicle-types.ts, via interpretRegime, jamais deviné) :
 //   voiture (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT), moto (2 ROUES | Motos payant Mixte / Rotatif), livraison (LIVRAISON : ZL permanente, ZL périodique), vélo (2 ROUES | Vélos, Vélo-cargo, Box à vélos ; Vélib\').
-//   les autocars (aucun type du sélecteur), « 2 ROUES | Mixte » (incertain), PMR, services et tous les autres régimes ne sont pas importés.
+//   les autocars (aucun type du sélecteur), « 2 ROUES | Mixte » (incertain), services et tous les autres régimes ne sont pas importés.
+// - PMR (GIG/GIC Standard, Élargie, Standard piétonne) : jeu de tuiles à part `polygons/tiles/pmr/`, affichage seulement (aucun signalement possible).
 // - Grille : MÊME origine, MÊME taille (0,02 degré) et mêmes clés que les tuiles des emplacements (origine lue dans <out>/index.json).
 // - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type d'emplacement (payant, gratuit, moto, livraison, vélo),
 //   forme (rectangle ou autre) et un point d'ancrage = le point geo_point_2d, identique (au 1e-5 degré) à celui de l'emplacement correspondant.
@@ -20,7 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { GRID, interpretRegime, toE5 } from "../contracts/paris-spots.ts";
 import { VEHICLE_TYPES } from "../contracts/vehicle-types.ts";
-import { vehicleOfRegime, PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
+import { PMR_GROUP, isPmrRegime, vehicleOfRegime, PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -59,7 +60,8 @@ const BOX = { south: 48.7, north: 49.0, west: 2.1, east: 2.6 };
 const stat = { lines: rows.length, notCar: 0, noShape: 0, badRing: 0, outside: 0, noPoint: 0, kept: 0, parts: 0, multi: 0, rect: 0, shape: 0, split: 0, placesZero: 0, placesOver: 0 };
 const items = []; const vertexHist = {}; let placesSplit = 0;
 for (const r of rows) {
-  const vehicle = vehicleOfRegime(r[C.prio], r[C.part]);
+  // Jeu à part « pmr » (GIG/GIC) : affichage seulement ; les types de véhicule gardent leurs jeux.
+  const vehicle = vehicleOfRegime(r[C.prio], r[C.part]) ?? (isPmrRegime(r[C.prio], r[C.part]) ? PMR_GROUP : null);
   if (!vehicle) { stat.notCar++; continue; }
   const t = interpretRegime(r[C.prio], r[C.part]).t;
   let geometry = null; try { geometry = JSON.parse(r[C.shape]); } catch { /* traité plus bas */ }
@@ -120,7 +122,7 @@ if (anchors) for (const p of items) {
 }
 // Un jeu de tuiles PAR TYPE DE VÉHICULE : la carte ne charge que les types choisis (économie réseau).
 let bytes = 0, biggest = { key: "", size: 0 }, tileTotal = 0; const tileCounts = {}; const sizes = new Map(); const perType = {};
-for (const vehicle of VEHICLE_TYPES) {
+for (const vehicle of [...VEHICLE_TYPES, PMR_GROUP]) {
   const group = items.filter((p) => p.vehicle === vehicle);
   tileCounts[vehicle] = {}; perType[vehicle] = { n: group.length, bytes: 0 };
   for (const [key, tile] of bucketPolygons(group, origin, POLY.tileDeg)) {
@@ -132,7 +134,7 @@ for (const vehicle of VEHICLE_TYPES) {
 const index = { version: 2, source: PARIS_POLYGONS_SOURCE, attribution: PARIS_POLYGONS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: items.length, rectangles: stat.rect, origin, tileDeg: POLY.tileDeg, tiles: tileCounts };
 const indexText = JSON.stringify(index); bytes += Buffer.byteLength(indexText);
 console.log(`Tuiles : ${tileTotal} · total ${(bytes / 1048576).toFixed(2)} Mo non compressé · plus grosse tuile ${biggest.key} = ${(biggest.size / 1024).toFixed(1)} Ko`);
-console.log(`Par type : ${VEHICLE_TYPES.map((v) => `${v} ${perType[v].n} contours / ${(perType[v].bytes / 1024).toFixed(0)} Ko`).join(" · ")}`);
+console.log(`Par type : ${[...VEHICLE_TYPES, PMR_GROUP].map((v) => `${v} ${perType[v].n} contours / ${(perType[v].bytes / 1024).toFixed(0)} Ko`).join(" · ")}`);
 if (anchors) {
   const linked = items.filter((p) => anchors.has(anchorKey(p.latE5, p.lngE5))).length;
   console.log(`Lien avec les emplacements importés (même point E5) : ${linked} contours sur ${items.length} (${((100 * linked) / items.length).toFixed(2)} %), dont ${snapped} recalé(s) d'un E5.`);
@@ -143,7 +145,7 @@ if (biggest.size > 150 * 1024) console.warn("ATTENTION : une tuile dépasse 150 
 if (bytes > 6 * 1048576) console.warn("ATTENTION : plus de 6 Mo au total.");
 const dir = path.join(outDir, "polygons");
 fs.rmSync(path.join(dir, "tiles"), { recursive: true, force: true }); // dossier entièrement généré par cet importeur (ancien format compris)
-for (const v of VEHICLE_TYPES) fs.mkdirSync(path.join(dir, "tiles", v), { recursive: true });
+for (const v of [...VEHICLE_TYPES, PMR_GROUP]) fs.mkdirSync(path.join(dir, "tiles", v), { recursive: true });
 for (const [id, s] of sizes) fs.writeFileSync(path.join(dir, "tiles", `${id}.json`), s);
 fs.writeFileSync(path.join(dir, "index.json"), indexText);
 console.log(`Écrit dans ${dir}.`);

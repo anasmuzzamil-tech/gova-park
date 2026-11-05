@@ -78,7 +78,7 @@ describe("interprétation des régimes du fichier de Paris", () => {
   it("GIG/GIC = réservé aux personnes à mobilité réduite titulaires de la carte, jamais « on peut se garer »", () => {
     const r = interpretRegime("GIG/GIC", "GIG/GIC Standard");
     expect(r.cars).toBe(false);
-    expect(r.note).toContain("mobilité réduite");
+    expect(r.note).toContain("carte de stationnement pour personnes handicapées");
     expect(r.note).toContain("carte");
     expect(interpretRegime("GIG/GIC", "GIG/GIC Elargie").note).toContain("GIG/GIC Elargie");
   });

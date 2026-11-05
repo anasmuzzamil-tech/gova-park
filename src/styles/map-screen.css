@@ -5,7 +5,7 @@
 /* Puces « Mon véhicule » : couleur du type. Inactive = blanche avec un point de 8 px ; active = fond plein de la couleur du type, texte blanc (la couleur d'accent reste pour le reste de l'interface). */
 .m-chip[data-vt] { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font-size: 13px; letter-spacing: -.01em; }
 .m-chip[data-vt]::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--vt); }
-.m-chip[data-vt="car"] { --vt: var(--gp-v-car); } .m-chip[data-vt="moto"] { --vt: var(--gp-v-moto); } .m-chip[data-vt="delivery"] { --vt: var(--gp-v-delivery); } .m-chip[data-vt="bike"] { --vt: var(--gp-v-bike); } .m-chip[data-vt="all"] { --vt: var(--gp-v-all); }
+.m-chip[data-vt="car"] { --vt: var(--gp-v-car); } .m-chip[data-vt="moto"] { --vt: var(--gp-v-moto); } .m-chip[data-vt="delivery"] { --vt: var(--gp-v-delivery); } .m-chip[data-vt="bike"] { --vt: var(--gp-v-bike); } .m-chip[data-vt="all"] { --vt: var(--gp-v-all); } .m-chip[data-vt="pmr"] { --vt: var(--gp-v-pmr); } .m-chip[data-vt="ev"] { --vt: var(--gp-v-ev); }
 .m-chip[data-vt].on { background: var(--vt); color: #fff; }
 .m-chip[data-vt].on::before { background: #fff; }
 .m-chip.on { background: var(--gp-accent); color: #fff; }

@@ -5,9 +5,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { MapListing, MapReport, MapStreetSpot, MapBounds } from "./ParkingMap";
 import { clusterPoints } from "@/lib/cluster";
 import { STATUS_COLORS } from "@contracts/parking-status";
-import { DEFAULT_SPOT_TYPES, SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
+import { DEFAULT_SPOT_TYPES, SPOT_TYPE, SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
 import { POLY, buildPolygonFeatures, polygonsVisible, spotAnchorKey, type ParisPolygon, type PolygonColor } from "@contracts/paris-polygons";
-import { loadParisPolygons } from "@/lib/paris-polygons";
+import { loadParisPolygons, type PolygonGroup } from "@/lib/paris-polygons";
 import { LAYER, layerVisible, toGeoJson, type DecodedFeature } from "@contracts/geo-layers";
 import { loadLayer } from "@/lib/geo-layers";
 import { isWorkActive } from "@contracts/paris-works";
@@ -610,8 +610,8 @@ export default function ParkingMap3D({
   // Contours des emprises : à partir du zoom rue, seulement les tuiles visibles (avec limite), rechargées après chaque déplacement.
   const [polys, setPolys] = useState<ParisPolygon[]>([]);
   // Seuls les types de véhicule dont un type d'emplacement est coché sont téléchargés (économie réseau).
-  const polygonVehicleKey = VEHICLE_TYPES.filter((v) => VEHICLE_SPOT_TYPES[v].some((t) => polygonTypes.has(t))).join(",");
-  const polygonVehicles = useMemo(() => (polygonVehicleKey ? polygonVehicleKey.split(",") : []) as Array<(typeof VEHICLE_TYPES)[number]>, [polygonVehicleKey]);
+  const polygonVehicleKey = [...VEHICLE_TYPES.filter((v) => VEHICLE_SPOT_TYPES[v].some((t) => polygonTypes.has(t))), ...(polygonTypes.has(SPOT_TYPE.pmr) ? ["pmr"] : [])].join(",");
+  const polygonVehicles = useMemo(() => (polygonVehicleKey ? polygonVehicleKey.split(",") : []) as PolygonGroup[], [polygonVehicleKey]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;

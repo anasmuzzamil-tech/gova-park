@@ -4,6 +4,9 @@ import { POLY, decodePolygonTile, limitPolygonsNearCenter, type ParisPolygon, ty
 import { tilesForBounds, type Bounds } from "@contracts/paris-spots";
 import type { VehicleType } from "@contracts/vehicle-types";
 
+/** Jeu de contours : un type de véhicule, ou « pmr » (affichage seulement). */
+export type PolygonGroup = VehicleType | "pmr";
+
 const BASE = "/data/paris/polygons";
 export type PolygonLoad =
   | { status: "missing" }                                  // fichiers absents : l'import n'a pas été exécuté
@@ -27,7 +30,7 @@ function loadIndex(): Promise<PolygonIndex | null> {
 }
 
 /** Contours à dessiner pour la zone visible (au plus POLY.drawLimit, les plus proches du centre), SEULEMENT pour les types de véhicule demandés : les fichiers des autres types ne sont jamais téléchargés. */
-export async function loadParisPolygons(bounds: Bounds, center: { lat: number; lng: number }, vehicles: readonly VehicleType[]): Promise<PolygonLoad> {
+export async function loadParisPolygons(bounds: Bounds, center: { lat: number; lng: number }, vehicles: readonly PolygonGroup[]): Promise<PolygonLoad> {
   try {
     const index = await loadIndex();
     if (!index) return { status: "missing" };

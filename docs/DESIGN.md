@@ -21,6 +21,7 @@ Source unique : `VEHICLE_COLORS` dans `contracts/vehicle-types.ts` = jetons `--g
 | Livraison | rose #DB2777 | 4,6:1 |
 | Vélo | cyan foncé #0E7490 (le cyan demandé #0891B2 n'atteignait que 3,7:1, nuance assombrie) | 5,4:1 |
 | Tout | ardoise #1F2937 | 14,7:1 |
+**Types d'affichage seulement** (`DISPLAY_COLORS`, jetons `--gp-v-pmr` et `--gp-v-ev`) : PMR brun #78350F (9,1:1 avec du texte blanc) et Électrique fuchsia #A21CAF (6,3:1). Un test impose un écart de couleur (CIE76) d'au moins 25 avec les 5 couleurs ci-dessus, l'accent violet #6d4ae0 et les 4 statuts. Ces deux types n'ont aucun signalement : pas de « Je libère » / « Je me gare » ni de compteur quand ils sont choisis. La rangée de puces (7 puces) défile avec un fondu à droite.
 Ces couleurs évitent le vert, l'orange, le rouge et le gris, réservés aux **statuts**. Puce active = fond plein de la couleur du type ; puce inactive = blanche avec un point de 8 px de cette couleur. Regroupements numérotés de « Emplacements Paris » = couleur du type affiché (ardoise en « Tout »). Icône d'un emplacement : anneau de la couleur de son TYPE autour d'un fond de couleur de STATUT (gris sans signalement) ; autocar, PMR, réservé et autre : anneau blanc. « Je me gare », le badge « libre », la feuille « Couches » et le reste de l'interface ne changent pas (couleurs de statut, violet d'accent).
 
 Un statut se lit toujours par la couleur ET par un mot (Libre, Peut-être libre, Prise) : jamais la couleur seule. Mode sombre : il n'existe pas dans l'application, il n'est pas ajouté.

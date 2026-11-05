@@ -32,3 +32,18 @@ describe("fiche de place unique : contenu", () => {
     expect(alertTone("Zone à faibles émissions")).toBe("neutral");
   });
 });
+
+describe("fiche d'une place PMR (affichage seulement)", () => {
+  const spot = { lat: 48.8566, lng: 2.3522, t: 7, places: 1, regime: 0, street: "Quai d'Orléans", num: 0, color: "gray", reportId: 0 };
+  it("titre « Place réservée PMR », mention de la carte, aucun signalement possible même sur place", () => {
+    const c = parisSheetContent(spot, [["GIG/GIC", "GIG/GIC Standard"]], null, { lat: 48.8566, lng: 2.3522 });
+    expect(c.title.startsWith("Place réservée PMR")).toBe(true);
+    expect(c.note).toBe("Réservée aux titulaires de la carte de stationnement pour personnes handicapées");
+    expect(c.status).toBeNull();
+    expect(c.canReport).toBe(false);
+  });
+  it("régime Élargie : précision gardée", () => {
+    const c = parisSheetContent({ ...spot, regime: 0 }, [["GIG/GIC", "GIG/GIC Elargie"]], null, null);
+    expect(c.note).toContain("Elargie");
+  });
+});

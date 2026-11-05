@@ -294,11 +294,12 @@ describe("fichiers générés dans le dépôt", () => {
     expect(index.origin).toEqual(spots.origin);
     expect(index.tileDeg).toBe(spots.tileDeg);
     expect(index.source).toMatchObject({ producer: "Ville de Paris", license: "ODbL" });
-    expect(Object.keys(index.tiles).sort()).toEqual([...VEHICLE_TYPES].sort());
+    expect(Object.keys(index.tiles).sort()).toEqual([...VEHICLE_TYPES, "pmr"].sort()); // « pmr » : jeu à part, affichage seulement
+    const typesOf = (g: string) => (g === "pmr" ? [7] : VEHICLE_SPOT_TYPES[g as (typeof VEHICLE_TYPES)[number]]);
     const anchors = new Map<string, number>(); // ancrage -> type d'emplacement
     for (const key of Object.keys(spots.tiles)) for (const row of read<{ rows: number[][] }>("tiles", `${key}.json`).rows) anchors.set(anchorKey(row[0], row[1]), row[2]);
     let total = 0, bytes = fs.statSync(path.join(root, "polygons", "index.json")).size, biggest = 0, linked = 0, rects = 0, bad = 0;
-    for (const v of VEHICLE_TYPES) for (const [key, count] of Object.entries(index.tiles[v])) {
+    for (const v of [...VEHICLE_TYPES, "pmr"] as const) for (const [key, count] of Object.entries(index.tiles[v])) {
       expect(spots.tiles[key], `tuile ${key} inconnue des emplacements`).toBeGreaterThan(0);
       const file = path.join(root, "polygons", "tiles", v, `${key}.json`);
       const size = fs.statSync(file).size; bytes += size; biggest = Math.max(biggest, size);
@@ -308,7 +309,7 @@ describe("fichiers générés dans le dépôt", () => {
         const spotType = anchors.get(poly.anchor);
         if (spotType === undefined) continue;
         linked++;
-        if (spotType !== poly.t || !VEHICLE_SPOT_TYPES[v].includes(poly.t)) bad++; // un contour « moto » ne s'accroche qu'à un emplacement moto
+        if (spotType !== poly.t || !typesOf(v).includes(poly.t)) bad++; // un contour « moto » ne s'accroche qu'à un emplacement moto
         if (poly.ring.length < 3 || ![1, 2].includes(poly.kind)) bad++;
         if (poly.kind === POLY_KIND.rect) { rects++; if (!isRectangle(poly.ring)) bad++; }
       }

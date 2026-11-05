@@ -13,7 +13,7 @@
   /* Teintes foncées des statuts pour le TEXTE sur fond clair (contraste AA) */
   --gp-green-ink: #0b7a3b; --gp-orange-ink: #8a4b00; --gp-red-ink: #b42318;
   /* Couleur de chaque type de véhicule (valeurs = VEHICLE_COLORS de contracts/vehicle-types.ts, vérifiées par test) ; jamais vert, orange, rouge ni gris (statuts) */
-  --gp-v-car: #2563EB; --gp-v-moto: #7C3AED; --gp-v-delivery: #DB2777; --gp-v-bike: #0E7490; --gp-v-all: #1F2937;
+  --gp-v-car: #2563EB; --gp-v-moto: #7C3AED; --gp-v-delivery: #DB2777; --gp-v-bike: #0E7490; --gp-v-all: #1F2937; --gp-v-pmr: #78350F; --gp-v-ev: #A21CAF;
   /* Rayons, ombres, espacements (multiples de 4) */
   --gp-r-1: 12px; --gp-r-2: 16px; --gp-r-3: 24px; --gp-r-pill: 999px;
   --gp-shadow-1: 0 2px 8px #1a143a24;

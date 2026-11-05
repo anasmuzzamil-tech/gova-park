@@ -20,7 +20,7 @@ export const PARIS_ATTRIBUTION = "Places : Ville de Paris, licence ODbL, donnée
 export const SPOT_TYPE = { other: 0, paid: 1, free: 2, delivery: 3, bike: 4, moto: 5, coach: 6, pmr: 7, reserved: 8 } as const;
 export type SpotTypeCode = (typeof SPOT_TYPE)[keyof typeof SPOT_TYPE];
 export const SPOT_TYPE_LABEL: Record<number, string> = {
-  0: "Autre régime", 1: "Stationnement payant", 2: "Stationnement gratuit", 3: "Zone de livraison", 4: "Vélos", 5: "Deux-roues motorisés", 6: "Autocars", 7: "Places PMR (GIG/GIC)", 8: "Réservé (taxis, services, partage…)",
+  0: "Autre régime", 1: "Stationnement payant", 2: "Stationnement gratuit", 3: "Zone de livraison", 4: "Vélos", 5: "Deux-roues motorisés", 6: "Autocars", 7: "Places réservées PMR (GIG/GIC)", 8: "Réservé (taxis, services, partage…)",
 };
 /** Symbole affiché dans l'icône (la couleur, elle, ne dit que le statut). */
 export const SPOT_TYPE_GLYPH: Record<number, string> = { 0: "?", 1: "€", 2: "P", 3: "L", 4: "V", 5: "M", 6: "C", 7: "PMR", 8: "R" };
@@ -80,7 +80,8 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
       if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Régime : ZL périodique ; voir le panneau pour les horaires");
       return rawRegime(prio, part);
     case "gig/gic":
-      if (q.startsWith("gig/gic")) return info(SPOT_TYPE.pmr, false, "Place PMR (GIG/GIC)", `Réservée aux personnes à mobilité réduite titulaires de la carte${q === "gig/gic standard" ? "" : ` (régime : ${part})`}`);
+      // PMR : affichage seulement (jamais de signalement libre / prise). Précision du régime (Élargie, piétonne) gardée telle que publiée.
+      if (q.startsWith("gig/gic")) return info(SPOT_TYPE.pmr, false, "Place réservée PMR", `Réservée aux titulaires de la carte de stationnement pour personnes handicapées${q === "gig/gic standard" ? "" : ` (régime : ${part})`}`);
       return rawRegime(prio, part);
     case "location":
       if (q === "velib'") return info(SPOT_TYPE.bike, false, "Station Vélib'", "Réservé aux vélos en libre-service");
