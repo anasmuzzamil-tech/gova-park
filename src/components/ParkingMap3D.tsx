@@ -77,25 +77,26 @@ function parisIcon(color: string, glyph: string): ImageData | null {
   g.fillStyle = "#ffffff"; g.font = "800 34px Manrope, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
   return g.getImageData(0, 0, size, size);
 }
-function addParisLayers(map: maplibregl.Map, onPick: (props: { lat: number; lng: number; t: number; reportId: number; color: string }) => void) {
+export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
+function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
     for (const [name, color] of Object.entries(PARIS_COLORS)) for (const t of SPOT_TYPE_CODES) {
       const img = parisIcon(color, SPOT_TYPE_GLYPH[t]);
       if (img && !map.hasImage(`ps-${name}-${t}`)) map.addImage(`ps-${name}-${t}`, img, { pixelRatio: 2 });
     }
-    // Source regroupée par MapLibre : le total d'un groupe additionne `n` (1 pour un emplacement réel, davantage pour la vue d'ensemble agrégée).
-    map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 46, clusterMaxZoom: 16, clusterProperties: { total: ["+", ["get", "n"]] } });
+    // Source regroupée par MapLibre : le total d'un groupe additionne `w` = nombre de PLACES (celles du tronçon, ou le total d'une cellule de la vue d'ensemble `a` = 1).
+    map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 46, clusterMaxZoom: 16, clusterProperties: { total: ["+", ["get", "w"]] } });
     map.addSource("gp-paris-hot", { type: "geojson", data: emptyFc() });
     const group = "#1f1b4d";
     const radius = (field: string): maplibregl.ExpressionSpecification => ["step", ["get", field], 15, 10, 18, 100, 23, 1000, 28];
     const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true };
     map.addLayer({ id: "gp-paris-cluster", type: "circle", source: "gp-paris", filter: ["has", "point_count"], paint: { "circle-color": group, "circle-radius": radius("total"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
     map.addLayer({ id: "gp-paris-cluster-n", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: { ...textLayout, "text-field": ["to-string", ["get", "total"]] }, paint: { "text-color": "#ffffff" } });
-    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], [">", ["get", "n"], 1]], paint: { "circle-color": group, "circle-radius": radius("n"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
-    map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], [">", ["get", "n"], 1]], layout: { ...textLayout, "text-field": ["to-string", ["get", "n"]] }, paint: { "text-color": "#ffffff" } });
+    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], paint: { "circle-color": group, "circle-radius": radius("w"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
+    map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], layout: { ...textLayout, "text-field": ["to-string", ["get", "w"]] }, paint: { "text-color": "#ffffff" } });
     const icon: maplibregl.ExpressionSpecification = ["concat", "ps-", ["get", "c"], "-", ["to-string", ["get", "t"]]];
     const iconLayout = { "icon-image": icon, "icon-allow-overlap": true, "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 0.95] } as maplibregl.SymbolLayerSpecification["layout"];
-    map.addLayer({ id: "gp-paris-point", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["<=", ["get", "n"], 1]], layout: iconLayout });
+    map.addLayer({ id: "gp-paris-point", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["!=", ["get", "a"], 1]], layout: iconLayout });
     map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { ...iconLayout, "symbol-sort-key": 1 } });
     map.on("click", "gp-paris-cluster", async (e) => {
       const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
@@ -109,7 +110,8 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: { lat: number; lng:
       map.on("click", layer, (e) => {
         const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
         const [lng, lat] = f.geometry.coordinates as [number, number];
-        onPick({ lat, lng, t: Number(f.properties?.t ?? 0), reportId: Number(f.properties?.r ?? 0), color: String(f.properties?.c ?? "gray") });
+        const pr = f.properties ?? {};
+        onPick({ lat, lng, t: Number(pr.t ?? 0), reportId: Number(pr.r ?? 0), color: String(pr.c ?? "gray"), places: Number(pr.p ?? 0), regime: Number(pr.g ?? -1), street: String(pr.s ?? ""), num: Number(pr.u ?? 0) });
       });
     }
     for (const layer of ["gp-paris-cluster", "gp-paris-agg", "gp-paris-point", "gp-paris-hot-point"]) {
@@ -130,7 +132,7 @@ export default function ParkingMap3D({
   streetSpots?: MapStreetSpot[];
   onStreetSpot?: (spot: MapStreetSpot) => void;
   /** Emplacements officiels de Paris (gris, regroupés) et ceux colorés par un signalement (jamais regroupés). */
-  parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: { lat: number; lng: number; t: number; reportId: number; color: string }) => void;
+  parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -495,7 +497,7 @@ export default function ParkingMap3D({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const feature = (s: ParisSpot): GeoJSON.Feature<GeoJSON.Point> => ({ type: "Feature", properties: { n: s.n, t: s.t, c: s.color, r: s.reportId }, geometry: { type: "Point", coordinates: [s.lng, s.lat] } });
+    const feature = (s: ParisSpot): GeoJSON.Feature<GeoJSON.Point> => ({ type: "Feature", properties: { w: s.places, a: s.agg ? 1 : 0, p: s.places, t: s.t, c: s.color, r: s.reportId, g: s.g, s: s.street, u: s.num }, geometry: { type: "Point", coordinates: [s.lng, s.lat] } });
     (map.getSource("gp-paris") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisSpots.map(feature) });
     (map.getSource("gp-paris-hot") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisHot.map(feature) });
   }, [ready, parisSpots, parisHot]);

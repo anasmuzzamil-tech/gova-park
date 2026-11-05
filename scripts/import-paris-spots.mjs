@@ -5,24 +5,26 @@
 // Usage (Node 22, aucune dépendance, aucun service payant) :
 //   1) télécharger le CSV (ou le JSON) depuis la page ci-dessus, décompresser si besoin ;
 //   2) node scripts/import-paris-spots.mjs <fichier.csv|.json|.geojson|.ndjson> --inspect     (vérifie les colonnes détectées, n'écrit rien)
-//   3) node scripts/import-paris-spots.mjs <fichier> [--out=public/data/paris] [--type-columns=col1,col2]
+//   3) node scripts/import-paris-spots.mjs <fichier> [--out=public/data/paris]
 //
-// Produit des fichiers statiques à servir tels quels : index.json, overview.json (vue d'ensemble agrégée par cellule et par type, avec
-// les nombres pour le regroupement) et tiles/<ix>_<iy>.json (emplacements détaillés par tuile). La carte ne charge JAMAIS tout :
-// vue d'ensemble pour la ville entière, seulement les tuiles visibles (avec limite) au zoom de quartier.
+// Produit des fichiers statiques à servir tels quels (format version 2) : index.json (dont la liste des couples de régimes),
+// overview.json (vue d'ensemble : un point par cellule et par type avec le TOTAL DE PLACES, pour le regroupement) et
+// tiles/<ix>_<iy>.json (tronçons détaillés par tuile : position, type, « Nombre places réelles », régime, rue, numéro).
+// La carte ne charge JAMAIS tout : vue d'ensemble pour la ville entière, seulement les tuiles visibles (avec limite) au zoom de quartier.
 //
-// Les noms exacts de colonnes n'ont pas pu être vérifiés au moment de l'écriture (téléchargement bloqué) : les colonnes de position
-// et de type sont donc DÉTECTÉES, et --inspect les affiche pour contrôle avant tout import.
+// Colonnes lues (noms vérifiés sur le fichier du 31/10/2026) : « Régime prioritaire », « Régime particulier », « Nombre places réelles »,
+// « Type voie », « Nom voie », « Numéro voie », « Complément numéro voie », et la position (geo_point_2d). Aucun tarif ni horaire n'est lu.
+// L'interprétation des régimes est dans contracts/paris-spots.ts (interpretRegime), jamais devinée : --inspect liste chaque couple.
 import fs from "node:fs";
 import path from "node:path";
-import { GRID, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, classifyType } from "../contracts/paris-spots.ts";
+import { GRID, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, encodeNumero, interpretRegime, streetKey } from "../contracts/paris-spots.ts";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
 const flag = (name) => args.find((a) => a.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
 const inspect = args.includes("--inspect");
 const outDir = flag("out") ?? "public/data/paris";
-if (!file) { console.error("Usage : node scripts/import-paris-spots.mjs <fichier.csv|.json|.geojson|.ndjson> [--inspect] [--out=dossier] [--type-columns=a,b]"); process.exit(2); }
+if (!file) { console.error("Usage : node scripts/import-paris-spots.mjs <fichier.csv|.json|.geojson|.ndjson> [--inspect] [--out=dossier]"); process.exit(2); }
 if (/\.zip$/i.test(file)) { console.error("Décompressez d'abord le ZIP, puis passez le fichier CSV ou JSON qu'il contient."); process.exit(2); }
 
 const norm = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -93,17 +95,38 @@ const records = readRecords(file);
 if (!records.length) { console.error("Aucune ligne lue."); process.exit(1); }
 const columns = Object.keys(records[0]);
 const keyMap = Object.fromEntries(columns.map((c) => [norm(c), c]));
-const typeColumns = (flag("type-columns")?.split(",") ?? columns.filter((c) => /typ|reg|categ|nature|usage|vehic|tarif|payant|gratuit/.test(norm(c)))).filter((c) => columns.includes(c));
+const col = (...names) => names.map((n) => keyMap[norm(n)]).find(Boolean);
+const C = {
+  prio: col("Régime prioritaire"), part: col("Régime particulier"), places: col("Nombre places réelles"),
+  voieType: col("Type voie"), voieName: col("Nom voie"), numero: col("Numéro voie"), complement: col("Complément numéro voie"),
+};
+const missing = Object.entries(C).filter(([, v]) => !v).map(([k]) => k);
 
 // Cadre large autour de Paris : une ligne hors cadre est rejetée et comptée (jamais corrigée ni déplacée).
 const BOX = { south: 48.7, north: 49.0, west: 2.1, east: 2.6 };
 const points = []; const rejected = { noPosition: 0, outside: 0 }; const how = new Map();
+const regimes = []; const regimeIds = new Map(); // couples [prioritaire, particulier] -> rang
+let totalPlaces = 0, zeroPlaces = 0;
+const combos = new Map();
 for (const rec of records) {
   const pos = position(rec, keyMap);
   if (!pos) { rejected.noPosition++; continue; }
   if (pos.lat < BOX.south || pos.lat > BOX.north || pos.lng < BOX.west || pos.lng > BOX.east) { rejected.outside++; continue; }
   how.set(pos.how, (how.get(pos.how) ?? 0) + 1);
-  points.push({ lat: pos.lat, lng: pos.lng, t: classifyType(...typeColumns.map((c) => rec[c])) });
+  const prio = String(C.prio ? rec[C.prio] : "").trim(), part = String(C.part ? rec[C.part] : "").trim();
+  const rk = `${prio}\u0001${part}`;
+  let g = regimeIds.get(rk);
+  if (g === undefined) { g = regimes.length; regimes.push([prio, part]); regimeIds.set(rk, g); }
+  const t = interpretRegime(prio, part).t;
+  const placesRaw = Number(String(C.places ? rec[C.places] : "").replace(",", "."));
+  const places = Number.isFinite(placesRaw) && placesRaw > 0 ? Math.round(placesRaw) : 0;
+  totalPlaces += places; if (!places) zeroPlaces++;
+  combos.set(g, (combos.get(g) ?? 0) + 1);
+  points.push({
+    lat: pos.lat, lng: pos.lng, t, places, g,
+    street: streetKey(String(C.voieType ? rec[C.voieType] : ""), String(C.voieName ? rec[C.voieName] : "")),
+    num: encodeNumero(C.numero ? rec[C.numero] : "", C.complement ? rec[C.complement] : ""),
+  });
 }
 const byType = {}; for (const p of points) byType[p.t] = (byType[p.t] ?? 0) + 1;
 
@@ -111,8 +134,14 @@ console.log(`Fichier : ${file}`);
 console.log(`Lignes lues : ${records.length} · emplacements retenus : ${points.length} · rejetés : ${rejected.noPosition} sans position, ${rejected.outside} hors de Paris`);
 console.log(`Colonnes (${columns.length}) : ${columns.join(", ")}`);
 console.log(`Position lue depuis : ${[...how].map(([k, v]) => `${k} (${v})`).join(" ; ") || "AUCUNE"}`);
-console.log(`Colonnes utilisées pour le type : ${typeColumns.join(", ") || "AUCUNE (tous les emplacements seront de type « Emplacement de voirie »)"}`);
+console.log(`Colonnes utilisées : ${Object.entries(C).map(([k, v]) => `${k}=${v ?? "ABSENTE"}`).join(" · ")}`);
+if (missing.length) console.warn(`ATTENTION : colonnes absentes (${missing.join(", ")}) : régimes, places ou rues manquants dans la sortie.`);
+console.log(`Places réelles : ${totalPlaces} au total · ${zeroPlaces} tronçons sans nombre de places (0 ou vide)`);
 console.log("Répartition par type :", Object.entries(byType).map(([t, n]) => `${SPOT_TYPE_LABEL[t]} ${n}`).join(" · "));
+if (inspect) {
+  console.log("Régimes (prioritaire | particulier -> type, voiture, titre) :");
+  for (const [g, n] of [...combos].sort((a, b) => b[1] - a[1])) { const [p, q] = regimes[g]; const r = interpretRegime(p, q); console.log(`  ${n}\t${p} | ${q} -> ${SPOT_TYPE_LABEL[r.t]} · voiture=${r.cars} · ${r.title}`); }
+}
 if (inspect) { console.log("Exemple (3 premières lignes) :"); records.slice(0, 3).forEach((r) => console.log(JSON.stringify(r).slice(0, 600))); console.log("--inspect : rien n'a été écrit."); process.exit(0); }
 if (!points.length) { console.error("Aucun emplacement retenu : import annulé, rien écrit."); process.exit(1); }
 
@@ -124,10 +153,10 @@ const overview = aggregateOverview(points, origin, GRID.overviewDeg);
 
 fs.mkdirSync(path.join(outDir, "tiles"), { recursive: true });
 let bytes = 0;
-const write = (p, data) => { const s = JSON.stringify(data); fs.writeFileSync(p, s); bytes += s.length; };
+const write = (p, data) => { const s = JSON.stringify(data); fs.writeFileSync(p, s); bytes += Buffer.byteLength(s); };
 const tileCounts = {};
-for (const [key, rows] of tiles) { write(path.join(outDir, "tiles", `${key}.json`), rows); tileCounts[key] = rows.length; }
+for (const [key, file] of tiles) { write(path.join(outDir, "tiles", `${key}.json`), file); tileCounts[key] = file.rows.length; }
 write(path.join(outDir, "overview.json"), overview);
-write(path.join(outDir, "index.json"), { version: 1, source: PARIS_SOURCE, attribution: PARIS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: points.length, origin, tileDeg: GRID.tileDeg, overviewDeg: GRID.overviewDeg, tiles: tileCounts });
+write(path.join(outDir, "index.json"), { version: 2, source: PARIS_SOURCE, attribution: PARIS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: points.length, places: totalPlaces, origin, tileDeg: GRID.tileDeg, overviewDeg: GRID.overviewDeg, tiles: tileCounts, regimes });
 console.log(`Écrit dans ${outDir} : ${tiles.size} tuiles, vue d'ensemble de ${overview.length} points, ${(bytes / 1048576).toFixed(2)} Mo au total (non compressé).`);
 if (bytes > 8 * 1048576) console.warn("ATTENTION : plus de 8 Mo au total, trop lourd pour un fichier statique versionné.");

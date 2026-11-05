@@ -6,6 +6,7 @@ import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import ParkingMap, { type MapReport, type MapBounds, type MapStreetSpot } from "@/components/ParkingMap";
 import { Map3DBoundary } from "@/components/Map3DBoundary";
+import type { ParisPick } from "@/components/ParkingMap3D";
 import { detectWebGL, importWithRetry } from "@/lib/webgl";
 const ParkingMap3D = lazy(() => importWithRetry(() => import("@/components/ParkingMap3D")));
 const initialWebGL = detectWebGL();
@@ -19,8 +20,9 @@ import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
-import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
+import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
+import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -202,7 +204,8 @@ export default function Home() {
   const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(SPOT_TYPE_CODES));
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [parisFilterOpen, setParisFilterOpen] = useState(false);
-  const [selectedParis, setSelectedParis] = useState<{ lat: number; lng: number; t: number } | null>(null);
+  const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
+  const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
   const streetInput = useMemo(() => {
     const r = (v: number) => Math.round(v * 1000) / 1000;
     const b = visibleBounds ?? { south: visibleCenter.lat - 0.01, north: visibleCenter.lat + 0.01, west: visibleCenter.lng - 0.015, east: visibleCenter.lng + 0.015 };
@@ -219,7 +222,7 @@ export default function Home() {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       const result = await loadParisSpots(visibleBounds, visibleCenter, parisTypes);
-      if (!cancelled) setParisLoad(result);
+      if (!cancelled) { setParisLoad(result); if (result.status === "ok") setParisRegimes(result.regimes); }
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [parisOn, visibleBounds, visibleCenter, parisTypes, online]);
@@ -674,7 +677,7 @@ export default function Home() {
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
     streetSpots: streetSpotsOnMap, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
     parisSpots: parisOn ? parisMerged.gray : NO_PARIS, parisHot: parisOn ? parisMerged.hot : NO_PARIS,
-    onParisSpot: (spot: { lat: number; lng: number; t: number; reportId: number }) => { if (spot.reportId > 0) setSelectedStreetId(spot.reportId); else setSelectedParis({ lat: spot.lat, lng: spot.lng, t: spot.t }); },
+    onParisSpot: (spot: ParisPick) => setSelectedParis({ lat: spot.lat, lng: spot.lng, t: spot.t, places: spot.places, regime: spot.regime, street: spot.street, num: spot.num, color: spot.color, reportId: spot.reportId }),
   };
   // Carte 3D : si elle ne peut pas s'afficher, on l'explique (au lieu d'un repli silencieux) et on réessaie automatiquement.
   const [map3dFail, setMap3dFail] = useState<null | "webgl" | "load">(initialWebGL ? null : "webgl");
@@ -930,12 +933,15 @@ export default function Home() {
         </div>
       </Modal>}
 
-      {selectedParis && <Modal title="Emplacement de voirie" onClose={() => setSelectedParis(null)}>
-        <div className="report-detail-head"><span className="report-status-dot" style={{ background: STATUS_COLORS.gray }} /><div><strong>Statut inconnu</strong><p>Aucun signalement récent d’utilisateur sur cet emplacement : on ne sait pas s’il est libre.</p></div></div>
-        <dl className="report-facts"><div><dt>Type</dt><dd>{SPOT_TYPE_LABEL[selectedParis.t] ?? SPOT_TYPE_LABEL[0]}</dd></div><div><dt>Source</dt><dd>{PARIS_SOURCE.producer}, licence {PARIS_SOURCE.license}</dd></div></dl>
-        <p className="report-caution">Emplacement issu des données ouvertes de la Ville de Paris, qui changent vite et ne sont pas garanties exhaustives. Ce n’est pas une place disponible.</p>
-        <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedParis; setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, SPOT_TYPE_LABEL[spot.t] ?? "Emplacement de voirie", 0, { kind: "street" }); }}><Navigation size={18} />Y aller</button>
-      </Modal>}
+      {selectedParis && (() => {
+        const spot = selectedParis;
+        const rep = spot.reportId > 0 ? streetSpots.find((r) => r.id === spot.reportId) ?? null : null;
+        const info = interpretRegime(...(parisRegimes[spot.regime] ?? ["", ""]));
+        return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition}
+          onClose={() => setSelectedParis(null)}
+          onGo={() => { setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, formatStreet(spot.street, spot.num) || info.title, 0, { kind: "street" }); }}
+          onReport={(status) => { setSelectedParis(null); void reportStreet(status, { latitude: spot.lat, longitude: spot.lng }); }} />;
+      })()}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>
         <div className={`report-detail-head ${selectedReport.kind}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedReport.parkingStatus?.color ?? "gray"] }} /><div><strong>{selectedReport.address}</strong><p>{selectedReport.parkingStatus?.label} · {selectedReport.parkingStatus?.detail}</p></div></div>

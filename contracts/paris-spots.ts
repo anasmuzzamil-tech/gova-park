@@ -16,28 +16,145 @@ export const PARIS_SOURCE = {
 
 export const PARIS_ATTRIBUTION = "Emplacements : Ville de Paris, licence ODbL, non exhaustifs. Statut inconnu (gris) sauf signalement récent d'un utilisateur.";
 
-/** Types d'emplacement (codes stockés dans les fichiers). */
-export const SPOT_TYPE = { other: 0, paid: 1, free: 2, delivery: 3, bike: 4, moto: 5, coach: 6 } as const;
+/** Types d'emplacement (codes stockés dans les fichiers). 0 = régime non reconnu : jamais deviné. */
+export const SPOT_TYPE = { other: 0, paid: 1, free: 2, delivery: 3, bike: 4, moto: 5, coach: 6, pmr: 7, reserved: 8 } as const;
 export type SpotTypeCode = (typeof SPOT_TYPE)[keyof typeof SPOT_TYPE];
 export const SPOT_TYPE_LABEL: Record<number, string> = {
-  0: "Emplacement de voirie", 1: "Stationnement payant", 2: "Stationnement gratuit", 3: "Zone de livraison", 4: "Stationnement vélo", 5: "Deux-roues motorisés", 6: "Autocars",
+  0: "Autre régime", 1: "Stationnement payant", 2: "Stationnement gratuit", 3: "Zone de livraison", 4: "Vélos", 5: "Deux-roues motorisés", 6: "Autocars", 7: "Places PMR (GIG/GIC)", 8: "Réservé (taxis, services, partage…)",
 };
 /** Symbole affiché dans l'icône (la couleur, elle, ne dit que le statut). */
-export const SPOT_TYPE_GLYPH: Record<number, string> = { 0: "P", 1: "€", 2: "P", 3: "L", 4: "V", 5: "M", 6: "C" };
-export const SPOT_TYPE_CODES: number[] = [1, 2, 3, 4, 5, 6, 0];
+export const SPOT_TYPE_GLYPH: Record<number, string> = { 0: "?", 1: "€", 2: "P", 3: "L", 4: "V", 5: "M", 6: "C", 7: "PMR", 8: "R" };
+export const SPOT_TYPE_CODES: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+/** Affichés par défaut : les emplacements où une VOITURE ordinaire peut se garer (payant, mixte, gratuit). Les autres restent activables par le filtre. */
+export const DEFAULT_SPOT_TYPES: number[] = [SPOT_TYPE.paid, SPOT_TYPE.free];
 
-const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
-/** Type d'emplacement à partir des libellés du jeu de données (régime, type, usage…). Inconnu = 0, jamais deviné. */
-export function classifyType(...texts: Array<string | number | null | undefined>): SpotTypeCode {
-  const t = texts.map(norm).join(" | ");
-  if (/livraison/.test(t)) return SPOT_TYPE.delivery;
-  if (/velo|cycle|bicyclette/.test(t)) return SPOT_TYPE.bike;
-  if (/2rm|2 roues|deux[ -]?roues|moto|scooter|motorise/.test(t)) return SPOT_TYPE.moto;
-  if (/\bcars?\b|autocar/.test(t)) return SPOT_TYPE.coach;
-  if (/gratuit|non payant/.test(t)) return SPOT_TYPE.free;
-  if (/payant|rotatif|mixte|resident|horodateur/.test(t)) return SPOT_TYPE.paid;
-  return SPOT_TYPE.other;
+// ---------- Interprétation des régimes (colonnes « Régime prioritaire » et « Régime particulier ») ----------
+// Chaque couple réellement présent dans le fichier du 31/10/2026 est traité explicitement (voir api/paris-spots.test.ts).
+// Un couple inconnu ou incertain n'est JAMAIS deviné : libellé « Régime : [valeur brute] », aucune promesse, hors de l'affichage par défaut.
+// Les tarifs et les horaires ne sont pas dans ces colonnes : on n'en affiche aucun.
+
+export type RegimeInfo = {
+  /** Code de type (filtre, icône). */
+  t: SpotTypeCode;
+  /** true = une voiture ordinaire peut s'y garer d'après le régime ; false = réservé à un autre usage ; null = régime incertain, aucune promesse. */
+  cars: boolean | null;
+  /** Type en langage simple, sans la rue. */
+  title: string;
+  /** Précision courte (usage réservé, limite des données), ou null. */
+  note: string | null;
+};
+
+const info = (t: SpotTypeCode, cars: boolean | null, title: string, note: string | null = null): RegimeInfo => ({ t, cars, title, note });
+const UNSURE_NOTE = "Usage non précisé par les données : voir la signalisation sur place.";
+/** Valeur brute, sans promesse. */
+const rawRegime = (prio: string, part: string): RegimeInfo => info(SPOT_TYPE.other, null, `Régime : ${(part || prio || "non renseigné").trim()}`, UNSURE_NOTE);
+
+export function interpretRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): RegimeInfo {
+  const prio = String(prioritaire ?? "").trim(), part = String(particulier ?? "").trim();
+  const p = norm(prio), q = norm(part);
+  switch (p) {
+    case "payant mixte":
+      return q === "mixte" ? info(SPOT_TYPE.paid, true, "Stationnement payant", "Ouvert à tous les véhicules") : rawRegime(prio, part);
+    case "payant rotatif":
+      return q === "rotatif" ? info(SPOT_TYPE.paid, true, "Stationnement payant (rotatif)") : rawRegime(prio, part);
+    case "gratuit":
+      return q === "gratuit" ? info(SPOT_TYPE.free, true, "Stationnement gratuit") : rawRegime(prio, part);
+    case "2 roues":
+      if (q === "velos") return info(SPOT_TYPE.bike, false, "Stationnement vélos", "Réservé aux vélos");
+      if (q === "velo-cargo") return info(SPOT_TYPE.bike, false, "Vélos cargo", "Réservé aux vélos cargo");
+      if (q === "box a velos") return info(SPOT_TYPE.bike, false, "Box à vélos", "Réservé aux vélos");
+      if (q === "motos payant mixte" || q === "motos payant rotatif") return info(SPOT_TYPE.moto, false, "Deux-roues motorisés (payant)", "Réservé aux deux-roues motorisés");
+      if (q === "mixte") return info(SPOT_TYPE.moto, false, "Stationnement deux-roues", "Réservé aux deux-roues (régime : Mixte)");
+      return rawRegime(prio, part);
+    case "livraison":
+      if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison (permanente)", "Réservée aux livraisons");
+      if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison (périodique)", "Réservée aux livraisons ; horaires non fournis dans les données, voir le panneau");
+      return rawRegime(prio, part);
+    case "gig/gic":
+      if (q.startsWith("gig/gic")) return info(SPOT_TYPE.pmr, false, "Place PMR (GIG/GIC)", `Réservée aux personnes à mobilité réduite titulaires de la carte${q === "gig/gic standard" ? "" : ` (régime : ${part})`}`);
+      return rawRegime(prio, part);
+    case "location":
+      if (q === "velib'") return info(SPOT_TYPE.bike, false, "Station Vélib'", "Réservé aux vélos en libre-service");
+      if (part) return info(SPOT_TYPE.reserved, false, `Réservé : ${part}`, "Emplacement de location ou de partage de véhicules");
+      return rawRegime(prio, part);
+    case "electrique":
+      if (q.startsWith("belib")) return info(SPOT_TYPE.reserved, false, `Recharge électrique (${part})`, "Réservé à la recharge de véhicules électriques");
+      return rawRegime(prio, part);
+    case "autocar":
+      return info(SPOT_TYPE.coach, false, "Stationnement autocars", `Réservé aux autocars (régime : ${part || prio})`);
+    case "autre regime":
+      if (q.startsWith("sp - ")) return info(SPOT_TYPE.reserved, false, `Réservé : ${part.slice(5).trim() || part}`, "Emplacement réservé à un service public");
+      if (q === "transport de fonds") return info(SPOT_TYPE.reserved, false, "Réservé : transport de fonds", "Emplacement réservé");
+      return rawRegime(prio, part);
+    default:
+      return rawRegime(prio, part);
+  }
+}
+
+// ---------- Rue et numéro (colonnes « Type voie », « Nom voie », « Numéro voie ») ----------
+
+const VOIE_TYPE: Record<string, string> = {
+  RUE: "rue", AV: "avenue", BD: "boulevard", PL: "place", QU: "quai", RTE: "route", PAS: "passage", ALL: "allée", CRS: "cours", SQ: "square", VLA: "villa", CITE: "cité",
+  IMP: "impasse", CHEM: "chemin", VOIE: "voie", COUR: "cour", PROM: "promenade", CAR: "carrefour", CHAU: "chaussée", SEN: "sentier", PORT: "port", ESPL: "esplanade", RPT: "rond-point", PONT: "pont", PARC: "parc",
+};
+const PARTICLES = new Set(["de", "du", "des", "la", "le", "les", "et", "sur", "sous", "aux", "au", "a", "en"]);
+
+/** Met en forme un nom de voie en MAJUSCULES du fichier : « CHERCHE-MIDI » devient « Cherche-Midi », « JEANNE D'ARC » devient « Jeanne d'Arc ». Les accents absents du fichier ne sont pas devinés. */
+export function titleCaseVoie(text: string): string {
+  const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
+  return text.toLowerCase().split(" ").filter(Boolean).map((word, index) => {
+    if (index > 0 && PARTICLES.has(word)) return word;
+    return word.split("-").map((part) => {
+      const k = part.search(/['’]/);
+      return k > 0 && k <= 2 ? part.slice(0, k + 1) + cap(part.slice(k + 1)) : cap(part);
+    }).join("-");
+  }).join(" ");
+}
+
+/** Clé de rue stockée dans les tuiles : « Type voie|Nom voie » tels que dans le fichier. */
+export const streetKey = (typeVoie: string, nomVoie: string) => `${typeVoie.trim()}|${nomVoie.trim()}`;
+
+/** Numéro codé dans une tuile : numéro × 10 + suffixe (1 bis, 2 ter, 3 quater). 0 = inconnu. */
+export function encodeNumero(numero: string | null | undefined, complement?: string | null): number {
+  const n = Number(String(numero ?? "").trim());
+  if (!Number.isInteger(n) || n <= 0 || n > 9999) return 0;
+  const c = norm(complement);
+  return n * 10 + (c === "bis" ? 1 : c === "ter" ? 2 : c === "quater" ? 3 : 0);
+}
+export function decodeNumero(code: number): string {
+  if (!code || code <= 0) return "";
+  const n = Math.floor(code / 10), suffix = ["", " bis", " ter", " quater"][code % 10] ?? "";
+  return `${n}${suffix}`;
+}
+
+/** « 61 rue du Cherche-Midi » à partir de la clé de rue et du numéro codé ; numéro omis s'il est inconnu. Chaîne vide si la rue est inconnue. */
+export function formatStreet(key: string, numeroCode: number): string {
+  const [typeRaw = "", nameRaw = ""] = key.split("|");
+  const words = typeRaw.trim().split(" ").filter(Boolean);
+  if (!words.length && !nameRaw.trim()) return "";
+  const first = words[0] ?? "";
+  const kind = [VOIE_TYPE[first] ?? first, ...words.slice(1).map((w) => w.toLowerCase())].join(" ");
+  const joined = /['’]$/.test(kind) ? `${kind}${titleCaseVoie(nameRaw)}` : `${kind} ${titleCaseVoie(nameRaw)}`;
+  const label = joined.trim();
+  const number = decodeNumero(numeroCode);
+  const full = number ? `${number} ${label}` : label;
+  return full.charAt(0).toUpperCase() + full.slice(1);
+}
+
+/** Les quatre lignes de la fiche d'un emplacement (la source et la licence sont ajoutées par l'écran, en petit). */
+export function describeParisSpot(input: {
+  regime: RegimeInfo; places: number; street: string; numeroCode: number;
+  /** Signalement d'utilisateur qui colore l'emplacement, sinon null. */
+  report?: { status: "free" | "taken"; minutes: number; stale: boolean; example: boolean } | null;
+}): { title: string; places: string; note: string | null; status: string; carsOk: boolean } {
+  const street = formatStreet(input.street, input.numeroCode);
+  const places = input.places > 0 ? `${input.places} ${input.places > 1 ? "places" : "place"} sur ce tronçon` : "Nombre de places non renseigné";
+  const r = input.report;
+  const status = !r ? "Aucun signalement récent : disponibilité inconnue"
+    : `Signalé ${r.status === "free" ? "libre" : "pris"} ${r.minutes < 1 ? "à l'instant" : `il y a ${r.minutes} min`} par un utilisateur${r.stale ? " (à vérifier)" : ""}${r.example ? " · exemple" : ""}`;
+  return { title: street ? `${input.regime.title} · ${street}` : input.regime.title, places, note: input.regime.note, status, carsOk: input.regime.cars === true };
 }
 
 // ---------- Découpage en fichiers (tuiles) et vue d'ensemble agrégée ----------
@@ -58,14 +175,30 @@ export const GRID = {
 } as const;
 
 export type TileIndex = {
-  version: 1; source: typeof PARIS_SOURCE | Record<string, string>; attribution: string; generatedAt: string; count: number;
+  version: 2; source: typeof PARIS_SOURCE | Record<string, string>; attribution: string; generatedAt: string; count: number;
+  /** Nombre total de places (somme de « Nombre places réelles »). */
+  places: number;
   origin: { south: number; west: number }; tileDeg: number; overviewDeg: number;
-  /** Nombre d'emplacements par tuile « ix_iy ». */
+  /** Nombre de tronçons (lignes du fichier) par tuile « ix_iy ». */
   tiles: Record<string, number>;
+  /** Couples [Régime prioritaire, Régime particulier] du fichier, désignés par leur rang dans les tuiles. */
+  regimes: Array<[string, string]>;
 };
 
-export type OfficialSpot = { id: string; lat: number; lng: number; t: number; /** nombre d'emplacements représentés (1 = emplacement réel) */ n: number };
-export type RawPoint = { lat: number; lng: number; t: number };
+/**
+ * Un tronçon (ligne du fichier) en vue détaillée, ou un total d'une cellule en vue d'ensemble (`agg`).
+ * `places` = « Nombre places réelles » du tronçon (0 = non renseigné), ou total de places de la cellule.
+ */
+export type OfficialSpot = {
+  id: string; lat: number; lng: number; t: number; places: number; agg: boolean;
+  /** Rang du couple de régimes dans TileIndex.regimes (-1 = vue d'ensemble). */
+  g: number;
+  /** Clé de rue « Type voie|Nom voie » et numéro codé (voir encodeNumero). */
+  street: string; num: number;
+};
+export type RawPoint = { lat: number; lng: number; t: number; places: number; g: number; street: string; num: number };
+/** Contenu d'un fichier de tuile : dictionnaire de rues, puis lignes [latE5, lngE5, type, places, régime, rue, numéro]. */
+export type TileFile = { v: 2; streets: string[]; rows: number[][] };
 
 export const toE5 = (v: number) => Math.round(v * 1e5);
 export const fromE5 = (v: number) => v / 1e5;
@@ -74,34 +207,38 @@ export function tileKey(lat: number, lng: number, origin: TileIndex["origin"], t
   return `${Math.floor((lng - origin.west) / tileDeg + 1e-9)}_${Math.floor((lat - origin.south) / tileDeg + 1e-9)}`;
 }
 
-/** Répartit les points en tuiles : lignes compactes [latE5, lngE5, type]. */
-export function bucketTiles(points: RawPoint[], origin: TileIndex["origin"], tileDeg: number): Map<string, number[][]> {
-  const out = new Map<string, number[][]>();
+/** Répartit les points en tuiles : dictionnaire de rues + lignes compactes [latE5, lngE5, type, places, régime, rue, numéro]. */
+export function bucketTiles(points: RawPoint[], origin: TileIndex["origin"], tileDeg: number): Map<string, TileFile> {
+  const out = new Map<string, TileFile>();
+  const dict = new Map<string, Map<string, number>>();
   for (const p of points) {
     const key = tileKey(p.lat, p.lng, origin, tileDeg);
-    let rows = out.get(key);
-    if (!rows) { rows = []; out.set(key, rows); }
-    rows.push([toE5(p.lat), toE5(p.lng), p.t]);
+    let file = out.get(key);
+    if (!file) { file = { v: 2, streets: [], rows: [] }; out.set(key, file); dict.set(key, new Map()); }
+    const streets = dict.get(key)!;
+    let si = streets.get(p.street);
+    if (si === undefined) { si = file.streets.length; file.streets.push(p.street); streets.set(p.street, si); }
+    file.rows.push([toE5(p.lat), toE5(p.lng), p.t, p.places, p.g, si, p.num]);
   }
   return out;
 }
 
-/** Vue d'ensemble : un point par cellule et par type, avec le nombre d'emplacements (le regroupement côté carte additionne ces nombres). */
+/** Vue d'ensemble : un point par cellule et par type, avec le TOTAL DE PLACES (le regroupement côté carte additionne ces nombres). */
 export function aggregateOverview(points: RawPoint[], origin: TileIndex["origin"], cellDeg: number): number[][] {
-  const cells = new Map<string, { lat: number; lng: number; n: number; t: number }>();
+  const cells = new Map<string, { lat: number; lng: number; k: number; places: number; t: number }>();
   for (const p of points) {
     const key = `${tileKey(p.lat, p.lng, origin, cellDeg)}:${p.t}`;
     const c = cells.get(key);
-    if (c) { c.lat += p.lat; c.lng += p.lng; c.n += 1; } else cells.set(key, { lat: p.lat, lng: p.lng, n: 1, t: p.t });
+    if (c) { c.lat += p.lat; c.lng += p.lng; c.k += 1; c.places += p.places; } else cells.set(key, { lat: p.lat, lng: p.lng, k: 1, places: p.places, t: p.t });
   }
-  return [...cells.values()].map((c) => [toE5(c.lat / c.n), toE5(c.lng / c.n), c.n, c.t]);
+  return [...cells.values()].map((c) => [toE5(c.lat / c.k), toE5(c.lng / c.k), c.places, c.t]);
 }
 
-export function decodeTile(key: string, rows: number[][]): OfficialSpot[] {
-  return rows.map((r, i) => ({ id: `${key}:${i}`, lat: fromE5(r[0]), lng: fromE5(r[1]), t: r[2], n: 1 }));
+export function decodeTile(key: string, file: TileFile): OfficialSpot[] {
+  return file.rows.map((r, i) => ({ id: `${key}:${i}`, lat: fromE5(r[0]), lng: fromE5(r[1]), t: r[2], places: r[3] ?? 0, agg: false, g: r[4] ?? -1, street: file.streets[r[5]] ?? "", num: r[6] ?? 0 }));
 }
 export function decodeOverview(rows: number[][]): OfficialSpot[] {
-  return rows.map((r, i) => ({ id: `o:${i}`, lat: fromE5(r[0]), lng: fromE5(r[1]), t: r[3], n: r[2] }));
+  return rows.map((r, i) => ({ id: `o:${i}`, lat: fromE5(r[0]), lng: fromE5(r[1]), t: r[3], places: r[2], agg: true, g: -1, street: "", num: 0 }));
 }
 
 export type Bounds = { south: number; north: number; west: number; east: number };
@@ -148,7 +285,7 @@ function meters(aLat: number, aLng: number, bLat: number, bLng: number): number 
 const isReportColor = (c: string): c is ReportColor => c === "green" || c === "orange" || c === "red";
 
 /**
- * Fusion : chaque signalement actif à moins de `matchMeters` d'un emplacement officiel (réel, n = 1) colore cet emplacement
+ * Fusion : chaque signalement actif à moins de `matchMeters` d'un emplacement officiel (tronçon réel, pas un total de la vue d'ensemble) colore cet emplacement
  * (le signalement le plus récent l'emporte si plusieurs visent le même). Les autres emplacements restent gris.
  * Retourne aussi les signalements absorbés : ils ne doivent plus être dessinés à part (sinon doublon). Un signalement
  * sans emplacement officiel proche reste une place en rue à part entière (couche « Places en rue »).
@@ -158,7 +295,7 @@ export function mergeWithReports(officials: OfficialSpot[], reports: ReportLite[
   const cell = 0.0004; // environ 44 m : le voisinage 3 x 3 couvre largement 15 m
   const grid = new Map<string, number[]>();
   officials.forEach((s, i) => {
-    if (s.n !== 1) return;
+    if (s.agg) return;
     const key = `${Math.floor(s.lat / cell)}_${Math.floor(s.lng / cell)}`;
     const list = grid.get(key); if (list) list.push(i); else grid.set(key, [i]);
   });

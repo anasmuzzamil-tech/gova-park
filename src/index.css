@@ -784,3 +784,14 @@ body.is-navigating .bottom-nav { display: none; }
 .m-scard-main strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-scard-main small { color: #5a5873; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-scard .m-dist { flex: none; }
+
+/* ===== Fiche d'un emplacement de Paris : langage clair, 5 lignes au plus (titre dans l'en-tête de la fenêtre) ===== */
+.pf { display: grid; gap: 8px; }
+.pf p { margin: 0; color: #17142b; font: 600 15px/1.35 "Manrope", sans-serif; }
+.pf .pf-places { font-weight: 800; }
+.pf .pf-note { color: #4b4963; font-size: 14px; }
+.pf .pf-status { display: flex; align-items: center; gap: 9px; }
+.pf .pf-status .report-status-dot { flex: none; }
+.pf .pf-source { color: #6c6a85; font-size: 11.5px; font-weight: 600; }
+.pf-report { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pf-report .btn { min-height: 44px; }
