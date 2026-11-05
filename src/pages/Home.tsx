@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
@@ -15,6 +15,9 @@ import { STATUS_COLORS } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
+import { NavigationMode } from "@/components/NavigationMode";
+import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
+import { fetchOsrmRoute } from "@/lib/routing";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -23,7 +26,6 @@ import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLoca
 type Filters = { maxPrice: number; maxDistance: number; type: string; covered: string; minHeight: number; minLength: number; minWidth: number; accessible: boolean; priceMode: "tous" | "free" | "paid"; category: "private" | "public" | "collective"; from: string; to: string };
 const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", covered: "tous", minHeight: 0, minLength: 0, minWidth: 0, accessible: false, priceMode: "tous", category: "private", from: "", to: "" };
 const reportTitle = { free: "Place signalée libre", occupied: "Place signalée occupée", departure: "Départ annoncé" };
-type RouteStep = { instruction: string; distance: number; location: [number, number] };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
 type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean };
 function distanceToSegmentMeters(point: {lat:number;lng:number}, a: [number,number], b: [number,number]) {
@@ -84,6 +86,7 @@ async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSug
 
 export default function Home() {
   const navigate = useNavigate();
+  const routerLocation = useLocation();
   const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
   const reportsQuery = trpc.govapark.community.list.useQuery(undefined, { refetchInterval: 30000 });
@@ -123,6 +126,11 @@ export default function Home() {
   const [routeFuelType, setRouteFuelType] = useState<"gazole" | "e10" | "sp98" | "sp95" | "e85">("gazole");
   const [fuelConsumption, setFuelConsumption] = useState(7.2);
   const [routeLoading, setRouteLoading] = useState(false);
+  // Navigation plein écran : destination (avec l'état du signalement pour le rappel d'arrivée), cap/recentrage.
+  const [navActive, setNavActive] = useState(false);
+  const [navFollow, setNavFollow] = useState(true);
+  const [navDest, setNavDest] = useState<NavDest | null>(null);
+  const voiceSupported = typeof window !== "undefined" && "speechSynthesis" in window;
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(false);
   const [backgroundAlertsEnabled, setBackgroundAlertsEnabled] = useState(false);
   const spokenStepIndex = useRef(0);
@@ -392,10 +400,11 @@ export default function Home() {
     const destination = listings.find((item) => item.id === listingId);
     if (!destination) return;
     originRef.current = { lat: visibleCenter.lat, lng: visibleCenter.lng };
-    await calculateRoutes({ lat: destination.latitude, lng: destination.longitude }, destination.title, listingId);
+    await calculateRoutes({ lat: destination.latitude, lng: destination.longitude }, destination.title, listingId, { kind: "listing" });
   };
 
-  const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0) => {
+  const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0, info?: Partial<NavDest>) => {
+    setNavDest({ lat: destination.lat, lng: destination.lng, label: destinationName || "Destination", kind: "address", ...info });
     // Départ : adresse de départ saisie, sinon position GPS si elle est déjà connue, sinon centre de la carte.
     // On n'attend JAMAIS la géolocalisation (refusée, indisponible ou en attente d'autorisation) : le trajet part tout de suite.
     const origin: { lat: number; lng: number } = fromChosen.current && originRef.current ? originRef.current : (userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng });
@@ -454,11 +463,7 @@ export default function Home() {
       }
       const mapped: DrivingRoute[] = rawRoutes.slice(0,3).map((route,index) => {
         const rawSteps = route.legs?.flatMap((leg) => leg.steps ?? []) ?? [];
-        const steps: RouteStep[] = rawSteps.map((step) => {
-          const action = step.maneuver?.type === "turn" ? `Tournez ${step.maneuver.modifier ?? ""}` : step.maneuver?.type === "roundabout" ? "Prenez le rond-point" : step.maneuver?.type === "arrive" ? "Vous arrivez à destination" : step.maneuver?.type === "depart" ? "Démarrez" : "Continuez";
-          const road = step.name ? ` sur ${step.name}` : "";
-          return { instruction: `${action}${road}`.replace(/\s+/g, " ").trim(), distance: step.distance, location: [step.maneuver?.location?.[1] ?? destination.lat, step.maneuver?.location?.[0] ?? destination.lng] };
-        });
+        const steps: RouteStep[] = mapOsrmSteps(rawSteps as Parameters<typeof mapOsrmSteps>[0], [destination.lat, destination.lng]);
         return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps };
       });
       const fields="id,geom,adresse,ville,gazole_prix,gazole_maj,e10_prix,e10_maj,sp98_prix,sp98_maj,sp95_prix,sp95_maj,e85_prix,e85_maj,services_service";
@@ -498,7 +503,7 @@ export default function Home() {
   };
   // Guidage vocal déclenché uniquement après activation explicite par le conducteur.
   useEffect(() => {
-    if (!voiceGuidanceEnabled || !userPosition || !drivingRoute || !("speechSynthesis" in window)) return;
+    if (navActive || !voiceGuidanceEnabled || !userPosition || !drivingRoute || !("speechSynthesis" in window)) return;
     const steps = drivingRoute.steps;
     while (spokenStepIndex.current < steps.length) {
       const step = steps[spokenStepIndex.current];
@@ -510,7 +515,7 @@ export default function Home() {
       window.speechSynthesis.speak(utterance);
       spokenStepIndex.current += 1;
     }
-  }, [voiceGuidanceEnabled, userPosition, drivingRoute]);
+  }, [navActive, voiceGuidanceEnabled, userPosition, drivingRoute]);
 
   const enableBackgroundAlerts = async () => {
     if (!("serviceWorker" in navigator) || !("Notification" in window)) {
@@ -594,6 +599,45 @@ export default function Home() {
     const first = drivingRoute.steps[0];
     if (first && "speechSynthesis" in window) { const speech = new SpeechSynthesisUtterance(`Guidage vocal activé. ${first.instruction}`); speech.lang = "fr-FR"; window.speechSynthesis.speak(speech); spokenStepIndex.current = 1; }
   };
+  // ----- Navigation plein écran -----
+  const requestLocation = () => { if (watchId.current === null) locate(true); };
+  const startNavigation = () => {
+    if (!drivingRoute || drivingRoute.offline || !navDest) return;
+    setNavActive(true); setNavFollow(true); setRouteFocus((n) => n + 1);
+    // Position demandée sans bloquer : sans autorisation, le guidage démarre quand même depuis le départ choisi.
+    requestLocation();
+    // Premier message vocal dans le geste de l'utilisateur (obligatoire sur iPhone pour autoriser la voix).
+    if (voiceSupported) { setVoiceGuidanceEnabled(true); try { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance("Guidage démarré"); u.lang = "fr-FR"; window.speechSynthesis.speak(u); } catch { /* voix indisponible */ } }
+  };
+  const stopNavigation = () => {
+    try { window.speechSynthesis?.cancel(); } catch { /* ignoré */ }
+    setNavActive(false); setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
+  };
+  const toggleNavVoice = () => {
+    if (voiceGuidanceEnabled) { try { window.speechSynthesis?.cancel(); } catch { /* ignoré */ } setVoiceGuidanceEnabled(false); return; }
+    setVoiceGuidanceEnabled(true);
+  };
+  // Recalcul : nouvel itinéraire depuis la position actuelle vers la même destination (OSRM public). Rien n'est inventé en cas d'échec.
+  const rerouteFrom = async (from: { lat: number; lng: number }) => {
+    if (!navDest) return false;
+    const next = await fetchOsrmRoute(from, navDest);
+    if (!next) return false;
+    setDrivingRoute((previous) => ({ id: `route-nav-${Date.now()}`, label: "Recalculé", coordinates: next.coordinates, distance: next.distance, duration: next.duration, destinationId: previous?.destinationId ?? 0, steps: next.steps }));
+    setOriginNote(null);
+    return true;
+  };
+  useEffect(() => { if (!navActive) return; document.body.classList.add("is-navigating"); return () => document.body.classList.remove("is-navigating"); }, [navActive]);
+  // Arrivée depuis une fiche (page place) : « Y aller » démarre le calcul du trajet, départ = adresse saisie, position connue ou centre de la carte.
+  const goToHandled = useRef(false);
+  useEffect(() => {
+    const goTo = (routerLocation.state as { goTo?: { lat: number; lng: number; label: string; id?: number } } | null)?.goTo;
+    if (!goTo || goToHandled.current) return;
+    goToHandled.current = true;
+    navigate(".", { replace: true, state: null });
+    setTarget({ lat: goTo.lat, lng: goTo.lng });
+    void calculateRoutes({ lat: goTo.lat, lng: goTo.lng }, goTo.label, goTo.id ?? 0, { kind: "listing" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerLocation.state]);
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
   const mapProps = {
@@ -601,7 +645,7 @@ export default function Home() {
     onPickRoute: (id: string) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } },
     reports, userPosition, confirmedIds, fuelStations: [] as Array<{ id: number; lat: number; lng: number; name: string }>,
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
-    driving: !!drivingRoute, routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
+    driving: !!drivingRoute && (!navActive || navFollow), routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
     onListing: (id: number) => navigate(`/place/${id}`), onBook: (id: number) => navigate(`/reserver/${id}`), canBook: online, onRoute: startRoute,
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
     streetSpots, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
@@ -619,7 +663,7 @@ export default function Home() {
   }, [map3dFail]);
 
   return (
-    <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${online ? "" : " is-offline"}`}>
+    <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />
       {offlineOpen && <OfflineDownloadModal center={visibleCenter} basemap={map3dFail === "webgl" ? "raster" : "vector"} onClose={() => setOfflineOpen(false)} />}
       <section className="map-workspace" aria-label="Recherche de stationnement">
@@ -704,7 +748,7 @@ export default function Home() {
 {originNote && <small className="route-origin-note">{originNote}</small>}
 {gpsNote && !trackingGps && <small className="route-origin-note">{gpsNote}</small>}
 {routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.fuelCost != null ? ` · ${option.fuelCost.toFixed(1).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
-{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={() => { setRouteFocus((n) => n + 1); if (!trackingGps) locate(true); toast.success("C’est parti ! Bonne route."); }}><Navigation size={18} />{trackingGps ? "En route" : "Démarrer"}</button>}</div>
+{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Démarrer</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
           </div>
           <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>
@@ -740,6 +784,10 @@ export default function Home() {
           </>}
         </div>
       </section>
+
+      {navActive && drivingRoute && navDest && <NavigationMode route={drivingRoute} dest={navDest} position={userPosition} speedKmh={trackingGps ? speedKmh : null} online={online}
+        voiceOn={voiceGuidanceEnabled && voiceSupported} voiceSupported={voiceSupported} onToggleVoice={toggleNavVoice} follow={navFollow} onToggleFollow={() => setNavFollow((v) => !v)}
+        originNote={originNote} tracking={trackingGps} onRequestLocation={requestLocation} onStop={stopNavigation} onReroute={rerouteFrom} />}
 
       <aside className={`results-panel ${view === "map" ? "desktop-only" : ""}`}>
         {view === "list" && <section className="prediction-panel" aria-label="Prévision des départs de stationnement">
@@ -823,7 +871,8 @@ export default function Home() {
         <dl className="report-facts"><div><dt>Signalé à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.reportedAt))}</dd></div><div><dt>Source</dt><dd>Signalé par un utilisateur</dd></div><div><dt>Fiabilité</dt><dd>{selectedStreet.reliabilityText}{selectedStreet.agreeing > 1 ? ` · ${selectedStreet.agreeing} utilisateurs concordants` : ""}</dd></div><div><dt>Disparaît à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.expiresAt))}</dd></div></dl>
         <div className="confidence-track"><span style={{ width: `${selectedStreet.reliabilityPct}%` }} /></div>
         <p className="report-caution">Place gratuite sur la voie publique, signalée par un utilisateur. Ce n’est pas une vérité garantie : elle a pu être prise depuis. Govapark ne la réserve pas.</p>
-        {selectedStreet.status === "free" && <button className="btn btn-primary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
+        <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedStreet; setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}><Navigation size={18} />Y aller</button>
+        {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
         <small className="field-help">Pour signaler, votre position GPS doit être à moins de {STREET_RULES.deviceMaxMeters} m de la place.</small>
       </Modal>}
 

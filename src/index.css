@@ -716,3 +716,39 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .sp-text:has(.sp-line) { flex: 1; gap: 8px; }
 .m-street-btn:disabled { opacity: .7; }
 @media (prefers-reduced-motion: reduce) { .sp-skel { animation: none; } }
+
+/* Mode navigation plein écran (guidage façon Waze) : la carte reste dessous, tout le reste de l'écran d'accueil est masqué */
+body.is-navigating .bottom-nav { display: none; }
+.home-screen.is-navigating .m-top, .home-screen.is-navigating .m-chips, .home-screen.is-navigating .m-sheet, .home-screen.is-navigating .m-go, .home-screen.is-navigating .m-from, .home-screen.is-navigating .m-menu, .home-screen.is-navigating .map3d-notice, .home-screen.is-navigating .results-panel { display: none; }
+.home-screen.is-navigating { grid-template-columns: minmax(0, 1fr); }
+.nav-hud { position: fixed; inset: 0; z-index: 2000; pointer-events: none; font-family: "Manrope", sans-serif; }
+.nav-hud > * { pointer-events: auto; }
+.nav-top { position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); left: 10px; right: 10px; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 22px; background: #17142b; color: #fff; box-shadow: 0 12px 32px #1a143a66; }
+.nav-arrow { flex: none; width: 72px; height: 72px; border-radius: 18px; display: grid; place-items: center; background: #fff; color: #17142b; }
+.nav-top-text { display: grid; gap: 2px; min-width: 0; }
+.nav-dist { font-size: 38px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.nav-instr { font-size: 19px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.nav-then { margin-top: 4px; font-size: 13.5px; font-weight: 600; color: #d7d4ee; }
+.nav-notes { position: absolute; top: calc(max(10px, env(safe-area-inset-top, 0px)) + 132px); left: 10px; right: 70px; display: grid; gap: 6px; }
+.nav-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 14px; background: #fff; color: #17142b; font-size: 12.5px; font-weight: 700; line-height: 1.35; box-shadow: 0 6px 20px #1a143a30; }
+.nav-note.warn { background: #fff4e0; color: #5c3300; }
+.nav-note button { min-height: 44px; padding: 0 14px; border: 0; border-radius: 22px; background: #4a2fb8; color: #fff; font: 800 13.5px "Manrope", sans-serif; }
+.nav-side { position: absolute; right: 10px; top: calc(max(10px, env(safe-area-inset-top, 0px)) + 144px); display: grid; gap: 10px; }
+.nav-round { width: 52px; height: 52px; border: 0; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #17142b; box-shadow: 0 8px 24px #1a143a40; }
+.nav-round[aria-pressed="false"] { color: #6c6a85; }
+.nav-round:disabled { opacity: .55; }
+.nav-bottom { position: absolute; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding: 12px 14px 10px; border-radius: 22px; background: #fff; color: #17142b; box-shadow: 0 -4px 30px #1a143a40; display: grid; gap: 8px; }
+.nav-reminder { margin: 0; padding: 8px 12px; border-radius: 12px; background: #fff4e0; color: #5c3300; font-size: 13px; font-weight: 800; line-height: 1.35; }
+.nav-reminder.strong { font-size: 16px; text-align: left; }
+.nav-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) 52px; align-items: center; gap: 6px; }
+.nav-stats > div { display: grid; text-align: center; min-width: 0; }
+.nav-stats strong { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nav-stats span { font-size: 11.5px; font-weight: 700; color: #4b4963; }
+.nav-stop { width: 52px; height: 52px; border: 0; border-radius: 50%; display: grid; place-items: center; background: #c8302a; color: #fff; }
+.nav-foot { color: #4b4963; font-size: 11px; font-weight: 600; text-align: center; }
+.nav-arrived { position: absolute; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom, 0px)); padding: 22px 18px 18px; border-radius: 26px; background: #fff; color: #17142b; box-shadow: 0 -6px 34px #1a143a55; display: grid; gap: 10px; justify-items: stretch; }
+.nav-arrived-icon { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; background: #0b7a3b; color: #fff; }
+.nav-arrived h2 { margin: 0; font-size: 28px; font-weight: 800; }
+.nav-dist-label, .nav-dest { margin: 0; font-size: 15px; font-weight: 700; color: #4b4963; }
+.nav-end { min-height: 56px; border: 0; border-radius: 16px; background: #17142b; color: #fff; font: 800 17px "Manrope", sans-serif; }
+@media (max-width: 380px) { .nav-dist { font-size: 32px; } .nav-instr { font-size: 17px; } .nav-arrow { width: 60px; height: 60px; } }

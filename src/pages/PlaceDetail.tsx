@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Star, MapPin, LockKeyhole, Ruler, ArrowUpFromLine, ShieldCheck, Zap, UserCheck, Check, CarFront, Heart } from "lucide-react";
+import { ArrowLeft, Star, MapPin, LockKeyhole, Ruler, ArrowUpFromLine, ShieldCheck, Zap, UserCheck, Check, CarFront, Heart, Navigation } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -64,7 +64,7 @@ export default function PlaceDetail() {
               <dl className="report-facts"><div><dt>Source</dt><dd>{place.parkingStatus.source ?? "Aucune"}</dd></div><div><dt>Dernière mise à jour</dt><dd>{place.parkingStatus.updatedAt ? shortDate(place.parkingStatus.updatedAt) : "—"}</dd></div><div><dt>Fiabilité</dt><dd>{reliabilityLabel(place.parkingStatus.reliability)}</dd></div></dl>
             </div>}
             <dl className="report-facts"><div><dt>Catégorie</dt><dd>Stationnement privé (location)</dd></div><div><dt>Horaires autorisés</dt><dd>{scheduleText(place.availability)}</dd></div><div><dt>Tarif</dt><dd>{euros(place.hourlyCents)}/h · {euros(place.dailyCents)}/jour</dd></div><div><dt>Durée maximale</dt><dd>Non précisée par le propriétaire</dd></div><div><dt>Accès PMR</dt><dd>{(place as { accessible?: boolean }).accessible ? "Oui" : "Non indiqué"}</dd></div><div><dt>Restrictions</dt><dd>Hauteur maximale {place.heightCm} cm · accès selon les horaires ci-dessus</dd></div><div><dt>Source de l’annonce</dt><dd>Propriétaire, annonce validée par GOVAPARK</dd></div><div><dt>Annonce publiée</dt><dd>{shortDate(place.createdAt)}</dd></div></dl>
-            <div className="nav-links"><strong>Ouvrir l’itinéraire</strong>{navigationLinks(place.latitude, place.longitude).map((link) => <a key={link.id} className="btn btn-secondary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>)}</div>
+            <div className="nav-links"><button className="btn btn-primary btn-full" onClick={() => navigate("/", { state: { goTo: { lat: place.latitude, lng: place.longitude, label: place.title, id: place.id } } })}><Navigation size={18} />Y aller</button><strong>Ouvrir l’itinéraire dans une autre application</strong>{navigationLinks(place.latitude, place.longitude).map((link) => <a key={link.id} className="btn btn-secondary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>)}</div>
           </section>
           <section className="detail-section"><div className="section-title-row"><h2>Avis</h2><span><Star size={16} fill="currentColor" />{place.rating.toFixed(1)} · {place.reviewCount} avis</span></div>
             {place.reviewCount === 0 ? <p className="detail-description">Aucun avis pour le moment.</p> : <div className="reviews-list">{place.parkingStatus?.source?.startsWith("Simulation") && <p className="field-help">Exemples d’avis (mode démo).</p>}{reviews.map((review) => <article key={review.name}><div><strong>{review.name}</strong><span>{review.date}</span></div><div className="stars">★★★★★</div><p>{review.text}</p></article>)}</div>}
