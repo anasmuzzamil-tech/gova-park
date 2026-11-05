@@ -533,6 +533,8 @@ export default function Home() {
     } finally { locatingRef.current = false; setLocating(false); }
   };
   useEffect(() => () => { if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current); }, []);
+  // À l'ouverture : demande la position une seule fois (message discret, pas de toast). Un refus ne bloque rien : « Ma position » redemande à chaque toucher.
+  useEffect(() => { if (!gpsInitialized.current) void locate(true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitReport = () => {
     createReport.mutate({ kind: reportKind, latitude: visibleCenter.lat, longitude: visibleCenter.lng, address: reportAddress,
