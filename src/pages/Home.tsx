@@ -37,7 +37,7 @@ import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
 import { nearLabel } from "@/lib/near-label";
-import { addRecent, getFavorite, loadPlaces, removeFavorite, removeRecent, savePlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
+import { addRecent, getFavorite, loadPlaces as loadSavedPlaces, removeFavorite, removeRecent, savePlaces as saveSavedPlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
@@ -142,11 +142,11 @@ export default function Home() {
   const [focusRequest, setFocusRequest] = useState<{ id: number; lat: number; lng: number; zoom: number } | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   // Raccourcis (Domicile, Travail, lieux nommés) et dernières destinations : stockés sur l'appareil seulement (src/lib/saved-places.ts).
-  const [places, setPlaces] = useState<PlacesStore>(() => loadPlaces());
+  const [places, setPlaces] = useState<PlacesStore>(() => loadSavedPlaces());
   const [pendingFav, setPendingFav] = useState<{ kind: SavedKind; name?: string } | null>(null);
   const [newFavName, setNewFavName] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const updatePlaces = (next: PlacesStore) => { setPlaces(next); savePlaces(next); };
+  const updatePlaces = (next: PlacesStore) => { setPlaces(next); saveSavedPlaces(next); };
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [target, setTarget] = useState({ lat: 48.8566, lng: 2.3522 });
