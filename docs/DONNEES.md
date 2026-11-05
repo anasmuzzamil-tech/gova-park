@@ -6,12 +6,22 @@ Principe : **aucune disponibilité n'est inventée**. Sans donnée temps réel v
 | Donnée | Source | Fiabilité | Validité |
 |---|---|---|---|
 | Places privées (annonces) | Propriétaire, annonce validée par GOVAPARK | élevée | Statut recalculé à chaque requête : calendrier du propriétaire (heure de Paris) + réservations GOVAPARK |
-| Signalements d'utilisateurs | Communauté (compte requis) | moyenne/faible (0-100, votes) | Libre : 15 min · occupé : 30 min · départ annoncé : jusqu'à 10 min après l'heure estimée |
+| Signalements d'utilisateurs (ancien « Signaler ») | Communauté (compte requis) | moyenne/faible (0-100, votes) | Libre : 15 min · occupé : 30 min · départ annoncé : jusqu'à 10 min après l'heure estimée |
+| **Places en rue** (couche « Places en rue ») | Communauté uniquement (compte requis ; visiteur démo en démo) : aucune source ouverte ne donne l'occupation par place en rue | 10 à 95 % (concordance d'utilisateurs distincts) | Libre : vert 5 min, orange jusqu'à 10 min, puis disparaît · prise : rouge 10 min puis disparaît |
 
 Règles de couleur (`contracts/parking-status.ts`, testées dans `api/parking-status.test.ts`) :
 - **Vert** : libre confirmé par une source fiable (exploitant, capteur, propriétaire, open data temps réel).
 - **Rouge** : occupé confirmé (source fiable, ou signalement confirmé par au moins 2 utilisateurs avec fiabilité ≥ 70).
-- **Orange** : signalement récent non confirmé, départ annoncé, estimation. Un signalement d'utilisateur ne donne **jamais** du vert.
+- **Orange** : signalement récent non confirmé, départ annoncé, estimation. Pour les places privées, parkings et l'ancien « Signaler », un signalement d'utilisateur ne donne **jamais** du vert.
+
+### Places en rue (exception décidée par Anas)
+Règles dans `contracts/street-reports.ts`, testées dans `api/street-reports.test.ts` :
+- « libre » : **vert** moins de 5 min, **orange** de 5 à 10 min, puis la place disparaît de la carte ; « prise » : **rouge** 10 min puis disparaît.
+- Le signalement le plus récent l'emporte. Des signalements concordants d'utilisateurs distincts (à moins de 5 min du plus récent, à moins de 15 m) relèvent la fiabilité (50 % + 15 par utilisateur concordant, -20 par utilisateur contradictoire, entre 10 et 95 %).
+- Chaque place affiche l'heure, « il y a X min » et la source « Signalé par un utilisateur » ; jamais présentée comme garantie. Aucun nom d'utilisateur exposé.
+- Aucune place pré-remplie : sans signalement récent, pas de place verte. En démo, tout signalement est étiqueté « exemple ».
+- Anti-abus : connexion requise (visiteur démo en démo), position du signalement à moins de 50 m de la position GPS envoyée par l'appareil (cette distance ne prouve pas que le GPS n'est pas falsifié), 1 signalement par utilisateur et par minute dans une zone de 100 m, limite de débit par IP existante, bornes GPS validées, expiration calculée côté serveur.
+- Données : table `streetReports` (migration `db/migrations/0016_places_en_rue.sql`), index sur (latitude, longitude), createdAt et (userId, createdAt). Démo : mémoire de `api/demo.ts`.
 - **Gris** : aucune donnée, ou donnée expirée (« information trop ancienne »).
 
 En mode démo (sans base), les annonces sont des exemples : leur statut indique « Simulation (mode démo) ».

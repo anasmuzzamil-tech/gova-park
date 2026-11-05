@@ -1,4 +1,4 @@
-# État réel du produit GOVAPARK (au 2026-11-04)
+# État réel du produit GOVAPARK (au 2026-11-05)
 
 Une page, sans exagération. Légende : **Vérifié** = couvert par un test automatique existant dans le dépôt (non rejoué dans l'environnement qui a écrit ce document : npm bloqué) ou observé en production par l'équipe ; **Démo** = fonctionne avec des données d'exemple ; **Non testé** = code présent, jamais vérifié de bout en bout ; **Absent**.
 
@@ -7,8 +7,11 @@ Une page, sans exagération. Légende : **Vérifié** = couvert par un test auto
 - Règles métier pures, **avec tests unitaires** dans le dépôt : couleur de statut (jamais de vert sans source fiable), prix et commission, réservation (créneaux, conflits, 31 jours max), recherche/filtres, regroupement de marqueurs, validation d'annonce, compteur. Fichiers : `api/*.test.ts`.
 - Paiement réellement désactivé dans le code : aucune réservation n'est confirmée ni débitée.
 
+- **Places gratuites en rue (communautaire)** : couche « Places en rue » séparée des places privées. Règles de statut (vert 5 min, orange jusqu'à 10 min, rouge 10 min, disparition), concordance, anti-spam, distance GPS et validation des entrées : **couvertes par des tests unitaires** (`api/street-reports.test.ts`). Boutons « Je libère ma place » / « Je me gare » sur la carte mobile, fiche avec heure et fiabilité, proposition « Libérer la place pour les autres ? » à la fin du compteur : **écrits, non testés en interface** (non rejoués en ligne à ce jour). Version base réelle (table `streetReports`) : **non testée faute de base**. Limite assumée : un signalement n'est jamais une vérité garantie, et la vérification des 50 m repose sur la position envoyée par l'appareil (falsifiable). Aucune place n'existe tant que personne n'a signalé.
+
 ## Ce qui est en démo (données d'exemple)
 - Le site public n'a **pas de base de données branchée** : 35 annonces d'exemple générées en mémoire (`api/demo.ts`), un visiteur « démo » connecté d'office, rien d'enregistré durablement. Les statuts affichent « Simulation (mode démo) ».
+- Places en rue : aucune place pré-remplie ; les signalements faits par le visiteur démo sont étiquetés « exemple ».
 - Réservations, favoris, signalements, compteur : fonctionnent en mémoire pendant la vie du serveur, perdus au redémarrage.
 
 ## Code présent mais non testé de bout en bout

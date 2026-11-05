@@ -4,7 +4,8 @@
 //  - ROUGE  : occupé confirmé (source fiable, ou signalement communautaire confirmé par au moins 2 personnes).
 //  - ORANGE : estimation ou signalement récent non confirmé.
 //  - GRIS   : inconnu, ou information trop ancienne (périmée).
-// Un signalement communautaire seul ne donne JAMAIS du vert. Aucune disponibilité n'est inventée.
+// Un signalement communautaire seul ne donne JAMAIS du vert ICI (places privées, parkings, ancien « Signaler »). Aucune disponibilité n'est inventée.
+// EXCEPTION décidée par Anas : les places gratuites EN RUE signalées par la communauté peuvent être vertes 5 min (voir contracts/street-reports.ts).
 
 export type StatusColor = "green" | "red" | "orange" | "gray";
 export type SourceType = "operator" | "sensor" | "owner" | "open_data" | "community" | "estimate";
