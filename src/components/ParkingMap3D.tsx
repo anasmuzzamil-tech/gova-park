@@ -2,11 +2,11 @@ import { bearingBetween, carBadgeTransform, metersBetween } from "@/lib/heading"
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { MapListing, MapReport } from "./ParkingMap";
+import type { MapListing, MapReport, MapStreetSpot, MapBounds } from "./ParkingMap";
 import { clusterPoints } from "@/lib/cluster";
 import { STATUS_COLORS } from "@contracts/parking-status";
 
-export type { MapListing, MapReport };
+export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
@@ -65,11 +65,13 @@ function text(tag: string, value: string, className?: string) {
 }
 
 export default function ParkingMap3D({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   listings: MapListing[];
   reports: MapReport[];
+  streetSpots?: MapStreetSpot[];
+  onStreetSpot?: (spot: MapStreetSpot) => void;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -80,7 +82,7 @@ export default function ParkingMap3D({
   routeListingIds?: Set<number>;
   routeServices?: RouteService[];
   onReport: (report: MapReport) => void;
-  onMove?: (center: Center) => void;
+  onMove?: (center: Center, bounds?: MapBounds) => void;
   userPosition?: GpsPosition | null;
   fuelStations?: Array<{ id: number; lat: number; lng: number; name: string }>;
   onUnavailable?: () => void;
@@ -97,11 +99,12 @@ export default function ParkingMap3D({
   const detailed = zoom >= 14;
 
   // Callbacks toujours à jour sans recréer les marqueurs.
-  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable });
-  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable };
+  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot });
+  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot };
 
   const listingMarkers = useRef<maplibregl.Marker[]>([]);
   const reportMarkers = useRef<maplibregl.Marker[]>([]);
+  const streetMarkers = useRef<maplibregl.Marker[]>([]);
   const serviceMarkers = useRef<maplibregl.Marker[]>([]);
   const userMarker = useRef<maplibregl.Marker | null>(null);
   const carBadge = useRef<HTMLElement | null>(null);
@@ -164,7 +167,7 @@ export default function ParkingMap3D({
     map.addControl(new TiltControl(), "bottom-right");
     map.on("movestart", (e) => { if ((e as { originalEvent?: unknown }).originalEvent) autoFitDone.current = true; });
     map.on("zoomend", () => setZoom(map.getZoom()));
-    map.on("moveend", () => { const c = map.getCenter(); lastView.current = { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; cb.current.onMove?.({ lat: c.lat, lng: c.lng }); });
+    map.on("moveend", () => { const c = map.getCenter(); lastView.current = { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; const b = map.getBounds(); cb.current.onMove?.({ lat: c.lat, lng: c.lng }, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }); });
     map.on("load", () => {
       loaded = true;
       window.clearTimeout(watchdog);
@@ -400,6 +403,19 @@ export default function ParkingMap3D({
       return new maplibregl.Marker({ element: node }).setLngLat([report.longitude, report.latitude]).addTo(map);
     });
   }, [ready, reports, detailed]);
+
+  // Places gratuites en rue (couche communautaire séparée) : carrés arrondis aux couleurs du statut.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    streetMarkers.current.forEach((m) => m.remove());
+    streetMarkers.current = streetSpots.map((spot) => {
+      const node = el("span", `pk-street pk-s-${spot.color}`, spot.status === "free" ? "P" : "×");
+      const slabel = `Place en rue · ${spot.label}${spot.example ? " (exemple)" : ""}`; node.title = slabel; node.setAttribute("aria-label", slabel); node.style.cursor = "pointer";
+      node.addEventListener("click", (e) => { e.stopPropagation(); cb.current.onStreetSpot?.(spot); });
+      return new maplibregl.Marker({ element: node }).setLngLat([spot.longitude, spot.latitude]).addTo(map);
+    });
+  }, [ready, streetSpots]);
 
   // Stations et services du trajet.
   useEffect(() => {

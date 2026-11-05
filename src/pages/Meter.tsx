@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { AuthGate } from "@/components/AuthGate";
 import { euros, shortDate } from "@/lib/format";
 import { meterCostCents } from "@contracts/meter";
+import { GeolocError, getDevicePosition } from "@/lib/street";
 
 function clock(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -27,7 +28,21 @@ export default function Meter() {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const refresh = () => { utils.govapark.meter.current.invalidate(); utils.govapark.meter.history.invalidate(); };
   const start = trpc.govapark.meter.start.useMutation({ onSuccess: () => { toast.success("Stationnement démarré"); refresh(); }, onError: (e) => toast.error(e.message) });
-  const stop = trpc.govapark.meter.stop.useMutation({ onSuccess: (r) => { toast.success(r.totalCents != null ? `Stationnement terminé · ${euros(r.totalCents)}` : "Stationnement terminé"); refresh(); }, onError: (e) => toast.error(e.message) });
+  // Fin de session : on PROPOSE de libérer la place pour les autres, jamais automatiquement.
+  const [offerRelease, setOfferRelease] = useState<{ latitude: number | null; longitude: number | null } | null>(null);
+  const [releaseNote, setReleaseNote] = useState<string | null>(null);
+  const stop = trpc.govapark.meter.stop.useMutation({ onSuccess: (r) => { toast.success(r.totalCents != null ? `Stationnement terminé · ${euros(r.totalCents)}` : "Stationnement terminé"); setReleaseNote(null); setOfferRelease({ latitude: r.latitude ?? null, longitude: r.longitude ?? null }); refresh(); }, onError: (e) => toast.error(e.message) });
+  const release = trpc.govapark.street.create.useMutation({
+    onSuccess: (r) => { toast.success(r.example ? "Signalement d’exemple enregistré (mode démo)" : "Merci ! Place signalée libre pour les autres (10 min au maximum)."); setOfferRelease(null); setReleaseNote(null); },
+    onError: (e) => setReleaseNote(e.message),
+  });
+  const confirmRelease = async () => {
+    try {
+      const device = await getDevicePosition();
+      const place = offerRelease?.latitude != null && offerRelease?.longitude != null ? { latitude: offerRelease.latitude, longitude: offerRelease.longitude } : { latitude: device.latitude, longitude: device.longitude };
+      release.mutate({ status: "free", ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
+    } catch (e) { setReleaseNote(e instanceof GeolocError ? e.message : "Signalement impossible pour le moment."); }
+  };
 
   if (isLoading) return <div className="standard-page">Chargement…</div>;
   if (!isAuthenticated) return <div className="standard-page"><AuthGate title="Connectez-vous pour utiliser le compteur" /></div>;
@@ -48,6 +63,13 @@ export default function Meter() {
 
   return <div className="standard-page meter-page">
     <header className="page-header"><span className="eyebrow">Suivi de stationnement</span><h1>Compteur</h1><p>Démarrez le compteur en vous garant : la durée reste exacte même si vous fermez la page.</p></header>
+    {offerRelease && !session && <section className="profile-section meter-release" role="status">
+      <h2><LocateFixed size={20} /> Libérer la place pour les autres ?</h2>
+      <p>Votre stationnement est terminé. Si vous quittez la place, vous pouvez la signaler libre sur la carte (vert 5 min, orange jusqu’à 10 min). Rien n’est envoyé sans votre accord ; votre position GPS doit être à moins de 50 m de la place.</p>
+      {releaseNote && <p className="field-help">{releaseNote}</p>}
+      <button className="btn btn-primary" disabled={release.isPending} onClick={() => void confirmRelease()}>Oui, libérer la place</button>
+      <button className="btn btn-ghost" onClick={() => { setOfferRelease(null); setReleaseNote(null); }}>Non merci</button>
+    </section>}
     {session ? <section className="profile-section meter-live">
       <div className="meter-clock" aria-live="off">{clock(elapsed)}</div>
       <p><b>{session.label}</b>{session.address ? ` · ${session.address}` : ""}</p>

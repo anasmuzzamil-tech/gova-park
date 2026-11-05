@@ -4,7 +4,7 @@ import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, Shi
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
-import ParkingMap, { type MapReport } from "@/components/ParkingMap";
+import ParkingMap, { type MapReport, type MapBounds, type MapStreetSpot } from "@/components/ParkingMap";
 import { Map3DBoundary } from "@/components/Map3DBoundary";
 import { detectWebGL, importWithRetry } from "@/lib/webgl";
 const ParkingMap3D = lazy(() => importWithRetry(() => import("@/components/ParkingMap3D")));
@@ -13,6 +13,8 @@ import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { STATUS_COLORS } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
+import { agoText, STREET_RULES } from "@contracts/street-reports";
+import { GeolocError, getDevicePosition } from "@/lib/street";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -175,6 +177,49 @@ export default function Home() {
   const searchTruncated = searchQuery.data?.truncated ?? false;
   // Hors ligne : les signalements communautaires (périssables) ne sont pas réaffichés depuis la mémoire.
   const reports = useMemo(() => (online ? reportsQuery.data ?? [] : []), [online, reportsQuery.data]);
+  // Couche « Places en rue » (gratuites, signalées par la communauté) : séparée des places privées, chargée pour la zone affichée, avec limite.
+  const [streetOn, setStreetOn] = useState(true);
+  const [visibleBounds, setVisibleBounds] = useState<MapBounds | null>(null);
+  const [selectedStreetId, setSelectedStreetId] = useState<number | null>(null);
+  const [streetLocating, setStreetLocating] = useState(false);
+  const [streetHelp, setStreetHelp] = useState<string | null>(null);
+  const streetInput = useMemo(() => {
+    const r = (v: number) => Math.round(v * 1000) / 1000;
+    const b = visibleBounds ?? { south: visibleCenter.lat - 0.01, north: visibleCenter.lat + 0.01, west: visibleCenter.lng - 0.015, east: visibleCenter.lng + 0.015 };
+    if (b.north - b.south > STREET_RULES.maxSpanDeg - 0.01 || b.east - b.west > STREET_RULES.maxSpanDeg - 0.01) return null; // trop dézoomé : on ne charge rien
+    return { south: r(b.south), north: r(b.north), west: r(b.west), east: r(b.east), limit: STREET_RULES.defaultLimit };
+  }, [visibleBounds, visibleCenter.lat, visibleCenter.lng]);
+  const streetQuery = trpc.govapark.street.list.useQuery(streetInput ?? { south: 0, north: 0.01, west: 0, east: 0.01 }, { enabled: streetOn && online && streetInput !== null, refetchInterval: 15000, placeholderData: (previous) => previous });
+  type StreetSpotData = NonNullable<typeof streetQuery.data>["spots"][number];
+  const streetSpots = useMemo<StreetSpotData[]>(() => (streetOn && online && streetInput ? streetQuery.data?.spots ?? [] : []), [streetOn, online, streetInput, streetQuery.data]);
+  const selectedStreet = streetSpots.find((spot) => spot.id === selectedStreetId) ?? null;
+  const streetCreate = trpc.govapark.street.create.useMutation({
+    onSuccess: (result, variables) => {
+      toast.success(result.example ? "Signalement d’exemple enregistré (mode démo)" : variables.status === "free" ? "Merci ! Place signalée libre : visible 10 min au maximum." : "Merci ! Place signalée prise : visible 10 min au maximum.");
+      setSelectedStreetId(null); utils.govapark.street.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  // Signaler une place en rue : la position GPS de l'appareil est obligatoire (vérifiée par le serveur à moins de 50 m).
+  const reportStreet = async (status: "free" | "taken", spot?: StreetSpotData) => {
+    if (!isAuthenticated) { requireAuth(); return; }
+    setStreetLocating(true);
+    try {
+      const device = await getDevicePosition();
+      setStreetHelp(null);
+      let place = { latitude: device.latitude, longitude: device.longitude };
+      if (spot) place = { latitude: spot.latitude, longitude: spot.longitude };
+      else if (status === "taken") {
+        // « Je me gare » : si une place verte ou orange est à moins de 50 m, c'est elle qui passe en rouge.
+        const near = streetSpots.filter((s) => s.status === "free" && distanceMeters(device.latitude, device.longitude, s.latitude, s.longitude) <= STREET_RULES.deviceMaxMeters)
+          .sort((a, b) => distanceMeters(device.latitude, device.longitude, a.latitude, a.longitude) - distanceMeters(device.latitude, device.longitude, b.latitude, b.longitude))[0];
+        if (near) place = { latitude: near.latitude, longitude: near.longitude };
+      }
+      streetCreate.mutate({ status, ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
+    } catch (error) {
+      if (error instanceof GeolocError) setStreetHelp(error.message); else toast.error("Signalement impossible pour le moment.");
+    } finally { setStreetLocating(false); }
+  };
   const filtered = useMemo(() => listings.filter((listing) => {
     const distance = distanceMeters(visibleCenter.lat, visibleCenter.lng, listing.latitude, listing.longitude) / 1000;
     return listing.hourlyCents <= filters.maxPrice && distance <= filters.maxDistance &&
@@ -555,7 +600,8 @@ export default function Home() {
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
     driving: !!drivingRoute, routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
     onListing: (id: number) => navigate(`/place/${id}`), onBook: (id: number) => navigate(`/reserver/${id}`), canBook: online, onRoute: startRoute,
-    onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: setVisibleCenter,
+    onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
+    streetSpots, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
   };
   // Carte 3D : si elle ne peut pas s'afficher, on l'explique (au lieu d'un repli silencieux) et on réessaie automatiquement.
   const [map3dFail, setMap3dFail] = useState<null | "webgl" | "load">(initialWebGL ? null : "webgl");
@@ -614,6 +660,7 @@ export default function Home() {
           </div>}
         </div>}
         {!destinationChosen && <div className="m-chips">
+          <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
@@ -636,6 +683,12 @@ export default function Home() {
         </div>}
 
         <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
+          {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={16} /></button></div>}
+          {streetOn && streetInput === null && <div className="m-street-help" role="status"><span>Zoomez sur la carte pour voir les places en rue.</span></div>}
+          <div className="m-street-bar" aria-label="Places gratuites en rue">
+            <button className="m-street-btn free" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("free")}>Je libère ma place</button>
+            <button className="m-street-btn taken" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken")}>Je me gare</button>
+          </div>
           <div className="m-sheet-head">
             <ul className="m-legend" aria-label="Légende des couleurs des places">
               <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
@@ -760,6 +813,16 @@ export default function Home() {
           <div className="report-rules"><Clock3 size={17} /><span>Masquage automatique après 30 min · limite de 5 signalements par heure.</span></div>
           <button className="btn btn-primary btn-full" disabled={createReport.isPending || reportAddress.length < 3} onClick={submitReport}>{createReport.isPending ? "Publication…" : "Publier la déclaration"}</button>
         </div>}
+      </Modal>}
+
+      {selectedStreet && <Modal title="Place en rue" onClose={() => setSelectedStreetId(null)}>
+        {selectedStreet.example && <div className="declaration-warning"><ShieldAlert size={21} /><strong>Exemple de démonstration : ce signalement a été créé en mode démo, il ne reflète aucune situation réelle.</strong></div>}
+        <div className={`report-detail-head ${selectedStreet.status === "free" ? "free" : "occupied"}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedStreet.color] }} /><div><strong>{selectedStreet.status === "free" ? "Signalée libre" : "Signalée prise"} {agoText(Math.max(0, Math.floor((Date.now() - new Date(selectedStreet.reportedAt).getTime()) / 60000)))}</strong><p>{selectedStreet.detail}</p></div></div>
+        <dl className="report-facts"><div><dt>Signalé à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.reportedAt))}</dd></div><div><dt>Source</dt><dd>Signalé par un utilisateur</dd></div><div><dt>Fiabilité</dt><dd>{selectedStreet.reliabilityText}{selectedStreet.agreeing > 1 ? ` · ${selectedStreet.agreeing} utilisateurs concordants` : ""}</dd></div><div><dt>Disparaît à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.expiresAt))}</dd></div></dl>
+        <div className="confidence-track"><span style={{ width: `${selectedStreet.reliabilityPct}%` }} /></div>
+        <p className="report-caution">Place gratuite sur la voie publique, signalée par un utilisateur. Ce n’est pas une vérité garantie : elle a pu être prise depuis. Govapark ne la réserve pas.</p>
+        {selectedStreet.status === "free" && <button className="btn btn-primary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
+        <small className="field-help">Pour signaler, votre position GPS doit être à moins de {STREET_RULES.deviceMaxMeters} m de la place.</small>
       </Modal>}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>

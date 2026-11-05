@@ -685,3 +685,15 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .pk-dot.maplibregl-marker::after { font-size: 16px; }
 .pk-pill.maplibregl-marker { min-width: 68px; height: 40px; padding: 0 14px; font-size: 16px; border: 4px solid #fff; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
 .pk-cluster.maplibregl-marker { min-width: 46px; height: 46px; border-width: 4px; box-shadow: 0 0 0 1.5px #17142b40, 0 5px 12px #17142b8c; }
+
+/* Places gratuites en rue (signalements communautaires) : carré arrondi, forme distincte des places privées. Couleurs de contracts/parking-status.ts */
+.pk-street { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 3px solid #fff; color: #fff; font: 800 16px/1 "Manrope", sans-serif; box-shadow: 0 3px 10px #1b1e3a55; cursor: pointer; }
+.pk-s-green { background: #12a150; }.pk-s-red { background: #e5483c; }.pk-s-orange { background: #f08a14; }.pk-s-gray { background: #8a8f9c; }
+.m-street-bar { display: flex; gap: 10px; padding: 0 14px 10px; pointer-events: none; }
+.m-street-bar > * { pointer-events: auto; }
+.m-street-btn { flex: 1; min-height: 48px; padding: 0 12px; border: 0; border-radius: 24px; color: #fff; font: 800 15px "Manrope", sans-serif; box-shadow: 0 8px 22px #1a143a40; }
+.m-street-btn.free { background: #12a150; }.m-street-btn.taken { background: #e5483c; }
+.m-street-btn:disabled { opacity: .6; }
+.m-street-help { margin: 0 14px 10px; padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; border-radius: 16px; background: #fff; color: #17142b; font: 700 12.5px/1.35 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; pointer-events: auto; }
+.m-street-help span { flex: 1; }
+.m-street-help button { flex: none; min-width: 32px; min-height: 32px; border: 0; background: transparent; color: #17142b; }

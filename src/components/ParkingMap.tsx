@@ -23,6 +23,8 @@ export type MapReport = {
   address: string;
   parkingStatus?: { color: "green" | "red" | "orange" | "gray"; label: string };
 };
+export type MapStreetSpot = { id: number; latitude: number; longitude: number; status: "free" | "taken"; color: "green" | "red" | "orange" | "gray"; label: string; example: boolean };
+export type MapBounds = { south: number; north: number; west: number; east: number };
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
 type RouteService = { id:string; lat:number; lng:number; name:string; kind:"charge"|"rest"|"parking"|"truck"|"restaurant"|"fuel"; detail?:string; price?:number; priceUpdated?:string };
@@ -99,6 +101,17 @@ function reportBubble(kind: "green" | "red" | "orange" | "gray", symbol: string,
     popupAnchor: [0, -22],
   });
 }
+// Place gratuite en rue signalée par la communauté : carré arrondi (forme distincte des places privées et des signalements ronds).
+function streetIcon(color: string, status: "free" | "taken", label: string) {
+  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
+  return L.divIcon({
+    className: "govapark-marker-wrap",
+    html: `<span class="pk-street pk-s-${color}" aria-label="${safe}">${status === "free" ? "P" : "×"}</span>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -18],
+  });
+}
 // Station sur le trajet : petite pastille discrète, le prix s'affiche au toucher.
 function serviceIcon(color: string, symbol: string, label: string) {
   const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
@@ -128,11 +141,13 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   listings: MapListing[];
   reports: MapReport[];
+  streetSpots?: MapStreetSpot[];
+  onStreetSpot?: (spot: MapStreetSpot) => void;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -143,7 +158,7 @@ export default function ParkingMap({
   routeListingIds?: Set<number>;
   routeServices?: RouteService[];
   onReport: (report: MapReport) => void;
-  onMove?: (center: Center) => void;
+  onMove?: (center: Center, bounds?: MapBounds) => void;
   userPosition?: GpsPosition | null;
   fuelStations?: Array<{id:number;lat:number;lng:number;name:string}>;
   vehicleType?: string; vehicleColor?: string; driving?: boolean; altRoutes?: Array<{ id: string; coordinates: [number, number][] }>; onPickRoute?: (id: string) => void;
@@ -232,6 +247,13 @@ export default function ParkingMap({
           eventHandlers={{ click: () => onReport(report) }}
         />;
       })}
+      {streetSpots.map((spot) => <Marker
+        key={`s-${spot.id}`}
+        position={[spot.latitude, spot.longitude]}
+        title={spot.label}
+        icon={streetIcon(spot.color, spot.status, `Place en rue · ${spot.label}${spot.example ? " (exemple)" : ""}`)}
+        eventHandlers={{ click: () => onStreetSpot?.(spot) }}
+      />)}
     </MapContainer>
   );
 }
@@ -242,13 +264,14 @@ function ClusterMarker({ lat, lng, count }: { lat: number; lng: number; count: n
   return <Marker position={[lat, lng]} icon={icon} eventHandlers={{ click: () => map.flyTo([lat, lng], Math.min(map.getZoom() + 2, 16), { duration: 0.5 }) }} />;
 }
 
-function MapMove({ onMove }: { onMove?: (center: Center) => void }) {
+function MapMove({ onMove }: { onMove?: (center: Center, bounds?: MapBounds) => void }) {
   const map = useMap();
   useEffect(() => {
     if (!onMove) return;
     const handler = () => {
       const value = map.getCenter();
-      onMove({ lat: value.lat, lng: value.lng });
+      const b = map.getBounds();
+      onMove({ lat: value.lat, lng: value.lng }, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() });
     };
     map.on("moveend", handler);
     return () => { map.off("moveend", handler); };
