@@ -101,17 +101,6 @@ function dotIcon(color: string, label: string) {
     popupAnchor: [0, -10],
   });
 }
-// Bulle ronde de signalement, avec un halo qui pulse.
-function reportBubble(kind: "green" | "red" | "orange" | "gray", symbol: string, label: string, small = false) {
-  const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
-  return L.divIcon({
-    className: "govapark-marker-wrap",
-    html: `<span class="pk-bubble pk-b-${kind}${small ? " pk-sm" : ""}" aria-label="${safe}"><i class="pk-ring"></i><b>${small ? "" : symbol}</b></span>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -22],
-  });
-}
 // Place gratuite en rue signalée par la communauté : carré arrondi (forme distincte des places privées et des signalements ronds).
 function streetIcon(color: string, status: "free" | "taken", label: string) {
   const safe = label.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);
@@ -152,7 +141,7 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, focus = null, listings, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -250,17 +239,6 @@ export default function ParkingMap({
         return <Marker key={service.id} position={[service.lat,service.lng]} icon={serviceIcon(color,symbol,service.name)}><Popup><strong>{service.name}</strong><br/>{service.kind === "charge" ? "Borne de recharge électrique" : service.kind === "rest" ? "Aire de repos ou de service" : service.kind === "truck" ? "Infrastructure poids lourds signalée" : service.kind === "restaurant" ? "Restauration" : service.kind === "parking" ? "Parking" : "Station-service"}{service.price != null && <><br/><strong>{service.price.toFixed(3)} €/L</strong><br/><small>Prix officiel · mise à jour {service.priceUpdated ? new Date(service.priceUpdated).toLocaleString("fr-FR") : "non précisée"}</small></>}{service.detail && <><br/><small>{service.detail}</small></>}</Popup></Marker>;
       })}
       {fuelStations.map((station) => <Marker key={`fuel-${station.id}`} position={[station.lat,station.lng]} icon={markerIcon("blue", "⛽", station.name)}><Popup><strong>{station.name}</strong><br/>Station-service · données OpenStreetMap</Popup></Marker>)}
-      {reports.map((report) => {
-        const color = report.kind === "free" ? "green" : report.kind === "occupied" ? "red" : "orange";
-        const text = report.kind === "free" ? "?" : report.kind === "occupied" ? "×" : "↗";
-        return <Marker
-          key={`r-${report.id}`}
-          position={[report.latitude, report.longitude]}
-          title={report.address}
-          icon={reportBubble(report.parkingStatus?.color ?? "gray", text, `${report.address} — ${report.parkingStatus?.label ?? "Aucun signalement récent"}`, !detailed)}
-          eventHandlers={{ click: () => onReport(report) }}
-        />;
-      })}
       {streetSpots.map((spot) => <Marker
         key={`s-${spot.id}`}
         position={[spot.latitude, spot.longitude]}

@@ -204,7 +204,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -257,7 +257,6 @@ export default function ParkingMap3D({
   cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot };
 
   const listingMarkers = useRef<maplibregl.Marker[]>([]);
-  const reportMarkers = useRef<maplibregl.Marker[]>([]);
   const streetMarkers = useRef<maplibregl.Marker[]>([]);
   const serviceMarkers = useRef<maplibregl.Marker[]>([]);
   const userMarker = useRef<maplibregl.Marker | null>(null);
@@ -575,19 +574,7 @@ export default function ParkingMap3D({
     });
   }, [ready, listings, confirmedIds]);
 
-  // Signalements.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    reportMarkers.current.forEach((m) => m.remove());
-    reportMarkers.current = reports.map((report) => {
-      const symbol = report.kind === "free" ? "?" : report.kind === "occupied" ? "×" : "↗";
-      const node = el("span", `pk-bubble pk-b-${report.parkingStatus?.color ?? "gray"}${detailed ? "" : " pk-sm"}`, `<i class="pk-ring"></i><b>${detailed ? symbol : ""}</b>`);
-      const rlabel = `${report.address} — ${report.parkingStatus?.label ?? "Aucun signalement récent"}`; node.title = rlabel; node.setAttribute("aria-label", rlabel); node.style.cursor = "pointer";
-      node.addEventListener("click", (e) => { e.stopPropagation(); cb.current.onReport(report); });
-      return new maplibregl.Marker({ element: node }).setLngLat([report.longitude, report.latitude]).addTo(map);
-    });
-  }, [ready, reports, detailed]);
+  // Anciens marqueurs de signalement (« ? », « × », « ↗ ») retirés de la carte (décision d'Anas) : `reports` reste dans les props, mais plus rien n'est dessiné.
 
   // Places gratuites en rue (couche communautaire séparée) : carrés arrondis aux couleurs du statut.
   useEffect(() => {
