@@ -14,6 +14,7 @@ import { validateListing } from "@contracts/listing-validation";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
 import { log } from "./lib/logger";
+import { checkDisputeAllowed, DISPUTABLE_STATUSES } from "./lib/dispute-rules";
 import { assertCanCreatePending, paymentHoldExpiry, isPaymentHoldExpired } from "./lib/reservation-holds";
 import { MAX_UPLOAD_BASE64_CHARS, validateImageUpload } from "./lib/upload-validation";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
@@ -367,7 +368,11 @@ export const govaparkRouter = createRouter({
     markDispute: authedQuery.input(z.object({ id: z.number().int(), reason: z.string().trim().min(5).max(1000).default("Demande d’examen de réservation") })).mutation(async ({ ctx, input }) => {
       const [reservation] = await getDb().select().from(reservations).where(and(eq(reservations.id, input.id), eq(reservations.userId, ctx.user.id))).limit(1);
       if (!reservation) throw new TRPCError({ code: "NOT_FOUND", message: "Réservation introuvable." });
-      await getDb().update(reservations).set({ status: "dispute" }).where(eq(reservations.id, input.id));
+      const allowed = checkDisputeAllowed(reservation.status);
+      if (!allowed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: allowed.message });
+      // Le statut est revérifié dans la condition de mise à jour (une annulation concurrente ne doit pas être écrasée).
+      const [updated] = await getDb().update(reservations).set({ status: "dispute" }).where(and(eq(reservations.id, input.id), inArray(reservations.status, [...DISPUTABLE_STATUSES])));
+      if (!updated || updated.affectedRows === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Le statut de la réservation a changé : litige non ouvert." });
       await getDb().insert(disputes).values({ reservationId: input.id, openedBy: ctx.user.id, reason: input.reason }).onDuplicateKeyUpdate({ set: { reason: input.reason, status: "open", updatedAt: new Date() } });
       return { ok: true };
     }),
