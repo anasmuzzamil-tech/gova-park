@@ -32,6 +32,8 @@ import { spotContextLines } from "@/lib/spot-context";
 import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
 import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
 import { loadTariffs } from "@/lib/paris-tariffs";
+import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
+import { loadZfe } from "@/lib/paris-zfe";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -236,6 +238,10 @@ export default function Home() {
   // Chantiers (Ville de Paris, non exhaustifs, peuvent être périmés) : couche désactivée par défaut ; la date des données vient du fichier généré.
   const [worksOn, setWorksOn] = useState(false);
   const [worksDate, setWorksDate] = useState<string | null>(null);
+  // Zone à faibles émissions de Paris : limite seulement, désactivée par défaut ; liens de l'arrêté lus dans le fichier généré.
+  const [zfeOn, setZfeOn] = useState(false);
+  const [zfeFile, setZfeFile] = useState<ZfeFile | null>(null);
+  useEffect(() => { if (zfeOn) void loadZfe().then(setZfeFile); }, [zfeOn]);
   // Tarifs de stationnement : date du fichier pour le panneau « i » (la ligne de fiche n'apparaît que pour une place payante).
   const [tariffDate, setTariffDate] = useState<string | null | undefined>(undefined);
   useEffect(() => { if (parisOn) void loadTariffs().then((file) => setTariffDate(file ? file.dataDate : undefined)); }, [parisOn]);
@@ -763,7 +769,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} worksOn={worksOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} worksOn={worksOn} zfeOn={zfeOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -792,6 +798,7 @@ export default function Home() {
           <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
           <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
           <button className={`m-chip ${worksOn ? "on" : ""}`} aria-pressed={worksOn} onClick={() => setWorksOn(!worksOn)}>Chantiers</button>
+          <button className={`m-chip ${zfeOn ? "on" : ""}`} aria-pressed={zfeOn} onClick={() => setZfeOn(!zfeOn)}>ZFE</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
@@ -829,6 +836,10 @@ export default function Home() {
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
               {parisOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
               {parisOn && tariffDate !== undefined && <p>{tariffAttribution(tariffDate)}</p>}
+              {zfeOn && zfeFile && <p>{zfeAttribution(zfeFile.dataDate)}</p>}
+              {zfeOn && zfeFile?.urlArrete && <a href={zfeFile.urlArrete} target="_blank" rel="noopener noreferrer">Voir l'arrêté de la ZFE</a>}
+              {zfeOn && zfeFile?.urlSite && <a href={zfeFile.urlSite} target="_blank" rel="noopener noreferrer">Site d'information de la ZFE</a>}
+              {zfeOn && zfeFile && <a href={ZFE_SOURCE.url} target="_blank" rel="noopener noreferrer">Source de la ZFE : data.gouv.fr</a>}
               {worksOn && <p>{worksAttribution(worksDate)}</p>}
               {parisOn && tariffDate !== undefined && <a href={TARIFF_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des tarifs : data.gouv.fr</a>}
               {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}

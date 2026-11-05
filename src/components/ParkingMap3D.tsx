@@ -11,6 +11,8 @@ import { loadParisPolygons } from "@/lib/paris-polygons";
 import { LAYER, layerVisible, toGeoJson, type DecodedFeature } from "@contracts/geo-layers";
 import { loadLayer } from "@/lib/geo-layers";
 import { isWorkActive } from "@contracts/paris-works";
+import { zfeLine } from "@contracts/paris-zfe";
+import { loadZfe } from "@/lib/paris-zfe";
 import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
@@ -124,6 +126,13 @@ function hatchImage(): ImageData | null {
   g.beginPath(); g.moveTo(-2, size + 2); g.lineTo(size + 2, -2); g.moveTo(-2, 2 * size + 2); g.lineTo(2 * size + 2, -2); g.moveTo(-size - 2, size + 2); g.lineTo(size + 2, -size - 2); g.stroke();
   return g.getImageData(0, 0, size, size);
 }
+// Zone à faibles émissions de Paris : limite en trait pointillé fin, sans remplissage, sous les chantiers (ordre : ZFE < chantiers < interdictions < places).
+function addZfeLayers(map: maplibregl.Map) {
+  try {
+    map.addSource("gp-zfe", { type: "geojson", data: emptyFc() });
+    map.addLayer({ id: "gp-zfe-line", type: "line", source: "gp-zfe", minzoom: 10, paint: { "line-color": "#6d3fd0", "line-width": 1.2, "line-opacity": 0.75, "line-dasharray": [3, 3] } });
+  } catch (error) { console.warn("[GOVAPARK] Couche de la ZFE impossible", error); }
+}
 function addWorksLayers(map: maplibregl.Map) {
   try {
     map.addSource("gp-works", { type: "geojson", data: emptyFc() });
@@ -191,7 +200,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -208,6 +217,8 @@ export default function ParkingMap3D({
   forbiddenOn?: boolean;
   /** Chantiers perturbants (Ville de Paris), zoom rue seulement, carte 3D uniquement. */
   worksOn?: boolean;
+  /** Limite de la zone à faibles émissions de Paris (trait pointillé), carte 3D uniquement. */
+  zfeOn?: boolean;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -346,6 +357,7 @@ export default function ParkingMap3D({
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
       addPolygonLayers(map);
+      addZfeLayers(map);
       addWorksLayers(map);
       addForbiddenLayers(map);
       addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
@@ -634,6 +646,14 @@ export default function ParkingMap3D({
     (map.getSource("gp-forbidden") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(forbidden));
   }, [ready, forbidden]);
 
+  // Zone à faibles émissions : limite seulement.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false;
+    void (zfeOn ? loadZfe() : Promise.resolve(null)).then((file) => { if (!cancelled) (map.getSource("gp-zfe") as maplibregl.GeoJSONSource | undefined)?.setData(zfeLine(file)); });
+    return () => { cancelled = true; };
+  }, [ready, zfeOn]);
   // Chantiers : seuls ceux dont les dates prévues n'excluent pas aujourd'hui sont dessinés.
   const [works, setWorks] = useState<DecodedFeature[]>([]);
   useEffect(() => {
