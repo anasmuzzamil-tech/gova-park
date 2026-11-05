@@ -1,0 +1,26 @@
+/* Jetons de design de l'écran carte (voir docs/DESIGN.md). Ils s'ajoutent aux variables existantes de index.css ; rien n'est supprimé. */
+:root {
+  /* Accent (violet déjà utilisé : --primary) et neutres */
+  --gp-accent: var(--primary);
+  --gp-accent-soft: var(--soft);
+  --gp-ink: #17142b;          /* texte principal, contraste 15:1 sur blanc */
+  --gp-ink-2: #55526e;        /* texte secondaire, contraste 7:1 sur blanc */
+  --gp-line: #e6e4f0;
+  --gp-surface: #ffffff;
+  --gp-surface-2: #f4f3fa;
+  /* Statuts : identiques à contracts/parking-status.ts (STATUS_COLORS) */
+  --gp-green: #12a150; --gp-orange: #f08a14; --gp-red: #e5483c; --gp-gray: #8a8f9c;
+  /* Teintes foncées des statuts pour le TEXTE sur fond clair (contraste AA) */
+  --gp-green-ink: #0b7a3b; --gp-orange-ink: #8a4b00; --gp-red-ink: #b42318;
+  /* Rayons, ombres, espacements (multiples de 4) */
+  --gp-r-1: 12px; --gp-r-2: 16px; --gp-r-3: 24px; --gp-r-pill: 999px;
+  --gp-shadow-1: 0 2px 8px #1a143a24;
+  --gp-shadow-2: 0 10px 30px #1a143a38;
+  --gp-s-1: 4px; --gp-s-2: 8px; --gp-s-3: 12px; --gp-s-4: 16px; --gp-s-5: 20px; --gp-s-6: 24px;
+  /* Typographie (Manrope) */
+  --gp-t-12: 12px; --gp-t-14: 14px; --gp-t-16: 16px; --gp-t-20: 20px; --gp-t-24: 24px;
+  /* Zone tactile minimale et durée des animations */
+  --gp-touch: 44px;
+  --gp-anim: 200ms;
+}
+@media (prefers-reduced-motion: reduce) { :root { --gp-anim: 0ms; } }

@@ -8,6 +8,8 @@ import '@fontsource/manrope/600.css'
 import '@fontsource/manrope/700.css'
 import '@fontsource/manrope/800.css'
 import './index.css'
+import './styles/tokens.css'
+import './styles/map-screen.css'
 import { TRPCProvider } from "@/providers/trpc"
 import App from './App.tsx'
 import { initialiseNativeLifecycle } from "@/lib/native-lifecycle"
