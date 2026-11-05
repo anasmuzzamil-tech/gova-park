@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { GRID, fromE5, tileKey, tilesForBounds, toE5 } from "@contracts/paris-spots";
 import {
-  POLY, POLY_KIND, anchorKey, bucketPolygons, buildPolygonFeatures, classifyRing, decodePolygonTile, encodePolygonRow, isCarRegime, isRectangle, limitPolygonsNearCenter,
+  POLY, POLY_KIND, anchorKey, bucketPolygons, buildPolygonFeatures, classifyRing, decodePolygonTile, encodePolygonRow, isCarRegime, isDefaultRegime, isMotoRegime, isRectangle, limitPolygonsNearCenter,
   normalizeRing, outerRings, polygonsVisible, spotAnchorKey, splitSegments,
   type LngLat, type ParisPolygon, type PolygonColor, type PolygonIndex, type PolygonTileFile,
 } from "@contracts/paris-polygons";
@@ -44,6 +44,16 @@ describe("classification voiture / non-voiture (mêmes règles que les emplaceme
     expect(REAL_REGIMES).toHaveLength(53);
     for (const [prio, part, cars] of REAL_REGIMES) expect(isCarRegime(prio, part), `${prio} | ${part}`).toBe(cars);
     expect(REAL_REGIMES.filter((r) => r[2])).toHaveLength(3);
+  });
+  it("motos : seuls « 2 ROUES | Motos payant Mixte / Rotatif » ; jamais les vélos, ni « 2 ROUES | Mixte » (incertain)", () => {
+    const motos = REAL_REGIMES.filter(([p, q]) => isMotoRegime(p, q)).map(([p, q]) => `${p}|${q}`);
+    expect(motos).toEqual(["2 ROUES|Motos payant Mixte", "2 ROUES|Motos payant Rotatif"]);
+    for (const q of ["Vélos", "Vélo-cargo", "Box à vélos", "Mixte"]) { expect(isMotoRegime("2 ROUES", q), q).toBe(false); expect(isDefaultRegime("2 ROUES", q), q).toBe(false); }
+    expect(isMotoRegime("2 ROUES", "motos PAYANT rotatif")).toBe(true);
+    expect(isMotoRegime("", "")).toBe(false);
+  });
+  it("emprises importées (voitures et motos) : exactement 5 des 53 couples réels", () => {
+    expect(REAL_REGIMES.filter(([p, q]) => isDefaultRegime(p, q)).map(([p, q]) => `${p}|${q}`)).toEqual(["PAYANT MIXTE|Mixte", "PAYANT ROTATIF|Rotatif", "GRATUIT|Gratuit", "2 ROUES|Motos payant Mixte", "2 ROUES|Motos payant Rotatif"]);
   });
   it("insensible à la casse et aux accents, et refuse l'absent ou l'inconnu", () => {
     expect(isCarRegime("payant mixte", "MIXTE")).toBe(true);
@@ -230,7 +240,7 @@ describe("dessin : entités pour la carte", () => {
     expect(f.separators.features.filter((s) => s.properties?.c === "green")).toHaveLength(3);
     expect(f.separators.features.filter((s) => s.properties?.c === "gray")).toHaveLength(3);
   });
-  it("le filtre « Voitures seulement / Tout afficher » s'applique aussi aux contours", () => {
+  it("le filtre « Voitures et motos / Tout afficher » s'applique aussi aux contours", () => {
     const list = [poly("1", { t: 1 }), poly("2", { t: 2 }), poly("3", { t: 3 })];
     expect(buildPolygonFeatures(list, null, new Set([1, 2])).outlines.features).toHaveLength(2);
     expect(buildPolygonFeatures(list, null, new Set([2])).outlines.features).toHaveLength(1);
@@ -285,7 +295,7 @@ describe("fichiers générés dans le dépôt", () => {
       for (const poly of decodePolygonTile(key, tile)) {
         if (!anchors.has(poly.anchor)) continue;
         linked++;
-        if (poly.ring.length < 3 || ![1, 2].includes(poly.t) || ![1, 2].includes(poly.kind)) bad++;
+        if (poly.ring.length < 3 || ![1, 2, 5].includes(poly.t) || ![1, 2].includes(poly.kind)) bad++;
         if (poly.kind === POLY_KIND.rect) { rects++; if (!isRectangle(poly.ring)) bad++; }
       }
     }

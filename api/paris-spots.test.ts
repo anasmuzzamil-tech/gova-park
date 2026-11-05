@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_SPOT_TYPES, GRID, SPOT_TYPE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, decodeNumero, decodeOverview, decodeTile, describeParisSpot, displayMode, encodeNumero, formatStreet,
+  CAR_SPOT_TYPES, DEFAULT_SPOT_TYPES, GRID, SPOT_TYPE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, decodeNumero, decodeOverview, decodeTile, describeParisSpot, displayMode, encodeNumero, formatStreet,
   interpretRegime, limitNearCenter, mergeWithReports, streetKey, tileKey, tilesForBounds, titleCaseVoie,
   type OfficialSpot, type RawPoint, type ReportLite,
 } from "@contracts/paris-spots";
@@ -16,7 +16,7 @@ const REAL_COMBOS: Array<[string, string, number, boolean | null]> = [
   ["2 ROUES", "Box à vélos", SPOT_TYPE.bike, false],
   ["2 ROUES", "Motos payant Mixte", SPOT_TYPE.moto, false],
   ["2 ROUES", "Motos payant Rotatif", SPOT_TYPE.moto, false],
-  ["2 ROUES", "Mixte", SPOT_TYPE.moto, false],
+  ["2 ROUES", "Mixte", SPOT_TYPE.other, null], // incertain (motos ou vélos ? 237 lignes sur 238 ont un arceau comme mobilier) : jamais deviné
   ["LIVRAISON", "ZL périodique", SPOT_TYPE.delivery, false],
   ["LIVRAISON", "ZL permanente", SPOT_TYPE.delivery, false],
   ["GIG/GIC", "GIG/GIC Standard", SPOT_TYPE.pmr, false],
@@ -112,11 +112,34 @@ describe("interprétation des régimes du fichier de Paris", () => {
     expect(interpretRegime("PAYANT MIXTE", "Autre chose").cars).toBeNull();
     expect(interpretRegime("GRATUIT", "Gratuit étrange").cars).toBeNull();
   });
-  it("par défaut, seuls le payant et le gratuit (voitures) sont affichés ; tous les types ont un libellé", () => {
-    expect(DEFAULT_SPOT_TYPES).toEqual([SPOT_TYPE.paid, SPOT_TYPE.free]);
+  it("par défaut (« Voitures et motos ») : payant, gratuit et deux-roues motorisés ; tous les types ont un libellé", () => {
+    expect(DEFAULT_SPOT_TYPES).toEqual([SPOT_TYPE.paid, SPOT_TYPE.free, SPOT_TYPE.moto]);
+    expect(CAR_SPOT_TYPES).toEqual([SPOT_TYPE.paid, SPOT_TYPE.free]);
     for (const code of SPOT_TYPE_CODES) expect(SPOT_TYPE_LABEL[code]).toBeTruthy();
-    // Aucun type affiché par défaut ne peut venir d'un régime qui n'est pas « voiture » : le type payant/gratuit ne sort que des trois couples sûrs.
-    for (const [p, q, t] of REAL_COMBOS) if (DEFAULT_SPOT_TYPES.includes(t)) expect(interpretRegime(p, q).cars).toBe(true);
+    // Vélos, livraison, autocars, PMR, services et incertains restent masqués par défaut.
+    for (const t of [SPOT_TYPE.bike, SPOT_TYPE.delivery, SPOT_TYPE.coach, SPOT_TYPE.pmr, SPOT_TYPE.reserved, SPOT_TYPE.other]) expect(DEFAULT_SPOT_TYPES.includes(t)).toBe(false);
+    // Les types voiture ne sortent que des trois couples sûrs ; le type moto ne sort que des deux couples « Motos payant … » (jamais les vélos).
+    for (const [p, q, t] of REAL_COMBOS) if (CAR_SPOT_TYPES.includes(t)) expect(interpretRegime(p, q).cars).toBe(true);
+    const motos = REAL_COMBOS.filter(([, , t]) => t === SPOT_TYPE.moto).map(([p, q]) => `${p}|${q}`);
+    expect(motos).toEqual(["2 ROUES|Motos payant Mixte", "2 ROUES|Motos payant Rotatif"]);
+  });
+  it("2 ROUES | Mixte est incertain : « Régime : Mixte », ni moto, ni vélo, ni voiture", () => {
+    const r = interpretRegime("2 ROUES", "Mixte");
+    expect(r.t).toBe(SPOT_TYPE.other); expect(r.cars).toBeNull(); expect(r.title).toBe("Régime : Mixte");
+  });
+  it("place moto : libellé clair, jamais « on peut s'y garer en voiture »", () => {
+    for (const q of ["Motos payant Mixte", "Motos payant Rotatif"]) {
+      const r = interpretRegime("2 ROUES", q);
+      expect(r.t).toBe(SPOT_TYPE.moto); expect(r.cars).toBe(false);
+      expect(r.title).toBe("Place moto / deux-roues motorisés");
+      const d = describeParisSpot({ regime: r, places: 4, street: streetKey("RUE", "X"), numeroCode: 0 });
+      expect(d.title).toBe("Place moto / deux-roues motorisés · Rue X");
+      expect(d.places).toBe("4 places sur ce tronçon");
+      expect(d.carsOk).toBe(false);
+      expect(d.note).toContain("pas aux voitures");
+      expect(`${d.title} ${d.note} ${d.status}`.toLowerCase().includes("vous pouvez")).toBe(false);
+      expect(`${d.title} ${d.note}`.includes("Ouvert à tous")).toBe(false);
+    }
   });
 });
 
