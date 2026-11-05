@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { decodeTile, type LayerIndex, type LayerTileFile } from "@contracts/geo-layers";
 // @ts-expect-error module .mjs sans types
 import { readRecords } from "../scripts/lib/io.mjs";
-import { IMPACT_LABELS, WORK_PROP, cleanVoie, impactPhrase, isWorkActive, isoDay, parisDay, readable, workCardLine, worksAttribution, worksFeatures, worksNear, type WorksImportStats } from "@contracts/paris-works";
+import { IMPACT_LABELS, WORKS_ALERT_METERS, WORK_PROP, cleanVoie, workAlertText, impactPhrase, isWorkActive, isoDay, parisDay, readable, workCardLine, worksAttribution, worksFeatures, worksNear, type WorksImportStats } from "@contracts/paris-works";
 
 const stats = (): WorksImportStats => ({ rows: 0, noShape: 0, outside: 0, badPart: 0, kept: 0, parts: 0, expiredAtImport: 0 });
 // ÉCHANTILLON FABRIQUÉ À LA MAIN (pas une donnée de la Ville de Paris) : le vrai fichier n'a pas pu être téléchargé.
@@ -178,5 +178,15 @@ describe("chantiers : fichiers générés à partir du vrai export du 05/11/2026
     expect(near).not.toBeNull();
     expect(workCardLine(near!.props).startsWith("Chantier : ")).toBe(true);
     expect(worksNear(features, 48.9, 2.45, now)).toBeNull();
+  });
+});
+
+describe("chantiers : alerte de fiche à moins de 100 m", () => {
+  it("texte avec distance arrondie à 5 m, ou « ici » dans le périmètre", () => {
+    const props = make()[0].props;
+    expect(workAlertText(props, 0)).toBe("Chantier ici · Voie partiellement fermée · rue Louis Blanc · jusqu'au 19 février 2027 (date prévue)");
+    expect(workAlertText(props, 82)).toBe("Chantier à 80 m · Voie partiellement fermée · rue Louis Blanc · jusqu'au 19 février 2027 (date prévue)");
+    expect(workAlertText(props, 2).startsWith("Chantier à 5 m")).toBe(true);
+    expect(WORKS_ALERT_METERS).toBe(100);
   });
 });

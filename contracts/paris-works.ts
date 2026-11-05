@@ -122,6 +122,16 @@ export function workCardLine(props: ReadonlyArray<Prop>): string {
   return `Chantier : ${parts.join(" · ")}`;
 }
 
+/** Distance (mètres) sous laquelle un chantier est signalé en alerte sur une fiche (chip « Chantier à 80 m »). */
+export const WORKS_ALERT_METERS = 100;
+
+/** Chip de la fiche : « Chantier à 80 m · Voie partiellement fermée · jusqu'au 19 février 2027 (date prévue) » ; à l'intérieur du périmètre : « Chantier ici · … ». */
+export function workAlertText(props: ReadonlyArray<Prop>, meters: number): string {
+  const detail = workCardLine(props).replace(/^Chantier : /, "");
+  const where = meters <= 1 ? "Chantier ici" : `Chantier à ${Math.max(5, Math.round(meters / 5) * 5)} m`;
+  return `${where} · ${detail}`;
+}
+
 /** Chantier actif le plus proche d'une place (à l'intérieur du périmètre ou à moins de `maxMeters`), ou null : la fiche ne dit rien. */
 export function worksNear(list: ReadonlyArray<Pick<GeoFeature, "kind" | "coords" | "props">>, lat: number, lng: number, now: Date = new Date(), maxMeters: number = WORKS_NEAR_METERS): { meters: number; props: ReadonlyArray<Prop> } | null {
   let best: { meters: number; props: ReadonlyArray<Prop> } | null = null;

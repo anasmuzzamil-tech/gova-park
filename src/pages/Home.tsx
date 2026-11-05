@@ -26,9 +26,10 @@ import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, formatStreet, interpr
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
-import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
+import { PlaceSheet } from "@/components/PlaceSheet";
+import { parisSheetContent, type ParisSpotInfo } from "@/lib/place-sheet";
 import { FORBIDDEN_ATTRIBUTION, FORBIDDEN_SOURCE } from "@contracts/paris-forbidden";
-import { spotContextLines } from "@/lib/spot-context";
+import { spotContext, type SpotContext } from "@/lib/spot-context";
 import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
 import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
 import { loadTariffs } from "@/lib/paris-tariffs";
@@ -255,15 +256,19 @@ export default function Home() {
   const [tariffDate, setTariffDate] = useState<string | null | undefined>(undefined);
   useEffect(() => { if (parisOn) void loadTariffs().then((file) => setTariffDate(file ? file.dataDate : undefined)); }, [parisOn]);
   useEffect(() => { if (worksOn) void loadLayerIndex("/data/paris-works").then((index) => setWorksDate(index?.dataDate ?? null)).catch(() => setWorksDate(null)); }, [worksOn]);
-  // Lignes de contexte de la fiche (ex. stationnement interdit), lues dans les couches de données autour de la place sélectionnée.
-  const [spotExtra, setSpotExtra] = useState<string[]>([]);
+  // Contexte de la fiche (tarif confirmé, alertes proches), lu dans les couches de données autour de la place sélectionnée.
+  const [spotCtx, setSpotCtx] = useState<SpotContext>({ tariff: null, alerts: [] });
   useEffect(() => {
-    setSpotExtra([]);
-    if (!selectedParis) return;
+    setSpotCtx({ tariff: null, alerts: [] });
+    const point = selectedParis ? { lat: selectedParis.lat, lng: selectedParis.lng, t: selectedParis.t } : null;
+    const streetPoint = !point && selectedStreetId != null ? streetSpots.find((spot) => spot.id === selectedStreetId) : null;
+    const at = point ?? (streetPoint ? { lat: streetPoint.latitude, lng: streetPoint.longitude, t: 0 } : null);
+    if (!at) return;
     let cancelled = false;
-    void spotContextLines(selectedParis.lat, selectedParis.lng, selectedParis.t).then((lines) => { if (!cancelled) setSpotExtra(lines); });
+    void spotContext(at.lat, at.lng, at.t).then((context) => { if (!cancelled) setSpotCtx(context); });
     return () => { cancelled = true; };
-  }, [selectedParis]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedParis, selectedStreetId]);
   const streetInput = useMemo(() => {
     const r = (v: number) => Math.round(v * 1000) / 1000;
     const b = visibleBounds ?? { south: visibleCenter.lat - 0.01, north: visibleCenter.lat + 0.01, west: visibleCenter.lng - 0.015, east: visibleCenter.lng + 0.015 };
@@ -1009,25 +1014,31 @@ export default function Home() {
         </div>}
       </Modal>}
 
-      {selectedStreet && <Modal title="Place en rue" onClose={() => setSelectedStreetId(null)}>
-        {selectedStreet.example && <div className="declaration-warning"><ShieldAlert size={21} /><strong>Exemple de démonstration : ce signalement a été créé en mode démo, il ne reflète aucune situation réelle.</strong></div>}
-        <div className={`report-detail-head ${selectedStreet.status === "free" ? "free" : "occupied"}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedStreet.color] }} /><div><strong>{selectedStreet.status === "free" ? "Signalée libre" : "Signalée prise"} {agoText(Math.max(0, Math.floor((Date.now() - new Date(selectedStreet.reportedAt).getTime()) / 60000)))}</strong><p>{selectedStreet.detail}</p></div></div>
-        <dl className="report-facts"><div><dt>Signalé à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.reportedAt))}</dd></div><div><dt>Véhicule</dt><dd>{VEHICLE_NAME[selectedStreet.vehicleType]}</dd></div><div><dt>Source</dt><dd>Signalé par un utilisateur</dd></div><div><dt>Fiabilité</dt><dd>{selectedStreet.reliabilityText}{selectedStreet.agreeing > 1 ? ` · ${selectedStreet.agreeing} utilisateurs concordants` : ""}</dd></div><div><dt>Disparaît à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.expiresAt))}</dd></div></dl>
-        <div className="confidence-track"><span style={{ width: `${selectedStreet.reliabilityPct}%` }} /></div>
-        <p className="report-caution">Place gratuite sur la voie publique, signalée par un utilisateur. Ce n’est pas une vérité garantie : elle a pu être prise depuis. Govapark ne la réserve pas.</p>
-        <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedStreet; setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}><Navigation size={18} />Y aller</button>
-        {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet, selectedStreet.vehicleType)}>Place prise (je m’y gare)</button>}
-      </Modal>}
+      {selectedStreet && (() => {
+        const spot = selectedStreet;
+        const minutes = Math.max(0, Math.floor((Date.now() - new Date(spot.reportedAt).getTime()) / 60000));
+        return <PlaceSheet title={`Place en rue · ${VEHICLE_NAME[spot.vehicleType]}`} chips={[spot.reliabilityText ? `Fiabilité ${spot.reliabilityText}` : "", spot.agreeing > 1 ? `${spot.agreeing} utilisateurs concordants` : ""].filter(Boolean)}
+          status={{ text: `${spot.status === "free" ? "Signalée libre" : "Signalée prise"} ${agoText(minutes)} à ${new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(spot.reportedAt))} · signalé par un utilisateur`, color: STATUS_COLORS[spot.color] }}
+          alerts={spotCtx.alerts} warning={spot.example ? "Exemple de démonstration : ce signalement a été créé en mode démo, il ne reflète aucune situation réelle." : "Signalement d'utilisateur, pas une vérité garantie : la place a pu être prise depuis. Govapark ne la réserve pas."}
+          onClose={() => setSelectedStreetId(null)}
+          onGo={() => { setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}
+          actions={spot.status === "free" ? [{ label: "Je m'y gare", busy: streetLocating || streetCreate.isPending, onClick: () => void reportStreet("taken", spot, spot.vehicleType) }] : []} />;
+      })()}
 
       {selectedParis && (() => {
         const spot = selectedParis;
         const rep = spot.reportId > 0 ? streetSpots.find((r) => r.id === spot.reportId) ?? null : null;
         const [regimePrio, regimePart] = parisRegimes[spot.regime] ?? ["", ""];
         const info = interpretRegime(regimePrio, regimePart);
-        return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition} extra={spotExtra}
+        const content = parisSheetContent(spot, parisRegimes, rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null, userPosition);
+        const reportType = vehicleTypesForSpot(spot.t)[0] ?? vehicle;
+        return <PlaceSheet title={content.title} chips={content.places ? [content.places] : []} note={content.note} status={content.status} tariff={spotCtx.tariff} alerts={spotCtx.alerts}
           onClose={() => setSelectedParis(null)}
           onGo={() => { setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, formatStreet(spot.street, spot.num) || info.title, 0, { kind: "street" }); }}
-          onReport={(status) => { setSelectedParis(null); void reportStreet(status, { latitude: spot.lat, longitude: spot.lng }, vehicleTypesForSpot(spot.t)[0] ?? vehicle); }} />;
+          actions={content.canReport ? [
+            { label: "Je libère cette place", onClick: () => { setSelectedParis(null); void reportStreet("free", { latitude: spot.lat, longitude: spot.lng }, reportType); } },
+            { label: "Je m'y gare", onClick: () => { setSelectedParis(null); void reportStreet("taken", { latitude: spot.lat, longitude: spot.lng }, reportType); } },
+          ] : []} />;
       })()}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>
