@@ -784,6 +784,12 @@ body.is-navigating .bottom-nav { display: none; }
 .m-scard-main strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-scard-main small { color: #5a5873; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-scard .m-dist { flex: none; }
+/* Panneau « Places près de… » : cartes compactes de largeur fixe, jamais étirées à la hauteur d'une voisine, panneau limité à ~30 % de l'écran ;
+   l'état vide tient sur UNE ligne (l'ancien « flex: 1 » le rétrécissait à 140 px en colonne haute, et le défilement par « snap » le poussait hors écran à gauche). */
+.m-cards-dest { scroll-padding: 0 14px; align-items: flex-start; max-height: max(84px, calc(30vh - 112px)); overflow-y: hidden; }
+.m-cards-dest .m-scard { min-height: 76px; max-height: 112px; }
+.m-cards-dest .m-empty-line { flex: none; scroll-snap-align: start; align-self: center; padding: 12px 16px; border-radius: 18px; font-size: 14px; white-space: nowrap; }
+.m-sheet:has(.m-dest-head) { max-height: 30vh; overflow: hidden; }
 
 /* ===== Fiche d'un emplacement de Paris : langage clair, 5 lignes au plus (titre dans l'en-tête de la fenêtre) ===== */
 .pf { display: grid; gap: 8px; }

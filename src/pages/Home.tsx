@@ -806,13 +806,13 @@ export default function Home() {
               <b title={destination.label}>Places près de {destination.label}</b>
               <button type="button" className="m-dest-go" disabled={routeLoading} onClick={toggleRoute}><Navigation size={16} />{routeLoading ? "Calcul…" : "Y aller"}</button>
             </div>
-            <div className="m-cards">
+            <div className="m-cards m-cards-dest">
               {destPlaces.street.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
                 <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
                 <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalé par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
                 <span className="m-dist">{meters(away)}</span>
               </button>)}
-              {destPlaces.street.length === 0 && <div className="m-empty">{streetPanelState === "ok" ? "Aucune place signalée autour de cette adresse. Les emplacements gris de la carte sont des emplacements officiels de Paris : statut inconnu." : "Places en rue indisponibles pour le moment."}</div>}
+              {destPlaces.street.length === 0 && <div className="m-empty m-empty-line">{streetPanelState === "ok" ? "Aucune place signalée libre ici pour l’instant." : "Places en rue indisponibles pour le moment."}</div>}
               {destPlaces.privatePlaces.map(({ item, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-priv-${item.id}`} onClick={() => navigate(`/place/${item.id}`)}>
                 <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
                 <span className="m-scard-main"><strong>{item.title}</strong><small>Place privée · {euros(item.hourlyCents)}/h</small></span>
