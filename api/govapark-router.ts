@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gt, gte, lte, lt, ne, inArray, or, isNull, desc, count, sql } from "drizzle-orm";
 import { createRouter, publicQuery, authedQuery, adminQuery, ownerQuery } from "./middleware";
@@ -12,6 +13,7 @@ import { parseStreetListInput, parseStreetReportInput, prepareStreetReport, reso
 import { validateListing } from "@contracts/listing-validation";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
+import { MAX_UPLOAD_BASE64_CHARS, validateImageUpload } from "./lib/upload-validation";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
@@ -800,10 +802,13 @@ export const govaparkRouter = createRouter({
   }),
 
   storage: createRouter({
-    upload: authedQuery.input(z.object({ name: z.string().max(180), contentBase64: z.string().max(14_000_000), contentType: z.string().optional() })).mutation(async ({ ctx, input }) => {
-      const bytes = Uint8Array.from(Buffer.from(input.contentBase64, "base64"));
-      if (bytes.byteLength > 10_000_000) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Photo limitée à 10 Mo." });
-      const saved = await storage.uploadFile({ fileContent: bytes, fileName: `u/${ctx.user.id}/${input.name}`, contentType: input.contentType });
+    // Photos d'annonces : JPEG, PNG ou WebP uniquement, 5 Mo max, type vérifié sur les octets (api/lib/upload-validation.ts).
+    // `name` (fourni par le client) est ignoré : la clé de stockage est générée côté serveur.
+    // NB : les PDF ne sont plus acceptés (ex. justificatifs de vérification propriétaire) ; envoyer une photo du document.
+    upload: authedQuery.input(z.object({ name: z.string().max(180).optional(), contentBase64: z.string().max(MAX_UPLOAD_BASE64_CHARS), contentType: z.string().max(100).optional() })).mutation(async ({ ctx, input }) => {
+      const checked = validateImageUpload({ contentBase64: input.contentBase64, contentType: input.contentType });
+      if (!checked.ok) throw new TRPCError({ code: checked.code, message: checked.message });
+      const saved = await storage.uploadFile({ fileContent: checked.bytes, fileName: `u/${ctx.user.id}/${randomUUID()}.${checked.ext}`, contentType: checked.mime });
       await getDb().insert(files).values({ key: saved.key, ownerId: ctx.user.id, name: saved.fileName, size: saved.size });
       return { key: saved.key, size: saved.size };
     }),
