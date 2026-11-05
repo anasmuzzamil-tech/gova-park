@@ -37,6 +37,7 @@ import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
 import { nearLabel } from "@/lib/near-label";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
+import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
@@ -109,7 +110,7 @@ async function geocodeFR(query: string, signal: AbortSignal): Promise<AddressSug
 }
 
 /** Types d'affichage seulement proposés dans le sélecteur. */
-const DISPLAY_CHIPS: DisplayType[] = ["pmr"];
+const DISPLAY_CHIPS: DisplayType[] = ["pmr", "ev"];
 
 export default function Home() {
   const navigate = useNavigate();
@@ -257,7 +258,13 @@ export default function Home() {
   const [zfeOn, setZfeOn] = useState(initialLayers.zfe);
   const [zfeFile, setZfeFile] = useState<ZfeFile | null>(null);
   useEffect(() => { if (zfeOn) void loadZfe().then(setZfeFile); }, [zfeOn]);
-  useEffect(() => { saveLayerPrefs({ street: streetOn, paris: parisOn, forbidden: forbiddenOn, works: worksOn, zfe: zfeOn }); }, [streetOn, parisOn, forbiddenOn, worksOn, zfeOn]);
+  // Bornes de recharge (IRVE) : couche « Bornes de recharge » OU type « Électrique » du sélecteur (affichage seulement, ni signalement ni disponibilité).
+  const [chargeOn, setChargeOn] = useState(initialLayers.charge);
+  const [irveDate, setIrveDate] = useState<string | null>(null);
+  const [selectedIrve, setSelectedIrve] = useState<{ lat: number; lng: number; props: Array<string | number | null> } | null>(null);
+  const irveShown = chargeOn || displayType === "ev";
+  useEffect(() => { if (irveShown) void loadLayerIndex("/data/paris-irve").then((index) => setIrveDate(index?.dataDate ?? null)).catch(() => setIrveDate(null)); }, [irveShown]);
+  useEffect(() => { saveLayerPrefs({ street: streetOn, paris: parisOn, forbidden: forbiddenOn, works: worksOn, zfe: zfeOn, charge: chargeOn }); }, [streetOn, parisOn, forbiddenOn, worksOn, zfeOn, chargeOn]);
   // Tarifs de stationnement : date du fichier pour le panneau « i » (la ligne de fiche n'apparaît que pour une place payante).
   const [tariffDate, setTariffDate] = useState<string | null | undefined>(undefined);
   useEffect(() => { if (parisOn) void loadTariffs().then((file) => setTariffDate(file ? file.dataDate : undefined)); }, [parisOn]);
@@ -771,6 +778,7 @@ export default function Home() {
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
     streetSpots: streetSpotsOnMap, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
     parisSpots: parisOn ? parisMerged.gray : NO_PARIS, parisHot: parisOn ? parisMerged.hot : NO_PARIS,
+    onIrve: (pick: { lat: number; lng: number; props: Array<string | number | null> }) => { setSelectedParis(null); setSelectedStreetId(null); setSelectedIrve(pick); },
     onParisSpot: (spot: ParisPick) => setSelectedParis({ lat: spot.lat, lng: spot.lng, t: spot.t, places: spot.places, regime: spot.regime, street: spot.street, num: spot.num, color: spot.color, reportId: spot.reportId }),
   };
   // Carte 3D : si elle ne peut pas s'afficher, on l'explique (au lieu d'un repli silencieux) et on réessaie automatiquement.
@@ -803,7 +811,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} typeColorKey={displayType ?? (vehicleChoice.all ? "all" : vehicle)} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} irveOn={irveShown} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} typeColorKey={displayType ?? (vehicleChoice.all ? "all" : vehicle)} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -839,6 +847,7 @@ export default function Home() {
             <button type="button" role="switch" aria-checked={parisOn} className={`gp-switch${parisOn ? " on" : ""}`} onClick={() => setParisOn(!parisOn)}><span>Emplacements de Paris</span><i aria-hidden="true" /></button>
             <button type="button" role="switch" aria-checked={forbiddenOn} className={`gp-switch${forbiddenOn ? " on" : ""}`} onClick={() => setForbiddenOn(!forbiddenOn)}><span>Interdictions de stationner</span><i aria-hidden="true" /></button>
             <button type="button" role="switch" aria-checked={worksOn} className={`gp-switch${worksOn ? " on" : ""}`} onClick={() => setWorksOn(!worksOn)}><span>Chantiers</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={chargeOn} className={`gp-switch${chargeOn ? " on" : ""}`} onClick={() => setChargeOn(!chargeOn)}><span>Bornes de recharge</span><i aria-hidden="true" /></button>
             <button type="button" role="switch" aria-checked={zfeOn} className={`gp-switch${zfeOn ? " on" : ""}`} onClick={() => setZfeOn(!zfeOn)}><span>Zone à faibles émissions</span><i aria-hidden="true" /></button>
             <button type="button" role="switch" aria-checked={onlyAvailable} className={`gp-switch${onlyAvailable ? " on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}><span>Dispo maintenant (places privées)</span><i aria-hidden="true" /></button>
           <p className="m-layers-note">Les places privées et collectives restent dans la liste du bas, jamais mêlées aux places en rue.</p>
@@ -881,6 +890,8 @@ export default function Home() {
               {zfeOn && zfeFile?.urlSite && <a href={zfeFile.urlSite} target="_blank" rel="noopener noreferrer">Site d'information de la ZFE</a>}
               {zfeOn && zfeFile && <a href={ZFE_SOURCE.url} target="_blank" rel="noopener noreferrer">Source de la ZFE : data.gouv.fr</a>}
               {worksOn && <p>{worksAttribution(worksDate)}</p>}
+              {irveShown && <p>{irveAttribution(irveDate)}</p>}
+              {irveShown && <a href={IRVE_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des bornes : data.gouv.fr</a>}
               {parisOn && tariffDate !== undefined && <a href={TARIFF_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des tarifs : data.gouv.fr</a>}
               {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}
               {forbiddenOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
@@ -1066,6 +1077,13 @@ export default function Home() {
             { label: "Je libère cette place", onClick: () => { setSelectedParis(null); void reportStreet("free", { latitude: spot.lat, longitude: spot.lng }, reportType); } },
             { label: "Je m'y gare", onClick: () => { setSelectedParis(null); void reportStreet("taken", { latitude: spot.lat, longitude: spot.lng }, reportType); } },
           ] : []} />;
+      })()}
+
+      {selectedIrve && (() => {
+        const irve = irveSheet(selectedIrve.props);
+        return <PlaceSheet title={irve.title} chips={irve.chips} note={irve.note}
+          onClose={() => setSelectedIrve(null)}
+          onGo={() => { const at = { lat: selectedIrve.lat, lng: selectedIrve.lng }; setSelectedIrve(null); setTarget(at); void calculateRoutes(at, irve.note?.split(" · ").at(-1) ?? irve.title, 0, { kind: "street" }); }} />;
       })()}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>

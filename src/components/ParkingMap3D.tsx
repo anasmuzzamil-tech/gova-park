@@ -14,7 +14,7 @@ import { isWorkActive } from "@contracts/paris-works";
 import { mapDiag } from "@/lib/map-diag";
 import { zfeLine } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
-import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES, hexToRgba, spotTypeColor, typeColor, type TypeColorKey } from "@contracts/vehicle-types";
+import { DISPLAY_COLORS, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, hexToRgba, spotTypeColor, typeColor, type TypeColorKey } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 
@@ -148,6 +148,23 @@ function addWorksLayers(map: maplibregl.Map) {
     map.addLayer({ id: "gp-works-line", type: "line", source: "gp-works", minzoom: LAYER.streetZoom, paint: { "line-color": "#f08a14", "line-width": 1.4, "line-opacity": 0.9 } });
   } catch (error) { console.warn("[GOVAPARK] Couche des chantiers impossible", error); }
 }
+/** Bornes de recharge (IRVE) : points fuchsia, par-dessus les emplacements (ordre : ... < emplacements < bornes). Aucun statut. */
+export const IRVE_BASE = "/data/paris-irve";
+export type IrvePick = { lat: number; lng: number; props: Array<string | number | null> };
+function addIrveLayers(map: maplibregl.Map, onPick: (pick: IrvePick) => void) {
+  try {
+    map.addSource("gp-irve", { type: "geojson", data: emptyFc() });
+    map.addLayer({ id: "gp-irve-pt", type: "circle", source: "gp-irve", minzoom: LAYER.pointZoom, paint: { "circle-color": DISPLAY_COLORS.ev, "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 5, 18, 9], "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
+    map.on("click", "gp-irve-pt", (e) => {
+      const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
+      const [lng, lat] = f.geometry.coordinates as [number, number];
+      let props: IrvePick["props"] = []; try { props = JSON.parse(String(f.properties?.p ?? "[]")); } catch { /* fiche vide */ }
+      onPick({ lat, lng, props });
+    });
+    map.on("mouseenter", "gp-irve-pt", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "gp-irve-pt", () => { map.getCanvas().style.cursor = ""; });
+  } catch (error) { console.warn("[GOVAPARK] Couche des bornes de recharge impossible", error); }
+}
 export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
 function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
@@ -207,7 +224,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, irveOn = false, onIrve, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -217,7 +234,7 @@ export default function ParkingMap3D({
   streetSpots?: MapStreetSpot[];
   onStreetSpot?: (spot: MapStreetSpot) => void;
   /** Emplacements officiels de Paris (gris, regroupés) et ceux colorés par un signalement (jamais regroupés). */
-  parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void;
+  parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void; irveOn?: boolean; onIrve?: (pick: IrvePick) => void;
   /** Contours en pointillés des emprises de Paris (zoom rue seulement) : couche active et types cochés (le filtre « Voitures et motos / Tout afficher »). Carte 3D uniquement. */
   polygonsOn?: boolean; polygonTypes?: ReadonlySet<number>;
   /** Tracés du stationnement interdit (Ville de Paris), au zoom rue seulement. Carte 3D uniquement. */
@@ -256,8 +273,8 @@ export default function ParkingMap3D({
   const detailed = zoom >= 14;
 
   // Callbacks toujours à jour sans recréer les marqueurs.
-  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot });
-  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot };
+  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot, onIrve });
+  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot, onIrve };
 
   const listingMarkers = useRef<maplibregl.Marker[]>([]);
   const streetMarkers = useRef<maplibregl.Marker[]>([]);
@@ -382,6 +399,7 @@ export default function ParkingMap3D({
       safe("couche chantiers", () => { addWorksLayers(map); });
       safe("couche interdictions", () => { addForbiddenLayers(map); });
       safe("couche des emplacements", () => { addParisLayers(map, (props) => cb.current.onParisSpot?.(props)); });
+      safe("couche bornes de recharge", () => { addIrveLayers(map, (pick) => cb.current.onIrve?.(pick)); });
       safe("zoom", () => setZoom(map.getZoom()));
       setReady(true);
     });
@@ -709,6 +727,24 @@ export default function ParkingMap3D({
     if (!map || !ready) return;
     (map.getSource("gp-works") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(works));
   }, [ready, works]);
+  // Bornes de recharge (IRVE) : tuiles de la zone visible seulement, à partir du zoom quartier ; aucune disponibilité, aucun signalement.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false, timer: number | undefined;
+    const draw = (list: DecodedFeature[]) => (map.getSource("gp-irve") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(list, (f) => ({ p: JSON.stringify(f.props) })));
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        if (!layerVisible(map.getZoom(), LAYER.pointZoom, irveOn)) { if (!cancelled) draw([]); return; }
+        const b = map.getBounds(), c = map.getCenter();
+        const result = await loadLayer(IRVE_BASE, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng }, 1500);
+        if (!cancelled) draw(result.status === "ok" ? result.features : []);
+      }, 250);
+    };
+    map.on("moveend", refresh); refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); map.off("moveend", refresh); };
+  }, [ready, irveOn]);
 
   // Emplacements officiels de Paris : regroupement natif MapLibre (gris, jamais de disponibilité) + emplacements colorés par un signalement.
   useEffect(() => {

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { LAYER_DEFAULTS, LAYER_KEY, loadLayerPrefs, parseLayerPrefs, saveLayerPrefs } from "../src/lib/layer-prefs";
 
 describe("couches mémorisées", () => {
-  it("par défaut : places en rue, emplacements et interdictions actifs ; chantiers et ZFE masqués", () => {
-    expect(LAYER_DEFAULTS).toEqual({ street: true, paris: true, forbidden: true, works: false, zfe: false });
+  it("par défaut : places en rue, emplacements et interdictions actifs ; chantiers, ZFE et bornes de recharge masqués", () => {
+    expect(LAYER_DEFAULTS).toEqual({ street: true, paris: true, forbidden: true, works: false, zfe: false, charge: false });
   });
   it("lecture tolérante : texte illisible, valeurs mal typées, champs en trop", () => {
     expect(parseLayerPrefs("pas du json")).toEqual(LAYER_DEFAULTS);

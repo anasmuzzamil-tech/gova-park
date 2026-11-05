@@ -1,7 +1,7 @@
 // Mémorisation des couches de la carte (feuille « Couches ») dans le navigateur de l'appareil. Rien n'est envoyé au serveur.
 // localStorage peut être absent ou bloqué (navigation privée, stockage plein) : toute lecture ou écriture est protégée, l'écran fonctionne sans.
-export type LayerPrefs = { street: boolean; paris: boolean; forbidden: boolean; works: boolean; zfe: boolean };
-export const LAYER_DEFAULTS: LayerPrefs = { street: true, paris: true, forbidden: true, works: false, zfe: false };
+export type LayerPrefs = { street: boolean; paris: boolean; forbidden: boolean; works: boolean; zfe: boolean; charge: boolean };
+export const LAYER_DEFAULTS: LayerPrefs = { street: true, paris: true, forbidden: true, works: false, zfe: false, charge: false };
 export const LAYER_KEY = "govapark.layers.v1";
 
 /** Lecture tolérante : valeurs manquantes ou mal typées = valeurs par défaut. */
