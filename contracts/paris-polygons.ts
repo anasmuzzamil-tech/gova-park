@@ -7,7 +7,7 @@
 // vient uniquement d'un signalement d'utilisateur récent (contracts/street-reports.ts), via le point d'ancrage = l'emplacement correspondant.
 //
 // Fonctions pures, testées dans api/paris-polygons.test.ts ; utilisées par le site et par `scripts/import-paris-polygons.mjs`.
-import { SPOT_TYPE, interpretRegime, tileKey, toE5 } from "./paris-spots.ts";
+import { SPOT_TYPE, interpretRegime, isExcludedRegime, tileKey, toE5 } from "./paris-spots.ts";
 import { vehicleTypesForSpot, type VehicleType } from "./vehicle-types.ts";
 
 export const PARIS_POLYGONS_SOURCE = {
@@ -55,6 +55,7 @@ export const isDefaultRegime = (prioritaire: string | null | undefined, particul
 
 /** Type de véhicule d'une emprise d'après son régime (voiture, moto, bus = autocar, vélo ; les zones de livraison n'ont pas de type), ou null : régime autre ou incertain, jamais importé. */
 export function vehicleOfRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): VehicleType | null {
+  if (isExcludedRegime(prioritaire, particulier)) return null;
   return vehicleTypesForSpot(interpretRegime(prioritaire, particulier).t)[0] ?? null;
 }
 

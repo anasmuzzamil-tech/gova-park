@@ -53,6 +53,11 @@ const UNSURE_NOTE = "Usage non précisé par les données : voir la signalisatio
 /** Valeur brute, sans promesse. */
 const rawRegime = (prio: string, part: string): RegimeInfo => info(SPOT_TYPE.other, null, `Régime : ${(part || prio || "non renseigné").trim()}`, UNSURE_NOTE);
 
+/** Régimes jamais importés (décision d'Anas) : les stations Vélib' (« LOCATION | Vélib' ») n'apparaissent ni en points, ni en contours, ni dans le compteur, ni dans « Tout ». Seul Vélib' : arceaux, vélo-cargo et box à vélos restent. */
+export function isExcludedRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
+  return norm(prioritaire) === "location" && norm(particulier) === "velib'";
+}
+
 export function interpretRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): RegimeInfo {
   const prio = String(prioritaire ?? "").trim(), part = String(particulier ?? "").trim();
   const p = norm(prio), q = norm(part);

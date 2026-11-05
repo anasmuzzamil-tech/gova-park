@@ -17,7 +17,7 @@
 // L'interprétation des régimes est dans contracts/paris-spots.ts (interpretRegime), jamais devinée : --inspect liste chaque couple.
 import fs from "node:fs";
 import path from "node:path";
-import { GRID, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, encodeNumero, interpretRegime, streetKey } from "../contracts/paris-spots.ts";
+import { GRID, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, encodeNumero, interpretRegime, isExcludedRegime, streetKey } from "../contracts/paris-spots.ts";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -106,7 +106,7 @@ const missing = Object.entries(C).filter(([, v]) => !v).map(([k]) => k);
 const BOX = { south: 48.7, north: 49.0, west: 2.1, east: 2.6 };
 const points = []; const rejected = { noPosition: 0, outside: 0 }; const how = new Map();
 const regimes = []; const regimeIds = new Map(); // couples [prioritaire, particulier] -> rang
-let totalPlaces = 0, zeroPlaces = 0;
+let totalPlaces = 0, zeroPlaces = 0, excluded = 0;
 const combos = new Map();
 for (const rec of records) {
   const pos = position(rec, keyMap);
@@ -114,6 +114,7 @@ for (const rec of records) {
   if (pos.lat < BOX.south || pos.lat > BOX.north || pos.lng < BOX.west || pos.lng > BOX.east) { rejected.outside++; continue; }
   how.set(pos.how, (how.get(pos.how) ?? 0) + 1);
   const prio = String(C.prio ? rec[C.prio] : "").trim(), part = String(C.part ? rec[C.part] : "").trim();
+  if (isExcludedRegime(prio, part)) { excluded++; continue; }
   const rk = `${prio}\u0001${part}`;
   let g = regimeIds.get(rk);
   if (g === undefined) { g = regimes.length; regimes.push([prio, part]); regimeIds.set(rk, g); }
@@ -136,6 +137,7 @@ console.log(`Colonnes (${columns.length}) : ${columns.join(", ")}`);
 console.log(`Position lue depuis : ${[...how].map(([k, v]) => `${k} (${v})`).join(" ; ") || "AUCUNE"}`);
 console.log(`Colonnes utilisées : ${Object.entries(C).map(([k, v]) => `${k}=${v ?? "ABSENTE"}`).join(" · ")}`);
 if (missing.length) console.warn(`ATTENTION : colonnes absentes (${missing.join(", ")}) : régimes, places ou rues manquants dans la sortie.`);
+console.log(`Exclus (stations Vélib') : ${excluded}`);
 console.log(`Places réelles : ${totalPlaces} au total · ${zeroPlaces} tronçons sans nombre de places (0 ou vide)`);
 console.log("Répartition par type :", Object.entries(byType).map(([t, n]) => `${SPOT_TYPE_LABEL[t]} ${n}`).join(" · "));
 if (inspect) {

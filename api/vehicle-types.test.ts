@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SPOT_TYPE, interpretRegime, type OfficialSpot } from "@contracts/paris-spots";
+import { SPOT_TYPE, interpretRegime, isExcludedRegime, type OfficialSpot } from "@contracts/paris-spots";
+import { vehicleOfRegime } from "@contracts/paris-polygons";
 import {
   DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_PARK_SUFFIX, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, toVehicleType, vehicleTypesForSpot,
 } from "@contracts/vehicle-types";
@@ -58,6 +59,19 @@ describe("types de véhicule", () => {
   it("bouton « Je me gare » : véhicule entre parenthèses, rien pour la voiture", () => {
     expect(VEHICLE_PARK_SUFFIX.car).toBe(""); expect(`Je me gare${VEHICLE_PARK_SUFFIX.moto}`).toBe("Je me gare (moto)");
     expect(VEHICLE_TYPES.every((v) => `Je me gare${VEHICLE_PARK_SUFFIX[v]}`.length <= 20)).toBe(true);
+  });
+});
+
+describe("exclusion des stations Vélib'", () => {
+  it("seul « LOCATION | Vélib' » est exclu ; arceaux, vélo-cargo et box à vélos restent", () => {
+    expect(isExcludedRegime("LOCATION", "Vélib'")).toBe(true);
+    expect(isExcludedRegime("location", "VELIB'")).toBe(true);
+    for (const [p, q] of [["2 ROUES", "Vélos"], ["2 ROUES", "Vélo-cargo"], ["2 ROUES", "Box à vélos"], ["LOCATION", "Autopartage"], ["", ""]]) expect(isExcludedRegime(p, q), `${p}|${q}`).toBe(false);
+  });
+  it("Vélib' n'a plus de type de véhicule ni de contour ; les arceaux gardent le type vélo", () => {
+    expect(vehicleOfRegime("LOCATION", "Vélib'")).toBeNull();
+    expect(vehicleOfRegime("2 ROUES", "Vélos")).toBe("bike");
+    expect(vehicleOfRegime("2 ROUES", "Vélo-cargo")).toBe("bike");
   });
 });
 
