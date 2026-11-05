@@ -771,10 +771,6 @@ export default function Home() {
           {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={18} /></button></div>}
           <div className="m-meta">
             <button type="button" className="m-info" aria-expanded={infoOpen} aria-label="Légende des couleurs et sources" onClick={() => setInfoOpen((open) => !open)}><Info size={17} /></button>
-            {parisOn && <p className="m-attrib" role="status">{parisLoad === null ? "Emplacements de Paris : chargement…"
-              : parisLoad.status === "missing" ? "Emplacements de Paris : données non installées"
-              : parisLoad.status === "error" ? "Emplacements de Paris indisponibles (réseau)"
-              : `Emplacements : ${PARIS_SOURCE.producer}, licence ${PARIS_SOURCE.license}, non exhaustifs`}</p>}
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
             {infoOpen && <div className="m-info-panel" role="dialog" aria-label="Légende et sources">
               <ul className="m-legend" aria-label="Légende des couleurs des places">
