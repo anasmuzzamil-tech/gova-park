@@ -18,6 +18,9 @@ import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES, hexToRgba, spotTypeColor, typeColor,
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 
+/** Animations coupées si l'appareil le demande (prefers-reduced-motion) : la carte saute au lieu de voler. */
+const reducedMotion = () => { try { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true; } catch { return false; } };
+
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
@@ -393,7 +396,8 @@ export default function ParkingMap3D({
     previousCenter.current = center;
     if (changed) autoFitDone.current = true;
     if (!map || !changed) return;
-    map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM), duration: 600 });
+    if (reducedMotion()) map.jumpTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM) });
+    else map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM), duration: 600 });
   }, [center]);
 
   // Adresse choisie dans la recherche : zoom rue sur la destination (après le recentrage ci-dessus, qui garde sinon le zoom courant).
@@ -403,7 +407,8 @@ export default function ParkingMap3D({
     if (!focus || focus.id === lastFocus.current || !map || !ready) return;
     lastFocus.current = focus.id;
     autoFitDone.current = true;
-    map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom, bearing: 0, duration: 700 });
+    if (reducedMotion()) map.jumpTo({ center: [focus.lng, focus.lat], zoom: focus.zoom, bearing: 0 });
+    else map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom, bearing: 0, duration: 900 });
   }, [focus, ready]);
 
   // Cap calculé depuis les positions successives.
@@ -523,6 +528,10 @@ export default function ParkingMap3D({
     badge.style.transition = "transform .4s ease";
   }, [heading, userPosition, driving, ready]);
 
+  // Marqueurs déjà affichés : seuls les NOUVEAUX apparaissent en « pop » (pas de rejeu à chaque déplacement), et jamais plus de 40 d'un coup.
+  const seenListings = useRef(new Set<string>());
+  const seenStreet = useRef(new Set<string>());
+
   // Places de parking.
   useEffect(() => {
     const map = mapRef.current;
@@ -536,13 +545,16 @@ export default function ParkingMap3D({
       node.addEventListener("click", (e) => { e.stopPropagation(); map.easeTo({ center: [g.lng, g.lat], zoom: Math.min(map.getZoom() + 2, 16), duration: 500 }); });
       return new maplibregl.Marker({ element: node }).setLngLat([g.lng, g.lat]).addTo(map);
     });
+    const freshListings = singles.filter((l) => !seenListings.current.has(String(l.id)));
+    const popListings = reducedMotion() || freshListings.length > 40 ? new Set<string>() : new Set(freshListings.map((l) => String(l.id)));
+    singles.forEach((l) => seenListings.current.add(String(l.id)));
     listingMarkers.current = [...clusters, ...singles.map((listing) => {
       const color = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
       const statusText = listing.parkingStatus?.label ?? "Aucun signalement récent";
       const label = `${listing.title} — ${statusText}`;
       const node = detailed
-        ? text("span", formatRate(listing.hourlyCents), `pk-pill pk-${color}`)
-        : el("span", `pk-dot pk-${color}`);
+        ? text("span", formatRate(listing.hourlyCents), `pk-pill pk-${color}${popListings.has(String(listing.id)) ? " pk-pop" : ""}`)
+        : el("span", `pk-dot pk-${color}${popListings.has(String(listing.id)) ? " pk-pop" : ""}`);
       node.setAttribute("aria-label", label); node.title = label; node.style.cursor = "pointer";
       const box = el("div", "map-listing-popup");
       box.append(text("strong", listing.title));
@@ -581,8 +593,14 @@ export default function ParkingMap3D({
     const map = mapRef.current;
     if (!map || !ready) return;
     streetMarkers.current.forEach((m) => m.remove());
+    // Anneau doux : seulement les 30 places VERTES (signalement récent) les plus proches du centre de la carte ; « pop » : seulement les nouvelles.
+    const c = map.getCenter();
+    const hot = new Set(streetSpots.filter((x) => x.color === "green").map((x) => ({ id: String(x.id), d: (x.latitude - c.lat) ** 2 + (x.longitude - c.lng) ** 2 })).sort((a, b) => a.d - b.d).slice(0, 30).map((x) => x.id));
+    const freshStreet = streetSpots.filter((x) => !seenStreet.current.has(String(x.id)));
+    const popStreet = reducedMotion() || freshStreet.length > 40 ? new Set<string>() : new Set(freshStreet.map((x) => String(x.id)));
+    streetSpots.forEach((x) => seenStreet.current.add(String(x.id)));
     streetMarkers.current = streetSpots.map((spot) => {
-      const node = el("span", `pk-street pk-s-${spot.color}`, spot.status === "free" ? "P" : "×");
+      const node = el("span", `pk-street pk-s-${spot.color}${hot.has(String(spot.id)) ? " pk-pulse" : ""}${popStreet.has(String(spot.id)) ? " pk-pop" : ""}`, spot.status === "free" ? "P" : "×");
       const slabel = `Place en rue · ${spot.label}${spot.example ? " (exemple)" : ""}`; node.title = slabel; node.setAttribute("aria-label", slabel); node.style.cursor = "pointer";
       node.addEventListener("click", (e) => { e.stopPropagation(); cb.current.onStreetSpot?.(spot); });
       return new maplibregl.Marker({ element: node }).setLngLat([spot.longitude, spot.latitude]).addTo(map);

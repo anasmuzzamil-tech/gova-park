@@ -75,3 +75,39 @@
 .m-info-panel { max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain; }
 .m-info-h { margin: var(--gp-s-2) 0 0; font: 700 var(--gp-t-14)/1.3 "Manrope", sans-serif; color: var(--gp-ink); }
 .m-info-h:first-child { margin-top: 0; }
+
+/* ═══ Mouvement (docs/DESIGN.md) : transform et opacity seulement, 150 à 250 ms, rien d'infini sauf l'anneau des ≤ 30 places vertes les plus proches ═══ */
+@media (prefers-reduced-motion: no-preference) {
+  /* 1. Feuille basse : se pose en douceur à chaque changement d'état (trois noms d'animation : elle rejoue quand l'état change) */
+  .m-sheet { animation: gp-sheet-b 250ms var(--gp-ease); }
+  .m-sheet.is-closed { animation-name: gp-sheet-a; }
+  .m-sheet.is-full { animation-name: gp-sheet-c; }
+  .m-grip { transition: transform var(--gp-anim) var(--gp-ease), opacity var(--gp-anim) ease; }
+  .m-sheet-toggle:active .m-grip, .gp-sheet:active > .m-grip { transform: scaleX(1.35); opacity: .8; }
+  /* 2. Puces : appui, et la puce qui devient active s'illumine */
+  .m-chip { transition: transform var(--gp-anim) var(--gp-ease), background-color var(--gp-anim) ease, color var(--gp-anim) ease; }
+  .m-chip.on { animation: gp-chip-on 250ms var(--gp-ease); }
+  /* 3. Boutons : appui, coche après succès */
+  .btn:active, .gp-go:active, .gp-action:active { transform: scale(.96); }
+  .gp-check { animation: gp-check 250ms var(--gp-ease); }
+  /* 4. Marqueurs : apparition discrète des NOUVEAUX seulement (propriété `scale`, car MapLibre pose `transform` sur le marqueur) */
+  .pk-pop { animation: gp-marker-pop 200ms var(--gp-ease); }
+  .pk-street.pk-pulse::after { content: ""; position: absolute; inset: -3px; border: 2px solid #12a150; border-radius: 13px; opacity: 0; pointer-events: none; animation: gp-ring 2.4s ease-out infinite; }
+  /* 6. Compteur : court fondu + translation quand la valeur change (la valeur sert de clé React) */
+  .gp-count { display: inline-block; animation: gp-count 200ms var(--gp-ease); }
+  /* 7. Panneaux « Couches » et « i » : fondu + montée légère (déjà gp-pop pour Couches) */
+  .m-info-panel { animation: gp-panel-up var(--gp-anim) var(--gp-ease); }
+  /* 10. Onglets du bas : fondu court de la page qui arrive (opacité seule) */
+  .app-main > * { animation: gp-page-in 150ms ease-out; }
+}
+@keyframes gp-sheet-a { from { opacity: .92; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes gp-sheet-b { from { opacity: .92; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes gp-sheet-c { from { opacity: .92; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes gp-chip-on { from { opacity: .7; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes gp-check { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
+@keyframes gp-marker-pop { from { opacity: 0; scale: .8; } to { opacity: 1; scale: 1; } }
+@keyframes gp-ring { 0% { opacity: .6; transform: scale(.9); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes gp-count { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes gp-panel-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes gp-page-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .m-sheet, .m-chip.on, .gp-check, .pk-pop, .pk-street.pk-pulse::after, .gp-count, .m-info-panel, .app-main > * { animation: none !important; } }

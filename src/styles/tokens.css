@@ -24,5 +24,6 @@
   /* Zone tactile minimale et durée des animations */
   --gp-touch: 44px;
   --gp-anim: 200ms;
+  --gp-ease: cubic-bezier(.2, .8, .2, 1);
 }
 @media (prefers-reduced-motion: reduce) { :root { --gp-anim: 0ms; } }

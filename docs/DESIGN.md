@@ -43,8 +43,20 @@ Un statut se lit toujours par la couleur ET par un mot (Libre, Peut-être libre,
 - **Puce d'info** (`.gp-chip-info`) : 12 px, fond `--gp-surface-2`, texte `--gp-ink-2` ; variantes de statut avec teinte foncée.
 - **Icônes** : un seul jeu, `lucide-react` (pas d'émoji dans les nouveaux composants).
 
-## Animations
-CSS seulement, 150 à 250 ms (`--gp-anim` = 200 ms), apparition de la feuille et des toasts. `prefers-reduced-motion: reduce` ramène la durée à 0.
+## Mouvement
+**Règles** : CSS seulement (aucune bibliothèque), `transform` et `opacity` seulement (jamais de largeur, hauteur ou position animée), durées de 150 à 250 ms (`--gp-anim` = 200 ms ; feuille 250 ms ; fondu de page 150 ms), courbe `--gp-ease` = `cubic-bezier(.2, .8, .2, 1)` (ou `ease-out`). Rien d'animé en fond, pas de confettis, pas de parallaxe. `prefers-reduced-motion: reduce` coupe tout : les blocs d'animation sont sous `@media (prefers-reduced-motion: no-preference)`, `--gp-anim` tombe à 0, la règle globale d'`index.css` ramène le reste à 0,01 ms, et la carte saute (`jumpTo`) au lieu de voler. Code : bloc « Mouvement » de `src/styles/map-screen.css`.
+| Élément | Mouvement |
+|---|---|
+| Feuille basse (replié / mi-hauteur / plein) | elle se pose : montée de 10 px + fondu, 250 ms, rejouée à chaque changement d'état (un nom d'animation par état). Ce n'est pas une feuille qu'on tire au doigt : la hauteur change instantanément, seule l'arrivée est adoucie (changer la hauteur animée serait un décalage de mise en page). Poignée : s'élargit à l'appui. |
+| Puces véhicule | appui `scale(.96)`, fondu de couleur, la puce qui devient active s'illumine 250 ms. |
+| « Je libère », « Je me gare », « Y aller » | appui `scale(.96)` ; roue (`gp-spin`) sur le bouton touché pendant « Localisation… » / « Envoi… » ; coche qui apparaît 1,5 s après un signalement réussi. |
+| Marqueurs | « pop » (`scale` .8 à 1 + fondu, 200 ms) seulement pour les NOUVEAUX marqueurs (mémoire des identifiants déjà vus), jamais si plus de 40 d'un coup. Anneau doux (2,4 s) seulement sur les 30 places en rue VERTES les plus proches du centre de la carte. Les emplacements de Paris sont une couche MapLibre (pas du HTML) : pas de pop propre, MapLibre les fond déjà à l'affichage. |
+| Toast | glissement depuis le haut + fondu, sortie douce : animation native de sonner (non modifiée). |
+| Compteur « libre » | fondu + translation de 5 px à chaque changement de valeur. |
+| Panneaux « Couches » et « i » | fondu + montée de 6 à 8 px. |
+| Chargement de la liste | squelettes avec reflet léger (`skeleton-shimmer`, déjà en place). |
+| Recherche d'adresse | `flyTo` de 900 ms ; saut direct en reduced-motion. |
+| Onglets du bas | fondu de 150 ms de la page qui arrive (opacité seule sur `.app-main > *`, routeur inchangé). |
 
 ## États
 Vide : une phrase et une action. Chargement : squelette (pas de roue). Erreur : message court avec « Réessayer ». Aucun texte « inconnu » visible.

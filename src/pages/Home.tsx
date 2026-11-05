@@ -300,8 +300,11 @@ export default function Home() {
     return { gray: merged.spots.filter((x) => x.reportId === 0), hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
   }, [parisLoad, streetSpots]);
   const streetSpotsOnMap = useMemo(() => (vehicleChoice.all ? streetSpots : streetOfVehicle).filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, streetOfVehicle, vehicleChoice.all, parisMerged]);
+  const [streetDone, setStreetDone] = useState<"free" | "taken" | null>(null);
+  useEffect(() => { if (!streetDone) return; const t = window.setTimeout(() => setStreetDone(null), 1500); return () => window.clearTimeout(t); }, [streetDone]);
   const streetCreate = trpc.govapark.street.create.useMutation({
     onSuccess: (result, variables) => {
+      setStreetDone(variables.status);
       toast.success(reportSuccessText(variables.status, result.example, variables.vehicleType), { duration: 6000 });
       setSelectedStreetId(null); utils.govapark.street.list.invalidate();
     },
@@ -880,7 +883,7 @@ export default function Home() {
             </div>}
           </div>
           <StreetPanel vehicle={vehicle} state={streetPanelState} spots={streetOfVehicle} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
-            busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"}
+            busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"} done={streetDone}
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
             onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />
           {drivingRoute ? <><div className="m-route">
