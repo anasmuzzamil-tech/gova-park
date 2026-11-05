@@ -20,8 +20,9 @@ import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
-import { CAR_SPOT_TYPES, DEFAULT_SPOT_TYPES, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
+import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, formatStreet, interpretRegime, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
+import { DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
@@ -203,9 +204,21 @@ export default function Home() {
   // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
   const [parisOn, setParisOn] = useState(true);
   // Par défaut : seulement les emplacements où une voiture peut se garer (payant, mixte, gratuit) ; livraison, vélos, deux-roues, autocars, PMR et le reste s'activent par le filtre.
-  const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(DEFAULT_SPOT_TYPES));
+  // « Mon véhicule » : voiture par défaut ; mémorisé dans le navigateur seulement (aucun champ de profil serveur n'existe pour le type de véhicule). « Tout » affiche tous les types sur la carte.
+  const [vehicleChoice, setVehicleChoice] = useState<{ vehicle: VehicleType; all: boolean }>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("govapark.mapVehicle.v1") || "null");
+      if (saved && isVehicleType(saved.vehicle)) return { vehicle: saved.vehicle, all: saved.all === true };
+    } catch { /* stockage indisponible : choix par défaut */ }
+    return { vehicle: fromProfileVehicle(vehiclePrefs.vehicle) ?? DEFAULT_VEHICLE, all: false };
+  });
+  const vehicle = vehicleChoice.vehicle;
+  const chooseVehicle = (next: { vehicle: VehicleType; all: boolean }) => {
+    setVehicleChoice(next);
+    try { localStorage.setItem("govapark.mapVehicle.v1", JSON.stringify(next)); } catch { /* facultatif */ }
+  };
+  const parisTypes = useMemo(() => spotTypesToShow(vehicle, vehicleChoice.all, SPOT_TYPE_CODES), [vehicle, vehicleChoice.all]);
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
-  const [parisFilterOpen, setParisFilterOpen] = useState(false);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
   const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
   const streetInput = useMemo(() => {
@@ -219,6 +232,8 @@ export default function Home() {
   const streetSpots = useMemo<StreetSpotData[]>(() => (streetOn && online && streetInput ? streetQuery.data?.spots ?? [] : []), [streetOn, online, streetInput, streetQuery.data]);
   const streetPanelState: StreetPanelState = !streetOn ? "off" : !online ? "offline" : streetInput === null ? "zoom" : streetQuery.isError ? "error" : streetQuery.isLoading ? "loading" : "ok";
   const selectedStreet = streetSpots.find((spot) => spot.id === selectedStreetId) ?? null;
+  // Compteur, liste « Places près de… » et « Je me gare » : seulement les signalements du type de véhicule choisi. La carte montre tous les types avec « Tout ».
+  const streetOfVehicle = useMemo(() => streetSpots.filter((spot) => spot.vehicleType === vehicle), [streetSpots, vehicle]);
   useEffect(() => {
     if (!parisOn || !visibleBounds) { setParisLoad(null); return; }
     let cancelled = false;
@@ -232,23 +247,21 @@ export default function Home() {
   const parisMerged = useMemo(() => {
     const officials: OfficialSpot[] = parisLoad?.status === "ok" ? parisLoad.spots : [];
     if (parisLoad?.status !== "ok" || parisLoad.mode !== "detail") return { gray: officials.map((s): ParisSpot => ({ ...s, color: "gray", reportId: 0 })), hot: [] as ParisSpot[], matched: new Set<number>() };
-    // Seuls les emplacements voiture peuvent être colorés : un signalement « libre / prise » vient d'un conducteur, jamais d'une place moto, vélo ou autre (restées grises).
-    const cars = officials.filter((s) => CAR_SPOT_TYPES.includes(s.t));
-    const others = officials.filter((s) => !CAR_SPOT_TYPES.includes(s.t)).map((s): ParisSpot => ({ ...s, color: "gray", reportId: 0 }));
-    const merged = mergeWithReports(cars, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt })));
-    return { gray: [...merged.spots.filter((x) => x.reportId === 0), ...others], hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
+    // Un signalement ne colore que les places du MÊME type de véhicule (un signalement moto ne colore jamais une place voiture).
+    const merged = mergeByVehicle(officials, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt, vehicleType: r.vehicleType })));
+    return { gray: merged.spots.filter((x) => x.reportId === 0), hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
   }, [parisLoad, streetSpots]);
-  const streetSpotsOnMap = useMemo(() => streetSpots.filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, parisMerged]);
+  const streetSpotsOnMap = useMemo(() => (vehicleChoice.all ? streetSpots : streetOfVehicle).filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, streetOfVehicle, vehicleChoice.all, parisMerged]);
   const streetCreate = trpc.govapark.street.create.useMutation({
     onSuccess: (result, variables) => {
-      toast.success(reportSuccessText(variables.status, result.example), { duration: 6000 });
+      toast.success(reportSuccessText(variables.status, result.example, variables.vehicleType), { duration: 6000 });
       setSelectedStreetId(null); utils.govapark.street.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
   // Signaler une place en rue : la position GPS de l'appareil est demandée au toucher (obligatoire pour SIGNALER seulement, vérifiée par le serveur).
   // Chaque toucher a une réponse visible : bouton « Localisation… » puis « Envoi… », puis toast de confirmation ou message court.
-  const reportStreet = async (status: "free" | "taken", spot?: { latitude: number; longitude: number }) => {
+  const reportStreet = async (status: "free" | "taken", spot?: { latitude: number; longitude: number }, forVehicle: VehicleType = vehicle) => {
     if (!isAuthenticated) { toast.message("Connectez-vous pour signaler une place.", { id: "street-report" }); requireAuth(); return; }
     setStreetLocating(true);
     try {
@@ -257,11 +270,11 @@ export default function Home() {
       if (spot) place = { latitude: spot.latitude, longitude: spot.longitude };
       else if (status === "taken") {
         // « Je me gare » : si une place verte ou orange est à moins de 50 m, c'est elle qui passe en rouge.
-        const near = streetSpots.filter((s) => s.status === "free" && distanceMeters(device.latitude, device.longitude, s.latitude, s.longitude) <= STREET_RULES.deviceMaxMeters)
+        const near = streetSpots.filter((s) => s.vehicleType === forVehicle && s.status === "free" && distanceMeters(device.latitude, device.longitude, s.latitude, s.longitude) <= STREET_RULES.deviceMaxMeters)
           .sort((a, b) => distanceMeters(device.latitude, device.longitude, a.latitude, a.longitude) - distanceMeters(device.latitude, device.longitude, b.latitude, b.longitude))[0];
         if (near) place = { latitude: near.latitude, longitude: near.longitude };
       }
-      streetCreate.mutate({ status, ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
+      streetCreate.mutate({ status, vehicleType: forVehicle, ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
     } catch (error) {
       toast.error(error instanceof GeolocError ? error.message : "Signalement impossible pour le moment.", { id: "street-report", duration: 9000 });
     } finally { setStreetLocating(false); }
@@ -595,7 +608,7 @@ export default function Home() {
   const destPlaces = useMemo(() => {
     if (!destination) return null;
     const rank: Record<string, number> = { green: 0, orange: 1, red: 2, gray: 3 };
-    const street = streetSpots
+    const street = streetOfVehicle
       .map((spot) => ({ spot, meters: distanceMeters(destination.lat, destination.lng, spot.latitude, spot.longitude) }))
       .filter((entry) => entry.meters <= DEST_STREET_RADIUS_M)
       .sort((a, b) => (rank[a.spot.color] ?? 3) - (rank[b.spot.color] ?? 3) || a.meters - b.meters)
@@ -606,7 +619,7 @@ export default function Home() {
       .sort((a, b) => a.meters - b.meters)
       .slice(0, 4);
     return { street, privatePlaces };
-  }, [destination, streetSpots, filtered]);
+  }, [destination, streetOfVehicle, filtered]);
   const chooseSuggestion = (suggestion: AddressSuggestion) => {
     // Le point de départ d'un éventuel « Y aller » est mémorisé AVANT que la carte se recentre sur la destination.
     originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
@@ -736,6 +749,8 @@ export default function Home() {
         </div>
 
         <div className="m-chips">
+          {VEHICLE_TYPES.map((v) => <button key={v} className={`m-chip ${vehicle === v ? "on" : ""}`} aria-pressed={vehicle === v} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false })}>{VEHICLE_CHIP[v]}</button>)}
+          <button className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
           <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
           <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
@@ -751,7 +766,6 @@ export default function Home() {
           <button onClick={() => { setMenuOpen(false); void enableProximityAlerts(); }}><ThumbsUp size={19} />Alerte place à 800 m</button>
           <button onClick={() => { setMenuOpen(false); void enableBackgroundAlerts(); }}><Clock3 size={19} />Alertes en arrière-plan</button>
           {drivingRoute && <button onClick={() => { setMenuOpen(false); toggleVoice(); }}><Navigation size={19} />{voiceGuidanceEnabled ? "Couper la voix" : "Guidage vocal"}</button>}
-          <button onClick={() => { setMenuOpen(false); setParisFilterOpen(true); }}><SlidersHorizontal size={19} />Types d’emplacements Paris</button>
           <button onClick={() => { setMenuOpen(false); setOfflineOpen(true); }}><Download size={19} />Carte hors ligne</button>
           <button onClick={() => navigate("/messages")}><Mail size={19} />Messages</button>
           <button onClick={() => navigate("/mobilite")}><Fuel size={19} />Mobilité</button>
@@ -777,7 +791,7 @@ export default function Home() {
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
           </div>
-          <StreetPanel state={streetPanelState} spots={streetSpots} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
+          <StreetPanel vehicle={vehicle} state={streetPanelState} spots={streetOfVehicle} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
             busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"}
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
             onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />
@@ -926,19 +940,11 @@ export default function Home() {
       {selectedStreet && <Modal title="Place en rue" onClose={() => setSelectedStreetId(null)}>
         {selectedStreet.example && <div className="declaration-warning"><ShieldAlert size={21} /><strong>Exemple de démonstration : ce signalement a été créé en mode démo, il ne reflète aucune situation réelle.</strong></div>}
         <div className={`report-detail-head ${selectedStreet.status === "free" ? "free" : "occupied"}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedStreet.color] }} /><div><strong>{selectedStreet.status === "free" ? "Signalée libre" : "Signalée prise"} {agoText(Math.max(0, Math.floor((Date.now() - new Date(selectedStreet.reportedAt).getTime()) / 60000)))}</strong><p>{selectedStreet.detail}</p></div></div>
-        <dl className="report-facts"><div><dt>Signalé à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.reportedAt))}</dd></div><div><dt>Source</dt><dd>Signalé par un utilisateur</dd></div><div><dt>Fiabilité</dt><dd>{selectedStreet.reliabilityText}{selectedStreet.agreeing > 1 ? ` · ${selectedStreet.agreeing} utilisateurs concordants` : ""}</dd></div><div><dt>Disparaît à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.expiresAt))}</dd></div></dl>
+        <dl className="report-facts"><div><dt>Signalé à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.reportedAt))}</dd></div><div><dt>Véhicule</dt><dd>{VEHICLE_NAME[selectedStreet.vehicleType]}</dd></div><div><dt>Source</dt><dd>Signalé par un utilisateur</dd></div><div><dt>Fiabilité</dt><dd>{selectedStreet.reliabilityText}{selectedStreet.agreeing > 1 ? ` · ${selectedStreet.agreeing} utilisateurs concordants` : ""}</dd></div><div><dt>Disparaît à</dt><dd>{new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(selectedStreet.expiresAt))}</dd></div></dl>
         <div className="confidence-track"><span style={{ width: `${selectedStreet.reliabilityPct}%` }} /></div>
         <p className="report-caution">Place gratuite sur la voie publique, signalée par un utilisateur. Ce n’est pas une vérité garantie : elle a pu être prise depuis. Govapark ne la réserve pas.</p>
         <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedStreet; setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}><Navigation size={18} />Y aller</button>
-        {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
-      </Modal>}
-
-      {parisFilterOpen && <Modal title="Types d’emplacements de Paris" onClose={() => setParisFilterOpen(false)}>
-        <div className="form-stack">
-          {SPOT_TYPE_CODES.map((code) => <label className="check-row" key={code}><input type="checkbox" checked={parisTypes.has(code)} onChange={() => setParisTypes((previous) => { const next = new Set(previous); if (next.has(code)) next.delete(code); else next.add(code); return next; })} /> {SPOT_TYPE_LABEL[code]}</label>)}
-          <p className="field-help">Par défaut : emplacements où une voiture peut se garer (payant, mixte, gratuit) et places moto (deux-roues motorisés). Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
-          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(DEFAULT_SPOT_TYPES))}>Voitures et motos</button><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
-        </div>
+        {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet, selectedStreet.vehicleType)}>Place prise (je m’y gare)</button>}
       </Modal>}
 
       {selectedParis && (() => {
@@ -949,7 +955,7 @@ export default function Home() {
         return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition}
           onClose={() => setSelectedParis(null)}
           onGo={() => { setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, formatStreet(spot.street, spot.num) || info.title, 0, { kind: "street" }); }}
-          onReport={(status) => { setSelectedParis(null); void reportStreet(status, { latitude: spot.lat, longitude: spot.lng }); }} />;
+          onReport={(status) => { setSelectedParis(null); void reportStreet(status, { latitude: spot.lat, longitude: spot.lng }, vehicleTypesForSpot(spot.t)[0] ?? vehicle); }} />;
       })()}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>

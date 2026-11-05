@@ -2,6 +2,7 @@ import { Navigation } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATUS_COLORS } from "@contracts/parking-status";
 import { describeParisSpot, interpretRegime } from "@contracts/paris-spots";
+import { vehicleTypesForSpot } from "@contracts/vehicle-types";
 import { STREET_RULES, distanceMeters } from "@contracts/street-reports";
 
 export type ParisSpotInfo = { lat: number; lng: number; t: number; places: number; regime: number; street: string; num: number; color: string; reportId: number };
@@ -12,7 +13,7 @@ export type ParisSpotReport = { status: "free" | "taken"; reportedAt: string; ex
  * titre (type + rue), nombre de places, précision de régime, et une ligne de statut SEULEMENT si un utilisateur l'a signalée (place grise : aucun texte de statut).
  * La source, la licence et la mention « à titre indicatif » sont dans le panneau « i », pas ici.
  * Aucune promesse « vous pouvez vous garer » : seul le régime décide (voir interpretRegime), jamais la couleur.
- * Les boutons de signalement n'apparaissent que si le GPS de l'appareil est déjà à portée de la place ET si le régime autorise une voiture.
+ * Les boutons de signalement n'apparaissent que si le GPS de l'appareil est déjà à portée de la place ET si la place correspond à un type de véhicule (voiture, moto, utilitaire/PL, bus, vélo) : le signalement porte alors ce type.
  */
 export function ParisSpotCard({ spot, regimes, report, device, onGo, onReport, onClose }: {
   spot: ParisSpotInfo; regimes: Array<[string, string]>; report: ParisSpotReport | null; device: { lat: number; lng: number } | null;
@@ -34,7 +35,7 @@ export function ParisSpotCard({ spot, regimes, report, device, onGo, onReport, o
         {card.note && <p className="pf-note">{card.note}</p>}
         {card.status && <p className="pf-status"><span className="report-status-dot" style={{ background: dot }} />{card.status}</p>}
         <button className="btn btn-secondary btn-full" onClick={onGo}><Navigation size={18} />Y aller</button>
-        {card.carsOk && near && <div className="pf-report">
+        {vehicleTypesForSpot(spot.t).length > 0 && near && <div className="pf-report">
           <button className="btn btn-secondary" onClick={() => onReport("free")}>Je libère cette place</button>
           <button className="btn btn-secondary" onClick={() => onReport("taken")}>Je m'y gare</button>
         </div>}

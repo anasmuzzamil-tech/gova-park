@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { MapPin, Car, RefreshCw, WifiOff, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
 import { countFreeNearby, STREET_RULES } from "@contracts/street-reports";
+import { VEHICLE_NAME, VEHICLE_PARK_SUFFIX, type VehicleType } from "@contracts/vehicle-types";
 
 type PanelSpot = { status: "free" | "taken"; latitude: number; longitude: number; reportedAt: string; example: boolean };
 export type StreetPanelState = "ok" | "loading" | "error" | "offline" | "zoom" | "off";
@@ -11,8 +12,11 @@ export type StreetPanelState = "ok" | "loading" | "error" | "offline" | "zoom" |
  * Le nombre n'est affiché que si la donnée est réellement connue (jamais de 0 par défaut quand on ne sait pas) ;
  * un toucher sur la pastille donne la phrase complète (rayon, délai, mention « exemple », aucune garantie).
  */
-export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLabel, onFree, onTaken, onRetry, onEnableLayer }: {
-  state: StreetPanelState; spots: PanelSpot[]; reference: { lat: number; lng: number }; hasPosition: boolean;
+/** Icône du véhicule sur « Je me gare » (le libellé complet, « Je me gare (moto) », est dans l'aria-label : il ne tient pas sur une ligne à 390 px). */
+const VEHICLE_ICON: Record<VehicleType, string> = { car: "🚗", moto: "🏍️", bus: "🚌", bike: "🚲" };
+export function StreetPanel({ vehicle, state, spots, reference, hasPosition, busy, busyLabel, onFree, onTaken, onRetry, onEnableLayer }: {
+  /** Type de véhicule choisi : `spots` ne contient déjà que ses signalements ; il nomme le bouton « Je me gare » et le texte du compteur. */
+  vehicle: VehicleType; state: StreetPanelState; spots: PanelSpot[]; reference: { lat: number; lng: number }; hasPosition: boolean;
   busy: boolean; busyLabel: string | null; onFree: () => void; onTaken: () => void; onRetry: () => void; onEnableLayer: () => void;
 }) {
   // Horloge locale : un signalement qui passe de 5 min cesse de compter sans attendre le prochain rafraîchissement du serveur.
@@ -20,7 +24,7 @@ export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLa
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 10000); return () => window.clearInterval(t); }, []);
   const known = state === "ok";
   const { count, examples } = known ? countFreeNearby(spots, reference, new Date(now)) : { count: 0, examples: 0 };
-  const where = hasPosition ? "près de vous" : "près du centre de la carte";
+  const where = `${vehicle === "car" ? "" : `(${VEHICLE_NAME[vehicle]}) `}${hasPosition ? "près de vous" : "près du centre de la carte"}`;
   const minutes = STREET_RULES.greenMinutes;
 
   let pill: JSX.Element;
@@ -49,7 +53,7 @@ export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLa
     <section className="m-street-bar" aria-label="Places gratuites en rue : signaler">
       {pill}
       <button type="button" className="m-street-btn free" aria-label="Je libère ma place" disabled={busy} onClick={onFree}><MapPin size={18} /><span>{busy && busyLabel ? busyLabel : "Je libère"}</span></button>
-      <button type="button" className="m-street-btn taken" aria-label="Je me gare" disabled={busy} onClick={onTaken}><Car size={18} /><span>{busy && busyLabel ? busyLabel : "Je me gare"}</span></button>
+      <button type="button" className="m-street-btn taken" aria-label={`Je me gare${VEHICLE_PARK_SUFFIX[vehicle]}`} disabled={busy} onClick={onTaken}>{vehicle === "car" ? <Car size={18} /> : <span aria-hidden="true">{VEHICLE_ICON[vehicle]}</span>}<span>{busy && busyLabel ? busyLabel : "Je me gare"}</span></button>
     </section>
   );
 }
