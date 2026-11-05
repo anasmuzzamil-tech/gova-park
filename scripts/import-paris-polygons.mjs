@@ -8,8 +8,9 @@
 // Le CSV source (37 Mo) n'est JAMAIS versionné : seuls les fichiers générés le sont.
 //
 // Produit <out>/polygons/index.json et <out>/polygons/tiles/<ix>_<iy>.json (format version 1, voir contracts/paris-polygons.ts).
-// - Seules les emprises où une VOITURE ordinaire peut se garer sont gardées (même règle que l'affichage par défaut des emplacements :
-//   interpretRegime(...).cars === true, c'est-à-dire PAYANT MIXTE, PAYANT ROTATIF, GRATUIT). Les autres régimes ne sont pas importés.
+// - Seules les emprises de l'affichage par défaut « Voitures et motos » sont gardées (même règle que les emplacements, via interpretRegime) :
+//   voiture ordinaire (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT) ou deux-roues motorisé (2 ROUES | Motos payant Mixte / Rotatif).
+//   Les vélos, « 2 ROUES | Mixte » (incertain) et tous les autres régimes ne sont pas importés.
 // - Grille : MÊME origine, MÊME taille (0,02 degré) et mêmes clés que les tuiles des emplacements (origine lue dans <out>/index.json).
 // - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type (payant/gratuit),
 //   forme (rectangle ou autre) et un point d'ancrage = le point geo_point_2d, identique (au 1e-5 degré) à celui de l'emplacement correspondant.
@@ -18,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { GRID, interpretRegime, toE5 } from "../contracts/paris-spots.ts";
-import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, isCarRegime, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
+import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, isDefaultRegime, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -57,7 +58,7 @@ const BOX = { south: 48.7, north: 49.0, west: 2.1, east: 2.6 };
 const stat = { lines: rows.length, notCar: 0, noShape: 0, badRing: 0, outside: 0, noPoint: 0, kept: 0, parts: 0, multi: 0, rect: 0, shape: 0, split: 0, placesZero: 0, placesOver: 0 };
 const items = []; const vertexHist = {}; let placesSplit = 0;
 for (const r of rows) {
-  if (!isCarRegime(r[C.prio], r[C.part])) { stat.notCar++; continue; }
+  if (!isDefaultRegime(r[C.prio], r[C.part])) { stat.notCar++; continue; }
   const t = interpretRegime(r[C.prio], r[C.part]).t;
   let geometry = null; try { geometry = JSON.parse(r[C.shape]); } catch { /* traité plus bas */ }
   const rings = outerRings(geometry);
@@ -86,7 +87,7 @@ for (const r of rows) {
   if (any) stat.kept++;
 }
 console.log(`Fichier : ${file}`);
-console.log(`Lignes : ${stat.lines} · emprises voitures gardées : ${stat.kept} (${stat.parts} contours, dont ${stat.multi} multi-parties) · non voitures ignorées : ${stat.notCar}`);
+console.log(`Lignes : ${stat.lines} · emprises voitures et motos gardées : ${stat.kept} (${stat.parts} contours, dont ${stat.multi} multi-parties) · autres régimes ignorés : ${stat.notCar}`);
 console.log(`Rejets : ${stat.noShape} sans contour, ${stat.noPoint} sans point, ${stat.badRing} contours invalides, ${stat.outside} hors de Paris`);
 console.log(`Formes : ${stat.rect} rectangles (dont ${stat.split} avec 2 à ${POLY.splitMax} places : découpe indicative), ${stat.shape} autres formes (contour seul) · places réelles à 0/absent : ${stat.placesZero} · plus de ${POLY.splitMax} places : ${stat.placesOver}`);
 console.log(`Sommets par contour (nombre : contours) : ${Object.entries(vertexHist).slice(0, 8).map(([k, v]) => `${k}:${v}`).join(" ")} …`);
@@ -100,21 +101,31 @@ if (!origin || !Number.isFinite(origin.south) || !Number.isFinite(origin.west)) 
   origin = { south: r5(Math.floor(Math.min(...items.map((p) => p.latE5)) / 1e5 / GRID.tileDeg) * GRID.tileDeg), west: r5(Math.floor(Math.min(...items.map((p) => p.lngE5)) / 1e5 / GRID.tileDeg) * GRID.tileDeg) };
   console.warn(`Index des emplacements introuvable : origine recalculée ${JSON.stringify(origin)}.`);
 }
+// Lien avec les emplacements déjà importés : un contour est colorable seulement si un emplacement a le même point d'ancrage (E5).
+// Un point à cheval sur une frontière d'arrondi (différence de 1e-12 degré entre les deux CSV) peut tomber sur le E5 voisin : on le recale alors
+// sur l'emplacement voisin (au plus 1 E5 = 1,1 m d'écart) s'il en existe un SEUL ; sinon il reste tel quel (gris, jamais coloré).
+let anchors = null, snapped = 0;
+try {
+  const spotIndex = JSON.parse(fs.readFileSync(path.join(outDir, "index.json"), "utf8"));
+  anchors = new Set();
+  for (const key of Object.keys(spotIndex.tiles)) for (const row of JSON.parse(fs.readFileSync(path.join(outDir, "tiles", `${key}.json`), "utf8")).rows) anchors.add(anchorKey(row[0], row[1]));
+} catch { /* fichiers des emplacements absents */ }
+if (anchors) for (const p of items) {
+  if (anchors.has(anchorKey(p.latE5, p.lngE5))) continue;
+  const near = [];
+  for (const dy of [-1, 0, 1]) for (const dx of [-1, 0, 1]) if ((dx || dy) && anchors.has(anchorKey(p.latE5 + dy, p.lngE5 + dx))) near.push([dy, dx]);
+  if (near.length === 1) { p.latE5 += near[0][0]; p.lngE5 += near[0][1]; snapped++; }
+}
 const tiles = bucketPolygons(items, origin, POLY.tileDeg);
 let bytes = 0, biggest = { key: "", size: 0 }; const tileCounts = {}; const sizes = new Map();
 for (const [key, tile] of tiles) { const s = JSON.stringify(tile); sizes.set(key, s); const n = Buffer.byteLength(s); bytes += n; if (n > biggest.size) biggest = { key, size: n }; tileCounts[key] = tile.rows.length; }
 const index = { version: 1, source: PARIS_POLYGONS_SOURCE, attribution: PARIS_POLYGONS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: items.length, rectangles: stat.rect, origin, tileDeg: POLY.tileDeg, tiles: tileCounts };
 const indexText = JSON.stringify(index); bytes += Buffer.byteLength(indexText);
 console.log(`Tuiles : ${tiles.size} · total ${(bytes / 1048576).toFixed(2)} Mo non compressé · plus grosse tuile ${biggest.key} = ${(biggest.size / 1024).toFixed(1)} Ko`);
-
-// Lien avec les emplacements déjà importés : un contour est colorable seulement si un emplacement a le même point d'ancrage (E5).
-try {
-  const spotIndex = JSON.parse(fs.readFileSync(path.join(outDir, "index.json"), "utf8"));
-  const anchors = new Set();
-  for (const key of Object.keys(spotIndex.tiles)) for (const row of JSON.parse(fs.readFileSync(path.join(outDir, "tiles", `${key}.json`), "utf8")).rows) anchors.add(anchorKey(row[0], row[1]));
+if (anchors) {
   const linked = items.filter((p) => anchors.has(anchorKey(p.latE5, p.lngE5))).length;
-  console.log(`Lien avec les emplacements importés (même point E5) : ${linked} contours sur ${items.length} (${((100 * linked) / items.length).toFixed(2)} %).`);
-} catch { console.log("Lien avec les emplacements : non vérifié (fichiers des emplacements absents)."); }
+  console.log(`Lien avec les emplacements importés (même point E5) : ${linked} contours sur ${items.length} (${((100 * linked) / items.length).toFixed(2)} %), dont ${snapped} recalé(s) d'un E5.`);
+} else console.log("Lien avec les emplacements : non vérifié (fichiers des emplacements absents).");
 
 if (inspect) { console.log("--inspect : rien n'a été écrit."); process.exit(0); }
 if (biggest.size > 150 * 1024) console.warn("ATTENTION : une tuile dépasse 150 Ko.");

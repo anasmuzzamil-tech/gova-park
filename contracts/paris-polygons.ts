@@ -7,7 +7,7 @@
 // vient uniquement d'un signalement d'utilisateur récent (contracts/street-reports.ts), via le point d'ancrage = l'emplacement correspondant.
 //
 // Fonctions pures, testées dans api/paris-polygons.test.ts ; utilisées par le site et par `scripts/import-paris-polygons.mjs`.
-import { interpretRegime, tileKey, toE5 } from "./paris-spots.ts";
+import { SPOT_TYPE, interpretRegime, tileKey, toE5 } from "./paris-spots.ts";
 
 export const PARIS_POLYGONS_SOURCE = {
   name: "Stationnement sur voie publique - emprises",
@@ -43,6 +43,14 @@ export const POLY = {
 
 /** 1 = rectangle (découpe indicative possible) ; 2 = autre forme (contour seul). */
 export const POLY_KIND = { rect: 1, shape: 2 } as const;
+
+/** Deux-roues motorisés (« 2 ROUES » + « Motos payant Mixte » / « Motos payant Rotatif ») : jamais les vélos, ni « 2 ROUES | Mixte » (incertain). */
+export function isMotoRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
+  return interpretRegime(prioritaire, particulier).t === SPOT_TYPE.moto;
+}
+
+/** Emprises importées : celles affichées par défaut (« Voitures et motos »), voiture ordinaire OU deux-roues motorisé. */
+export const isDefaultRegime = (prioritaire: string | null | undefined, particulier: string | null | undefined): boolean => isCarRegime(prioritaire, particulier) || isMotoRegime(prioritaire, particulier);
 
 /** Une voiture ordinaire peut-elle s'y garer ? MÊME règle que l'affichage par défaut des emplacements (interpretRegime) : payant mixte / rotatif, gratuit. */
 export function isCarRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
@@ -190,7 +198,7 @@ export type PolygonFeatures = { outlines: GeoJSON.FeatureCollection<GeoJSON.Poly
 /**
  * Entités à dessiner : un contour par emprise (dont le type est coché), plus les séparateurs indicatifs des rectangles dont le nombre de places
  * réelles est connu (2 à 12). `colorOf` donne la couleur d'après un signalement récent (clé d'ancrage -> couleur) ; sans signalement : gris.
- * `types` : codes de type à garder (le filtre « Voitures seulement / Tout afficher » de la carte).
+ * `types` : codes de type à garder (le filtre « Voitures et motos / Tout afficher » de la carte).
  */
 export function buildPolygonFeatures(polys: ParisPolygon[], colorOf: ReadonlyMap<string, PolygonColor> | null, types: ReadonlySet<number>): PolygonFeatures {
   const outlines: GeoJSON.Feature<GeoJSON.Polygon>[] = [], separators: GeoJSON.Feature<GeoJSON.LineString>[] = [];
