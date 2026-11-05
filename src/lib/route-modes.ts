@@ -12,7 +12,7 @@ export type ModeTab = {
   durationS: number | null;
   /** Vrai quand la durée est une estimation (moto, vélo à vol d'oiseau). */
   estimate: boolean;
-  /** Texte court de l'onglet : « Voiture 14 min », « Moto ≈ 14 min », « Vélo — » si inconnue. */
+  /** Texte court de l'onglet : « Voiture 14 min », « Moto ≈ 14 min », « Vélo — » si non connue. */
   text: string;
   /** Explication de l'estimation, affichée sous les onglets quand l'onglet est actif (jamais pour une durée exacte du service). */
   note: string | null;

@@ -210,7 +210,7 @@ export default function Home() {
   }, [visibleCenter.lat, visibleCenter.lng, filters, onlyAvailable, drivingRoute]);
   const searchQuery = trpc.govapark.listings.search.useQuery(searchInput, { staleTime: 10000, refetchInterval: 30000, placeholderData: (previous) => previous });
   // Mode hors ligne : jamais de "disponible" issu d'un cache. Hors ligne (ou serveur en erreur), les places affichées
-  // viennent de la dernière réponse enregistrée localement et passent en gris/inconnu avec la date d'actualisation.
+  // viennent de la dernière réponse enregistrée localement et passent en gris avec la date d'actualisation.
   const online = useOnlineStatus();
   const [offlineOpen, setOfflineOpen] = useState(false);
   const cacheMode = !online || searchQuery.isError;
@@ -595,7 +595,7 @@ export default function Home() {
     if (isSamePlace(origin, destination)) {
       // Départ = position réelle : on est déjà sur place. Départ = simple centre de la carte : ce n'est pas une position, on le dit sans erreur.
       setNavDest(null);
-      toast.message(userPosition ? "Vous êtes à moins de 100 m de cette destination." : "Position inconnue : touchez « Ma position » (la cible en haut) pour calculer le trajet depuis chez vous.", { id: "route-near" });
+      toast.message(userPosition ? "Vous êtes à moins de 100 m de cette destination." : "Position non activée : touchez « Ma position » (la cible en haut) pour calculer le trajet depuis chez vous.", { id: "route-near" });
       return;
     }
     lastTrip.current = { origin: { lat: origin.lat, lng: origin.lng }, dest: { lat: destination.lat, lng: destination.lng } };

@@ -64,7 +64,7 @@ describe("favoris nommés", () => {
     let s = EMPTY_PLACES; for (let i = 1; i <= 20; i++) s = setFavorite(s, "custom", P(i), `Lieu ${i}`);
     expect(s.favorites).toHaveLength(MAX_FAVORITES);
   });
-  it("suppression par identifiant ; identifiant inconnu : inchangé", () => {
+  it("suppression par identifiant ; identifiant absent de la liste : inchangé", () => {
     const s = setFavorite(setFavorite(EMPTY_PLACES, "home", P(1)), "custom", P(2), "Gym");
     expect(removeFavorite(s, "home").favorites.map((f) => f.name)).toEqual(["Gym"]);
     expect(removeFavorite(s, "zzz")).toBe(s);

@@ -28,7 +28,7 @@ export class GeolocError extends Error {
 
 // ----- Diagnostic (affiché dans le panneau « i », pour qu'une capture d'écran suffise à comprendre) -----
 export type GeolocDiag = { permission: string; lastCode: number | null; lastReason: GeolocReason | null; accuracy: number | null; attempt: string | null; at: number | null };
-let diag: GeolocDiag = { permission: "inconnue", lastCode: null, lastReason: null, accuracy: null, attempt: null, at: null };
+let diag: GeolocDiag = { permission: "non lue", lastCode: null, lastReason: null, accuracy: null, attempt: null, at: null };
 const listeners = new Set<() => void>();
 const setDiag = (patch: Partial<GeolocDiag>) => { diag = { ...diag, ...patch }; listeners.forEach((l) => l()); };
 export const getGeolocDiag = () => diag;
@@ -36,12 +36,12 @@ export const subscribeGeolocDiag = (l: () => void) => { listeners.add(l); return
 export const noteGeolocError = (code: number) => setDiag({ lastCode: code, lastReason: reasonOfCode(code), at: Date.now() });
 export const noteGeolocFix = (accuracy: number, attempt: string) => setDiag({ accuracy: Math.round(accuracy), attempt, at: Date.now() });
 
-/** Lecture seule de l'état d'autorisation, à titre d'information : n'empêche jamais une demande (Safari ancien : « inconnue »). */
+/** Lecture seule de l'état d'autorisation, à titre d'information : n'empêche jamais une demande (Safari ancien : « non lue »). */
 export async function refreshPermissionState(): Promise<void> {
   try {
     const status = await navigator.permissions?.query({ name: "geolocation" as PermissionName });
     if (status) setDiag({ permission: ({ granted: "autorisée", denied: "refusée", prompt: "à demander" } as Record<string, string>)[status.state] ?? status.state });
-  } catch { setDiag({ permission: "inconnue" }); }
+  } catch { setDiag({ permission: "non lue" }); }
 }
 
 // ----- Acquisition -----
