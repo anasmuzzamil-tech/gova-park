@@ -9,10 +9,10 @@
 //
 // Produit <out>/polygons/index.json et <out>/polygons/tiles/<type>/<ix>_<iy>.json (format version 2, voir contracts/paris-polygons.ts).
 // - Sont gardées les emprises reliées à un type de véhicule (contracts/vehicle-types.ts, via interpretRegime, jamais deviné) :
-//   voiture (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT), moto (2 ROUES | Motos payant Mixte / Rotatif), bus (AUTOCAR), vélo (2 ROUES | Vélos, Vélo-cargo, Box à vélos ; Vélib\').
-//   les zones de livraison (aucun type du sélecteur : pas de contour), « 2 ROUES | Mixte » (incertain), PMR, services et tous les autres régimes ne sont pas importés.
+//   voiture (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT), moto (2 ROUES | Motos payant Mixte / Rotatif), livraison (LIVRAISON : ZL permanente, ZL périodique), vélo (2 ROUES | Vélos, Vélo-cargo, Box à vélos ; Vélib\').
+//   les autocars (aucun type du sélecteur), « 2 ROUES | Mixte » (incertain), PMR, services et tous les autres régimes ne sont pas importés.
 // - Grille : MÊME origine, MÊME taille (0,02 degré) et mêmes clés que les tuiles des emplacements (origine lue dans <out>/index.json).
-// - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type d'emplacement (payant, gratuit, moto, autocar, vélo),
+// - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type d'emplacement (payant, gratuit, moto, livraison, vélo),
 //   forme (rectangle ou autre) et un point d'ancrage = le point geo_point_2d, identique (au 1e-5 degré) à celui de l'emplacement correspondant.
 // - Les lignes des deux CSV ne sont PAS dans le même ordre et « Nouvel identifiant » n'est pas unique : on relie par la POSITION (ancrage), jamais par l'ordre.
 // Aucune géométrie n'est inventée : un contour invalide (moins de 3 sommets, hors de Paris) est rejeté et compté.

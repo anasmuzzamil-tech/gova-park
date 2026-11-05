@@ -102,7 +102,10 @@ describe("interprétation des régimes du fichier de Paris", () => {
     expect(interpretRegime("2 ROUES", "Vélos").title).toBe("Place vélo");
   });
   it("une zone de livraison périodique ne promet aucun horaire", () => {
-    expect(interpretRegime("LIVRAISON", "ZL périodique").note).toContain("horaires non fournis");
+    const r = interpretRegime("LIVRAISON", "ZL périodique");
+    expect(r.title).toBe("Zone de livraison");
+    expect(r.note).toBe("Régime : ZL périodique ; voir le panneau pour les horaires");
+    expect(/libre|dispo/i.test(`${r.title} ${r.note}`)).toBe(false);
   });
   it("valeur inconnue ou incertaine : « Régime : valeur brute », sans promesse, hors affichage par défaut", () => {
     const a = interpretRegime("AUTRE REGIME", "Taxi gaine autorisée");

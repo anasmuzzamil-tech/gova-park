@@ -157,7 +157,7 @@ describe("signalements par type de véhicule", () => {
     expect(list.every((x) => x.agreeing === 1 && x.reliabilityPct === 50)).toBe(true);
   });
   it("les règles de couleur restent celles de la voiture pour tous les types : vert 5 min, orange jusqu'à 10 min, puis disparition", () => {
-    for (const v of ["car", "moto", "bus", "bike"] as const) {
+    for (const v of ["car", "moto", "delivery", "bike"] as const) {
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(4) })])[0].color).toBe("green");
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(7) })])[0].color).toBe("orange");
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(10) })])).toEqual([]);
@@ -173,14 +173,14 @@ describe("signalements par type de véhicule", () => {
     ];
     expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "moto").count).toBe(1);
     expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "car").count).toBe(2);
-    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "bus").count).toBe(0);
+    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "delivery").count).toBe(0);
     expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now).count).toBe(3);
   });
   it("validation stricte : les cinq types sont acceptés, tout le reste refusé, absent = voiture", () => {
     const base = { status: "free", ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
-    for (const v of ["car", "moto", "bus", "bike"]) expect(parseStreetReportInput({ ...base, vehicleType: v }).vehicleType).toBe(v);
+    for (const v of ["car", "moto", "delivery", "bike"]) expect(parseStreetReportInput({ ...base, vehicleType: v }).vehicleType).toBe(v);
     expect(parseStreetReportInput(base).vehicleType).toBe("car");
-    for (const bad of ["utility", "truck", "CAR", "", null, 1, {}, ["car"], "car "]) expect(() => parseStreetReportInput({ ...base, vehicleType: bad }), String(bad)).toThrow();
+    for (const bad of ["bus", "utility", "truck", "CAR", "", null, 1, {}, ["car"], "car "]) expect(() => parseStreetReportInput({ ...base, vehicleType: bad }), String(bad)).toThrow();
   });
   it("le type est enregistré dans la ligne préparée et sert au calcul de fiabilité (voisins d'un autre type ignorés)", () => {
     const input = { status: "free" as const, vehicleType: "moto" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
@@ -189,13 +189,13 @@ describe("signalements par type de véhicule", () => {
     if (p.ok) { expect(p.row.vehicleType).toBe("moto"); expect(p.row.reliability).toBe(50); }
   });
   it("anti-abus inchangé : même limite d'une fois par minute quel que soit le type", () => {
-    const input = { status: "free" as const, vehicleType: "bus" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
+    const input = { status: "free" as const, vehicleType: "delivery" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
     expect(prepareStreetReport(input, 7, [{ ...P, createdAt: new Date(now.getTime() - 10000) }], [], now).ok).toBe(false);
     expect(prepareStreetReport({ ...input, ...metersNorth(200), deviceLatitude: P.latitude + 200 / 111320 }, 7, [{ ...P, createdAt: new Date(now.getTime() - 10000) }], [], now).ok).toBe(true);
   });
   it("confirmations : la voiture garde son texte, les autres types sont nommés", () => {
     expect(reportSuccessText("free", false, "moto")).toBe("Merci, place moto signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
-    expect(reportSuccessText("taken", false, "bus")).toBe("Merci, place bus signalée prise : rouge 10 min.");
+    expect(reportSuccessText("taken", false, "delivery")).toBe("Merci, place livraison signalée prise : rouge 10 min.");
     expect(reportSuccessText("free", true, "bike")).toContain("place vélo signalée libre");
     expect(reportSuccessText("free", false)).toBe("Merci, place signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
   });

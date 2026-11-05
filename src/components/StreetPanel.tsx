@@ -13,7 +13,7 @@ export type StreetPanelState = "ok" | "loading" | "error" | "offline" | "zoom" |
  * un toucher sur la pastille donne la phrase complète (rayon, délai, mention « exemple », aucune garantie).
  */
 /** Icône du véhicule sur « Je me gare » (le libellé complet, « Je me gare (moto) », est dans l'aria-label : il ne tient pas sur une ligne à 390 px). */
-const VEHICLE_ICON: Record<VehicleType, string> = { car: "🚗", moto: "🏍️", bus: "🚌", bike: "🚲" };
+const VEHICLE_ICON: Record<VehicleType, string> = { car: "🚗", moto: "🏍️", delivery: "📦", bike: "🚲" };
 export function StreetPanel({ vehicle, state, spots, reference, hasPosition, busy, busyLabel, onFree, onTaken, onRetry, onEnableLayer }: {
   /** Type de véhicule choisi : `spots` ne contient déjà que ses signalements ; il nomme le bouton « Je me gare » et le texte du compteur. */
   vehicle: VehicleType; state: StreetPanelState; spots: PanelSpot[]; reference: { lat: number; lng: number }; hasPosition: boolean;

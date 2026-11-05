@@ -76,8 +76,8 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
       // « Mixte » seul : le fichier ne dit pas s'il s'agit de motos ou de vélos (les lignes ont presque toutes des arceaux comme mobilier) : jamais deviné.
       return rawRegime(prio, part);
     case "livraison":
-      if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Réservée aux livraisons (permanente)");
-      if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Réservée aux livraisons (périodique) ; horaires non fournis, voir le panneau");
+      if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Réservée aux livraisons");
+      if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Régime : ZL périodique ; voir le panneau pour les horaires");
       return rawRegime(prio, part);
     case "gig/gic":
       if (q.startsWith("gig/gic")) return info(SPOT_TYPE.pmr, false, "Place PMR (GIG/GIC)", `Réservée aux personnes à mobilité réduite titulaires de la carte${q === "gig/gic standard" ? "" : ` (régime : ${part})`}`);

@@ -53,12 +53,12 @@ describe("classification voiture / non-voiture (mêmes règles que les emplaceme
     expect(isMotoRegime("2 ROUES", "motos PAYANT rotatif")).toBe(true);
     expect(isMotoRegime("", "")).toBe(false);
   });
-  it("type de véhicule d'une emprise : voiture, moto, bus (autocars), vélo ; livraison : aucun ; jamais deviné", () => {
+  it("type de véhicule d'une emprise : voiture, moto, livraison, vélo ; autocars : aucun ; jamais deviné", () => {
     const got = Object.fromEntries(REAL_REGIMES.map(([p, q]) => [`${p}|${q}`, vehicleOfRegime(p, q)]));
     expect(got["PAYANT MIXTE|Mixte"]).toBe("car"); expect(got["GRATUIT|Gratuit"]).toBe("car");
     expect(got["2 ROUES|Motos payant Rotatif"]).toBe("moto");
-    expect(got["AUTOCAR|Autocar (payant)"]).toBe("bus"); expect(got["AUTOCAR|Autocar dépose"]).toBe("bus");
-    expect(got["LIVRAISON|ZL permanente"]).toBeNull(); expect(got["LIVRAISON|ZL périodique"]).toBeNull(); // zones de livraison : aucun type, pas de contour
+    expect(got["AUTOCAR|Autocar (payant)"]).toBeNull(); expect(got["AUTOCAR|Autocar dépose"]).toBeNull(); // autocars : aucun type, pas de contour
+    expect(got["LIVRAISON|ZL permanente"]).toBe("delivery"); expect(got["LIVRAISON|ZL périodique"]).toBe("delivery");
     expect(got["2 ROUES|Vélos"]).toBe("bike"); expect(got["2 ROUES|Vélo-cargo"]).toBe("bike"); expect(got["2 ROUES|Box à vélos"]).toBe("bike");
     for (const k of ["2 ROUES|Mixte", "PAYANT MIXTE|Mixte Marché", "GIG/GIC|GIG/GIC Standard", "AUTRE REGIME|Marché", "AUTRE REGIME|SP - Police", "LOCATION|Autopartage", "ELECTRIQUE|Bélib'"]) expect(got[k], k).toBeNull();
     expect(vehicleOfRegime("", "")).toBeNull();
