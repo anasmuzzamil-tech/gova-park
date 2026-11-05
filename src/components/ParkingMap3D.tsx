@@ -120,9 +120,11 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: { lat: number; lng:
 }
 
 export default function ParkingMap3D({
-  center, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
+  /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
+  focus?: { id: number; lat: number; lng: number; zoom: number } | null;
   listings: MapListing[];
   reports: MapReport[];
   streetSpots?: MapStreetSpot[];
@@ -283,6 +285,16 @@ export default function ParkingMap3D({
     if (!map || !changed) return;
     map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), START_ZOOM), duration: 600 });
   }, [center]);
+
+  // Adresse choisie dans la recherche : zoom rue sur la destination (après le recentrage ci-dessus, qui garde sinon le zoom courant).
+  const lastFocus = useRef(0);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!focus || focus.id === lastFocus.current || !map || !ready) return;
+    lastFocus.current = focus.id;
+    autoFitDone.current = true;
+    map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom, bearing: 0, duration: 700 });
+  }, [focus, ready]);
 
   // Cap calculé depuis les positions successives.
   useEffect(() => {

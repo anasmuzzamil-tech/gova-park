@@ -772,3 +772,15 @@ body.is-navigating .bottom-nav { display: none; }
 .m-sheet-toggle b { font-size: 14.5px; }
 .m-sheet-toggle span { font-size: 12.5px; }
 .m-grip { position: absolute; top: 4px; left: 50%; width: 32px; height: 4px; margin-left: -16px; border-radius: 2px; background: #c3c1d3; }
+
+/* ===== Recherche d'adresse centrée sur les places : panneau « Places près de [adresse] » (remplace la liste du bas, un seul panneau) ===== */
+.m-dest-head { margin: 0 14px 4px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.m-dest-head b { flex: 1; min-width: 0; padding: 7px 12px; border-radius: 14px; background: #fff; color: #17142b; font: 800 14px/1.25 "Manrope", sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 14px #1a143a30; }
+.m-dest-go { flex: none; min-height: 44px; padding: 0 18px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 22px; background: #fff; color: var(--primary); font: 800 14px "Manrope", sans-serif; box-shadow: 0 4px 14px #1a143a30; }
+.m-dest-go:disabled { opacity: .7; }
+.m-scard { flex: 0 0 min(78vw, 280px); min-height: 64px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 18px; text-align: left; color: #17142b; font-family: "Manrope", sans-serif; }
+.m-scard .m-state { position: static; flex: none; }
+.m-scard-main { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.m-scard-main strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-scard-main small { color: #5a5873; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-scard .m-dist { flex: none; }

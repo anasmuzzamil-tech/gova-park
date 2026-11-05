@@ -57,6 +57,17 @@ function Recenter({ center }: { center: Center }) {
   return null;
 }
 
+function FocusAddress({ focus }: { focus: { id: number; lat: number; lng: number; zoom: number } | null }) {
+  const map = useMap();
+  const last = useRef(0);
+  useEffect(() => {
+    if (!focus || focus.id === last.current) return;
+    last.current = focus.id;
+    map.flyTo([focus.lat, focus.lng], Math.min(focus.zoom, 18), { duration: 0.45 });
+  }, [focus, map]);
+  return null;
+}
+
 function markerIcon(color: string, text: string, label: string) {
   const safeLabel = label.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
   return L.divIcon({
@@ -141,9 +152,11 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
+  /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
+  focus?: { id: number; lat: number; lng: number; zoom: number } | null;
   listings: MapListing[];
   reports: MapReport[];
   streetSpots?: MapStreetSpot[];
@@ -195,6 +208,7 @@ export default function ParkingMap({
       <ZoomControl position="bottomright" />
       <ZoomTracker onZoom={setZoom} />
       <Recenter center={center} />
+      <FocusAddress focus={focus} />
       <FitRoute coords={routeCoordinates} focus={routeFocus} />
       <MapMove onMove={onMove} />
       {altRoutes.map((alt) => <Polyline key={alt.id} positions={alt.coordinates} pathOptions={{ color: "#9aa0b4", weight: 6, opacity: 0.85, lineCap: "round", lineJoin: "round" }} eventHandlers={{ click: () => onPickRoute?.(alt.id) }} />)}

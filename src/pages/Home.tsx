@@ -45,6 +45,9 @@ type AddressSuggestion = { label: string; lat: number; lng: number; kind: "listi
 
 // Île-de-France : centre de Paris pour le biais de localisation et cadre approximatif (lon min, lat min, lon max, lat max).
 const NO_PARIS: ParisSpot[] = [];
+// Rayons de la liste « Places près de [adresse] ».
+const DEST_STREET_RADIUS_M = 300;
+const DEST_PRIVATE_RADIUS_M = 2000;
 const PARIS_CENTER = { lat: 48.8566, lng: 2.3522 };
 const IDF_BOX = { west: 1.45, south: 48.12, east: 3.56, north: 49.25 };
 const inIleDeFrance = (lat: number, lng: number) => lat >= IDF_BOX.south && lat <= IDF_BOX.north && lng >= IDF_BOX.west && lng <= IDF_BOX.east;
@@ -105,7 +108,9 @@ export default function Home() {
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [search, setSearch] = useState("");
-  const [destinationChosen, setDestinationChosen] = useState(false);
+  // Destination choisie dans la recherche : la carte se centre dessus et le panneau du bas liste les places autour. Aucun itinéraire n'est calculé tant que l'utilisateur ne touche pas « Y aller ».
+  const [destination, setDestination] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ id: number; lat: number; lng: number; zoom: number } | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
@@ -144,11 +149,6 @@ export default function Home() {
   const watchId = useRef<number | null>(null);
   const gpsInitialized = useRef(false);
   const originRef = useRef<{ lat: number; lng: number } | null>(null);
-  const fromChosen = useRef(false);
-  const destinationRef = useRef<{ lat: number; lng: number; label: string } | null>(null);
-  const [fromSearch, setFromSearch] = useState("");
-  const [fromFocused, setFromFocused] = useState(false);
-  const [fromSuggestions, setFromSuggestions] = useState<AddressSuggestion[]>([]);
   const [departureUpdate, setDepartureUpdate] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
   const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: userPosition?.lat ?? visibleCenter.lat, longitude: userPosition?.lng ?? visibleCenter.lng, radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
   // Chargement par zone : seule la zone affichée (ou le trajet) est demandée au serveur, avec les filtres et une limite.
@@ -316,16 +316,6 @@ export default function Home() {
 
 
 
-  useEffect(() => {
-    const query = fromSearch.trim();
-    if (query.length < 3 || fromChosen.current) { setFromSuggestions([]); return; }
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try { setFromSuggestions(await geocodeFR(query, controller.signal)); } catch (error) { if ((error as Error).name !== "AbortError") setFromSuggestions([]); }
-    }, 400);
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [fromSearch]);
-
   const createReport = trpc.govapark.community.create.useMutation({
     onSuccess: () => { toast.success("Signalement publié pour 30 minutes maximum"); setReportOpen(false); utils.govapark.community.list.invalidate(); },
     onError: (error) => toast.error(error.message),
@@ -433,10 +423,10 @@ export default function Home() {
 
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0, info?: Partial<NavDest>) => {
     setNavDest({ lat: destination.lat, lng: destination.lng, label: destinationName || "Destination", kind: "address", ...info });
-    // Départ : adresse de départ saisie, sinon position GPS si elle est déjà connue, sinon centre de la carte.
+    // Départ : position GPS si elle est déjà connue, sinon centre de la carte (celui d'avant la recherche de destination).
     // On n'attend JAMAIS la géolocalisation (refusée, indisponible ou en attente d'autorisation) : le trajet part tout de suite.
-    const origin: { lat: number; lng: number } = fromChosen.current && originRef.current ? originRef.current : (userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng });
-    setOriginNote(fromChosen.current || userPosition ? null : "Départ : centre de la carte (tape une adresse de départ pour le changer)");
+    const origin: { lat: number; lng: number } = userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    setOriginNote(userPosition ? null : "Départ : ancien centre de la carte (position GPS non activée)");
     if (distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng) < 100) {
       toast.error("Choisissez une destination différente de votre position."); return;
     }
@@ -593,29 +583,36 @@ export default function Home() {
     .map((item) => ({ item, meters: distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) }))
     .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
     .slice(0, 4), [mapListings, arrival]);
+  // Une adresse choisie centre la carte (zoom rue) et affiche les places autour : AUCUN itinéraire n'est calculé ici.
+  // Places autour de la destination choisie : places en rue signalées d'abord (libres avant prises, puis la plus proche), puis places privées.
+  const destPlaces = useMemo(() => {
+    if (!destination) return null;
+    const rank: Record<string, number> = { green: 0, orange: 1, red: 2, gray: 3 };
+    const street = streetSpots
+      .map((spot) => ({ spot, meters: distanceMeters(destination.lat, destination.lng, spot.latitude, spot.longitude) }))
+      .filter((entry) => entry.meters <= DEST_STREET_RADIUS_M)
+      .sort((a, b) => (rank[a.spot.color] ?? 3) - (rank[b.spot.color] ?? 3) || a.meters - b.meters)
+      .slice(0, 8);
+    const privatePlaces = filtered
+      .map((item) => ({ item, meters: distanceMeters(destination.lat, destination.lng, item.latitude, item.longitude) }))
+      .filter((entry) => entry.meters <= DEST_PRIVATE_RADIUS_M)
+      .sort((a, b) => a.meters - b.meters)
+      .slice(0, 4);
+    return { street, privatePlaces };
+  }, [destination, streetSpots, filtered]);
   const chooseSuggestion = (suggestion: AddressSuggestion) => {
-    // Le départ est mémorisé AVANT que la carte se recentre sur la destination.
-    if (!fromChosen.current) originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
-    destinationRef.current = { lat: suggestion.lat, lng: suggestion.lng, label: suggestion.label };
-    setSearch(suggestion.label); setDestinationChosen(true); setSearchFocused(false);
+    // Le point de départ d'un éventuel « Y aller » est mémorisé AVANT que la carte se recentre sur la destination.
+    originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
+    setDestination({ lat: suggestion.lat, lng: suggestion.lng, label: suggestion.label });
+    setSearch(suggestion.label); setSearchFocused(false);
+    setStreetOn(true); setParisOn(true);
     setTarget({ lat: suggestion.lat, lng: suggestion.lng });
-    void calculateRoutes({ lat: suggestion.lat, lng: suggestion.lng }, suggestion.label);
-  };
-  const chooseFrom = (suggestion: AddressSuggestion) => {
-    originRef.current = { lat: suggestion.lat, lng: suggestion.lng }; fromChosen.current = true;
-    setFromSearch(suggestion.label); setFromFocused(false);
-    const destination = destinationRef.current;
-    if (destination) void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label);
-  };
-  const useMyPosition = () => {
-    if (!userPosition) { locate(); return; }
-    originRef.current = { lat: userPosition.lat, lng: userPosition.lng }; fromChosen.current = true; setFromSearch("Ma position");
-    const destination = destinationRef.current;
-    if (destination) void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label);
+    setFocusRequest((previous) => ({ id: (previous?.id ?? 0) + 1, lat: suggestion.lat, lng: suggestion.lng, zoom: 17 }));
   };
   const toggleRoute = () => {
     if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); return; }
-    if (destinationChosen) { void calculateRoutes(target, search.trim()); return; }
+    if (destination) { void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label); return; }
     if (search.trim().length > 0) { toast.message("Choisis une adresse dans les suggestions."); return; }
     const candidate = nearby.find((entry) => entry.item.currentAvailability === "available") ?? nearby[0];
     if (candidate) void startRoute(candidate.item.id); else toast.message("Cherche une destination pour calculer un trajet.");
@@ -669,7 +666,7 @@ export default function Home() {
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
   const mapProps = {
-    center: target, listings: mapListings, altRoutes: routeOptions.filter((o) => o.id !== drivingRoute?.id),
+    center: target, focus: focusRequest, listings: mapListings, altRoutes: routeOptions.filter((o) => o.id !== drivingRoute?.id),
     onPickRoute: (id: string) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } },
     reports, userPosition, confirmedIds, fuelStations: [] as Array<{ id: number; lat: number; lng: number; name: string }>,
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
@@ -714,13 +711,13 @@ export default function Home() {
           )}
         </div>
 
-        <div className={`m-top${destinationChosen ? " with-from" : ""}`}>
+        <div className="m-top">
           <div className="m-search">
             <Search size={20} />
-            <input value={search} onChange={(e) => { setSearch(e.target.value); setDestinationChosen(false); }} onFocus={() => setSearchFocused(true)}
+            <input value={search} onChange={(e) => { setSearch(e.target.value); setDestination(null); }} onFocus={() => setSearchFocused(true)}
               onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) { e.preventDefault(); chooseSuggestion(suggestions[0]); } }}
               placeholder="Où tu veux te garer ?" aria-label="Rechercher une adresse" />
-            {search && <button className="m-clear" onClick={() => { setSearch(""); setDestinationChosen(false); destinationRef.current = null; }} aria-label="Effacer la recherche"><X size={18} /></button>}
+            {search && <button className="m-clear" onClick={() => { setSearch(""); setDestination(null); }} aria-label="Effacer la recherche"><X size={18} /></button>}
             {searchFocused && search.length > 1 && <div className="search-suggestions">
               {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseSuggestion(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
               {searchingAddress && <p>Recherche en cours…</p>}
@@ -731,26 +728,14 @@ export default function Home() {
           <button className="m-round" onClick={() => setMenuOpen((open) => !open)} aria-label="Plus d’options" aria-expanded={menuOpen}><SlidersHorizontal size={21} /></button>
         </div>
 
-        {destinationChosen && <div className="m-from">
-          <span className="m-from-label">Départ</span>
-          <input value={fromSearch} onChange={(e) => { fromChosen.current = false; setFromSearch(e.target.value); }} onFocus={() => setFromFocused(true)}
-            onKeyDown={(e) => { if (e.key === "Enter" && fromSuggestions[0]) { e.preventDefault(); chooseFrom(fromSuggestions[0]); } }}
-            placeholder={userPosition ? "Ma position" : "Tape une adresse de départ"} aria-label="Adresse de départ" />
-          <button className="m-from-me" onClick={useMyPosition}><LocateFixed size={16} />Ma position</button>
-          {fromFocused && fromSuggestions.length > 0 && <div className="search-suggestions">
-            {fromSuggestions.map((suggestion, index) => <button key={`from-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseFrom(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? "Adresse ou quartier"}</small></span></button>)}
-          </div>}
-        </div>}
-        {!destinationChosen && <div className="m-chips">
+        <div className="m-chips">
           <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
           <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
           <button className={`m-chip ${filters.type === "garage" ? "on" : ""}`} onClick={() => setFilters({ ...filters, type: filters.type === "garage" ? "tous" : "garage" })}>Garage</button>
-        </div>}
-
-        {destinationChosen && !drivingRoute && <button className="m-go" disabled={routeLoading} onClick={toggleRoute}><Navigation size={18} />{routeLoading ? "Calcul…" : "Y aller"}</button>}
+        </div>
 
         {menuOpen && <div className="m-menu" role="menu">
           <button onClick={() => { setMenuOpen(false); setDraftFilters(filters); setFiltersOpen(true); }}><SlidersHorizontal size={19} />Tous les filtres</button>
@@ -806,7 +791,25 @@ export default function Home() {
               </button>
               <button className="m-card-go" disabled={!online} title={online ? undefined : "La réservation demande une connexion"} onClick={() => navigate(`/reserver/${item.id}`)}>{online ? "Réserver" : "Indisponible hors ligne"}</button>
             </article>)}
-          </div></> : <>
+          </div></> : destination && destPlaces ? <>
+            <div className="m-dest-head">
+              <b title={destination.label}>Places près de {destination.label}</b>
+              <button type="button" className="m-dest-go" disabled={routeLoading} onClick={toggleRoute}><Navigation size={16} />{routeLoading ? "Calcul…" : "Y aller"}</button>
+            </div>
+            <div className="m-cards">
+              {destPlaces.street.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
+                <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
+                <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalé par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
+                <span className="m-dist">{meters(away)}</span>
+              </button>)}
+              {destPlaces.street.length === 0 && <div className="m-empty">{streetPanelState === "ok" ? "Aucune place signalée autour de cette adresse. Les emplacements gris de la carte sont des emplacements officiels de Paris : statut inconnu." : "Places en rue indisponibles pour le moment."}</div>}
+              {destPlaces.privatePlaces.map(({ item, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-priv-${item.id}`} onClick={() => navigate(`/place/${item.id}`)}>
+                <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
+                <span className="m-scard-main"><strong>{item.title}</strong><small>Place privée · {euros(item.hourlyCents)}/h</small></span>
+                <span className="m-dist">{meters(away)}</span>
+              </button>)}
+            </div>
+          </> : <>
             <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((open) => !open)}>
               <i className="m-grip" aria-hidden="true" />
               <b>{sheetOpen ? <ChevronDown size={20} aria-label="Fermer la liste" /> : <ChevronUp size={20} aria-label="Ouvrir la liste" />}{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
@@ -847,7 +850,7 @@ export default function Home() {
         </section>}
         {drivingRoute && !drivingRoute.offline && <section className="route-results"><div><strong>{routeOptions.length > 1 ? `Vos ${routeOptions.length} alternatives de trajet` : "Votre trajet"}</strong><span>{(drivingRoute.distance/1000).toFixed(1)} km · {Math.round(drivingRoute.duration/60)} min</span></div>
           <div className="route-options">{routeOptions.map((option)=> <button key={option.id} className={`route-option ${drivingRoute.id===option.id?"selected":""}`} onClick={()=>{setDrivingRoute(option);void refreshRouteServices(option);spokenStepIndex.current=0;}}><strong>{option.label}</strong><span>{(option.distance/1000).toFixed(1)} km · {Math.round(option.duration/60)} min</span>{option.fuelPrice!=null?<small>Carburant estimé : {((option.distance/1000)*(fuelConsumption/100)*option.fuelPrice).toFixed(2)} €</small>:<small>Coût carburant indisponible</small>}</button>)}</div>
-          <div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destinationChosen)void calculateRoutes(target,search.trim());else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>
+          <div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destination)void calculateRoutes({lat:destination.lat,lng:destination.lng},destination.label);else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>
           <p>{routeServices.length} services et points d’intérêt repérés autour du trajet sélectionné · {routeListings.length} place(s) privée(s) disponible(s) à moins de 900 m</p>
           <div className="route-service-legend"><span>⚡ Bornes électriques</span><span>🅿️ Parkings</span><span>🛣️ Aires de repos</span><span>🚛 Poids lourds</span><span>🍴 Restauration</span><span>⛽ Carburant</span></div>
           <small className="route-cost-note">Après modification du type de carburant, relancez le calcul d’itinéraire pour actualiser les prix. Le coût carburant est une estimation à partir des prix du flux officiel du ministère de l’Économie repérés près du trajet et de votre consommation déclarée. Péages, trafic en temps réel, restrictions poids lourds et prix des recharges ne sont pas encore inclus. Vérifiez les prix et services avant le départ.</small>
