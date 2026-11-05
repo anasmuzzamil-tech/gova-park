@@ -795,3 +795,6 @@ body.is-navigating .bottom-nav { display: none; }
 .pf .pf-source { color: #6c6a85; font-size: 11.5px; font-weight: 600; }
 .pf-report { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pf-report .btn { min-height: 44px; }
+
+/* ===== Carte lisible : groupes de places privées plus légers (plus de grosses taches sombres à gros chiffres) ===== */
+.pk-cluster, .pk-cluster.maplibregl-marker { min-width: 30px; height: 30px; padding: 0 5px; background: rgba(109, 74, 224, 0.86); border: 2px solid #fff; font: 800 12px/1 "Manrope", sans-serif; box-shadow: 0 2px 8px #1b1e3a40; }

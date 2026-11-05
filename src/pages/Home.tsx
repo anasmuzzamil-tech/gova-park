@@ -20,7 +20,7 @@ import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
-import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
+import { DEFAULT_SPOT_TYPES, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
@@ -201,7 +201,8 @@ export default function Home() {
   const [streetLocating, setStreetLocating] = useState(false);
   // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
   const [parisOn, setParisOn] = useState(true);
-  const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(SPOT_TYPE_CODES));
+  // Par défaut : seulement les emplacements où une voiture peut se garer (payant, mixte, gratuit) ; livraison, vélos, deux-roues, autocars, PMR et le reste s'activent par le filtre.
+  const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(DEFAULT_SPOT_TYPES));
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [parisFilterOpen, setParisFilterOpen] = useState(false);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
@@ -928,8 +929,8 @@ export default function Home() {
       {parisFilterOpen && <Modal title="Types d’emplacements de Paris" onClose={() => setParisFilterOpen(false)}>
         <div className="form-stack">
           {SPOT_TYPE_CODES.map((code) => <label className="check-row" key={code}><input type="checkbox" checked={parisTypes.has(code)} onChange={() => setParisTypes((previous) => { const next = new Set(previous); if (next.has(code)) next.delete(code); else next.add(code); return next; })} /> {SPOT_TYPE_LABEL[code]}</label>)}
-          <p className="field-help">Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
-          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
+          <p className="field-help">Par défaut : emplacements où une voiture peut se garer (payant, mixte, gratuit). Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
+          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(DEFAULT_SPOT_TYPES))}>Voitures seulement</button><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
         </div>
       </Modal>}
 

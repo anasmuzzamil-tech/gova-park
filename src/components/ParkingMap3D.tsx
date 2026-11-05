@@ -74,7 +74,7 @@ function parisIcon(color: string, glyph: string): ImageData | null {
   if (!g) return null;
   g.fillStyle = "#ffffff"; g.beginPath(); g.roundRect(4, 4, size - 8, size - 8, 20); g.fill();
   g.fillStyle = color; g.beginPath(); g.roundRect(10, 10, size - 20, size - 20, 15); g.fill();
-  g.fillStyle = "#ffffff"; g.font = "800 34px Manrope, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
+  g.fillStyle = "#ffffff"; g.font = `800 ${glyph.length > 1 ? 21 : 34}px Manrope, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
   return g.getImageData(0, 0, size, size);
 }
 export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
@@ -85,19 +85,32 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
       if (img && !map.hasImage(`ps-${name}-${t}`)) map.addImage(`ps-${name}-${t}`, img, { pixelRatio: 2 });
     }
     // Source regroupée par MapLibre : le total d'un groupe additionne `w` = nombre de PLACES (celles du tronçon, ou le total d'une cellule de la vue d'ensemble `a` = 1).
-    map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 46, clusterMaxZoom: 16, clusterProperties: { total: ["+", ["get", "w"]] } });
+    map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 40, clusterMaxZoom: 16, clusterProperties: { total: ["+", ["get", "w"]] } });
     map.addSource("gp-paris-hot", { type: "geojson", data: emptyFc() });
-    const group = "#1f1b4d";
-    const radius = (field: string): maplibregl.ExpressionSpecification => ["step", ["get", field], 15, 10, 18, 100, 23, 1000, 28];
-    const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true };
-    map.addLayer({ id: "gp-paris-cluster", type: "circle", source: "gp-paris", filter: ["has", "point_count"], paint: { "circle-color": group, "circle-radius": radius("total"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
-    map.addLayer({ id: "gp-paris-cluster-n", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: { ...textLayout, "text-field": ["to-string", ["get", "total"]] }, paint: { "text-color": "#ffffff" } });
-    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], paint: { "circle-color": group, "circle-radius": radius("w"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
-    map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], layout: { ...textLayout, "text-field": ["to-string", ["get", "w"]] }, paint: { "text-color": "#ffffff" } });
+    // Groupes légers : disque violet translucide, contour fin, petits chiffres (1,8k au-delà de 1000) — jamais de grosse tache sombre.
+    const group = "rgba(109, 74, 224, 0.84)";
+    const radius = (field: string): maplibregl.ExpressionSpecification => ["step", ["get", field], 12, 10, 14, 100, 17, 1000, 20];
+    const countText = (field: string): maplibregl.ExpressionSpecification => ["case", [">=", ["get", field], 1000], ["concat", ["number-format", ["/", ["get", field], 1000], { locale: "fr-FR", "max-fraction-digits": 1 }], "k"], ["to-string", ["get", field]]] as maplibregl.ExpressionSpecification;
+    const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 11, "text-allow-overlap": true, "text-ignore-placement": true };
+    map.addLayer({ id: "gp-paris-cluster", type: "circle", source: "gp-paris", filter: ["has", "point_count"], paint: { "circle-color": group, "circle-radius": radius("total"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+    map.addLayer({ id: "gp-paris-cluster-n", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: { ...textLayout, "text-field": countText("total") }, paint: { "text-color": "#ffffff" } });
+    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], paint: { "circle-color": group, "circle-radius": radius("w"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+    map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "a"], 1]], layout: { ...textLayout, "text-field": countText("w") }, paint: { "text-color": "#ffffff" } });
+    // Un marqueur par tronçon, anti-chevauchement : MapLibre masque une icône qui en recouvrirait une autre (la plus grosse en places gagne) ; plus on zoome, plus elles apparaissent.
+    // Le nombre de places du tronçon s'affiche à côté de l'icône dès le zoom 16,5 (masqué s'il gêne, jamais empilé).
     const icon: maplibregl.ExpressionSpecification = ["concat", "ps-", ["get", "c"], "-", ["to-string", ["get", "t"]]];
-    const iconLayout = { "icon-image": icon, "icon-allow-overlap": true, "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 0.95] } as maplibregl.SymbolLayerSpecification["layout"];
-    map.addLayer({ id: "gp-paris-point", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["!=", ["get", "a"], 1]], layout: iconLayout });
-    map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { ...iconLayout, "symbol-sort-key": 1 } });
+    const iconSize = ["interpolate", ["linear"], ["zoom"], 14, 0.45, 18, 0.8] as maplibregl.ExpressionSpecification;
+    const placesText = ["step", ["zoom"], "", 16.5, ["case", [">", ["get", "p"], 1], ["to-string", ["get", "p"]], ""]] as maplibregl.ExpressionSpecification;
+    map.addLayer({
+      id: "gp-paris-point", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["!=", ["get", "a"], 1]],
+      layout: {
+        "icon-image": icon, "icon-size": iconSize, "icon-allow-overlap": false, "icon-padding": 3, "symbol-sort-key": ["*", -1, ["get", "w"]],
+        "text-field": placesText, "text-font": ["Noto Sans Bold"], "text-size": 11, "text-anchor": "left", "text-offset": [1.15, 0], "text-optional": true, "text-allow-overlap": false,
+      } as maplibregl.SymbolLayerSpecification["layout"],
+      paint: { "text-color": "#17142b", "text-halo-color": "#ffffff", "text-halo-width": 1.6 },
+    });
+    // Emplacements colorés par un signalement : toujours visibles (par-dessus), jamais masqués par la collision.
+    map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { "icon-image": icon, "icon-size": iconSize, "icon-allow-overlap": true } as maplibregl.SymbolLayerSpecification["layout"] });
     map.on("click", "gp-paris-cluster", async (e) => {
       const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
       try {
