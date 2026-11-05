@@ -64,15 +64,15 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
     case "gratuit":
       return q === "gratuit" ? info(SPOT_TYPE.free, true, "Place gratuite") : rawRegime(prio, part);
     case "2 roues":
-      if (q === "velos") return info(SPOT_TYPE.bike, false, "Stationnement vélos", "Réservé aux vélos");
-      if (q === "velo-cargo") return info(SPOT_TYPE.bike, false, "Vélos cargo", "Réservé aux vélos cargo");
+      if (q === "velos") return info(SPOT_TYPE.bike, false, "Place vélo", "Réservée aux vélos");
+      if (q === "velo-cargo") return info(SPOT_TYPE.bike, false, "Place vélo cargo", "Réservée aux vélos cargo");
       if (q === "box a velos") return info(SPOT_TYPE.bike, false, "Box à vélos", "Réservé aux vélos");
-      if (q === "motos payant mixte" || q === "motos payant rotatif") return info(SPOT_TYPE.moto, false, "Place moto / deux-roues motorisés", "Réservée aux deux-roues motorisés (payant), pas aux voitures");
+      if (q === "motos payant mixte" || q === "motos payant rotatif") return info(SPOT_TYPE.moto, false, "Place moto", "Réservée aux deux-roues motorisés (payant)");
       // « Mixte » seul : le fichier ne dit pas s'il s'agit de motos ou de vélos (les lignes ont presque toutes des arceaux comme mobilier) : jamais deviné.
       return rawRegime(prio, part);
     case "livraison":
-      if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison (permanente)", "Réservée aux livraisons");
-      if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison (périodique)", "Réservée aux livraisons ; horaires non fournis dans les données, voir le panneau");
+      if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Réservée aux livraisons (permanente)");
+      if (q === "zl periodique") return info(SPOT_TYPE.delivery, false, "Zone de livraison", "Réservée aux livraisons (périodique) ; horaires non fournis, voir le panneau");
       return rawRegime(prio, part);
     case "gig/gic":
       if (q.startsWith("gig/gic")) return info(SPOT_TYPE.pmr, false, "Place PMR (GIG/GIC)", `Réservée aux personnes à mobilité réduite titulaires de la carte${q === "gig/gic standard" ? "" : ` (régime : ${part})`}`);
@@ -85,7 +85,7 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
       if (q.startsWith("belib")) return info(SPOT_TYPE.reserved, false, `Recharge électrique (${part})`, "Réservé à la recharge de véhicules électriques");
       return rawRegime(prio, part);
     case "autocar":
-      return info(SPOT_TYPE.coach, false, "Stationnement autocars", `Réservé aux autocars (régime : ${part || prio})`);
+      return info(SPOT_TYPE.coach, false, "Place autocar", `Réservée aux autocars (régime : ${part || prio})`);
     case "autre regime":
       if (q.startsWith("sp - ")) return info(SPOT_TYPE.reserved, false, `Réservé : ${part.slice(5).trim() || part}`, "Emplacement réservé à un service public");
       if (q === "transport de fonds") return info(SPOT_TYPE.reserved, false, "Réservé : transport de fonds", "Emplacement réservé");

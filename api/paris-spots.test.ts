@@ -94,6 +94,13 @@ describe("interprétation des régimes du fichier de Paris", () => {
     expect(interpretRegime("2 ROUES", "Vélos").note).toContain("vélos");
     for (const [p, q] of [["LIVRAISON", "ZL permanente"], ["AUTOCAR", "Autocar (payant)"], ["2 ROUES", "Motos payant Mixte"], ["2 ROUES", "Vélos"]]) expect(interpretRegime(p, q).cars).toBe(false);
   });
+  it("libellés par type : Place payante, Place moto, Place autocar, Zone de livraison (sans promesse), Place vélo", () => {
+    expect(interpretRegime("PAYANT ROTATIF", "Rotatif").title).toBe("Place payante (rotatif)");
+    expect(interpretRegime("AUTOCAR", "Autocar (payant)").title).toBe("Place autocar");
+    expect(interpretRegime("LIVRAISON", "ZL permanente").title).toBe("Zone de livraison");
+    expect(interpretRegime("LIVRAISON", "ZL périodique").title).toBe("Zone de livraison");
+    expect(interpretRegime("2 ROUES", "Vélos").title).toBe("Place vélo");
+  });
   it("une zone de livraison périodique ne promet aucun horaire", () => {
     expect(interpretRegime("LIVRAISON", "ZL périodique").note).toContain("horaires non fournis");
   });
@@ -131,12 +138,12 @@ describe("interprétation des régimes du fichier de Paris", () => {
     for (const q of ["Motos payant Mixte", "Motos payant Rotatif"]) {
       const r = interpretRegime("2 ROUES", q);
       expect(r.t).toBe(SPOT_TYPE.moto); expect(r.cars).toBe(false);
-      expect(r.title).toBe("Place moto / deux-roues motorisés");
+      expect(r.title).toBe("Place moto");
       const d = describeParisSpot({ regime: r, places: 4, street: streetKey("RUE", "X"), numeroCode: 0 });
-      expect(d.title).toBe("Place moto / deux-roues motorisés · Rue X");
+      expect(d.title).toBe("Place moto · Rue X");
       expect(d.places).toBe("4 places");
       expect(d.carsOk).toBe(false);
-      expect(d.note).toContain("pas aux voitures");
+      expect(d.note).toContain("deux-roues motorisés");
       expect(`${d.title} ${d.note} ${d.status}`.toLowerCase().includes("vous pouvez")).toBe(false);
       expect(`${d.title} ${d.note}`.includes("Ouvert à tous")).toBe(false);
     }
