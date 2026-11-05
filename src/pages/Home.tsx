@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { STATUS_COLORS, statePillLabel } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
+import { getGeolocDiag, noteGeolocError, subscribeGeolocDiag, refreshPermissionState } from "@/lib/geoloc";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
@@ -126,6 +127,8 @@ export default function Home() {
   const [reportAddress, setReportAddress] = useState("Rue de Rivoli, Paris 4ᵉ");
   const [departureAt, setDepartureAt] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
   const [locating, setLocating] = useState(false);
+  const locatingRef = useRef(false);
+  const geolocDiag = useSyncExternalStore(subscribeGeolocDiag, getGeolocDiag, getGeolocDiag);
   const [userPosition, setUserPosition] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [speedKmh, setSpeedKmh] = useState<number | null>(null);
   const [fuelStations, setFuelStations] = useState<Array<{id:number;lat:number;lng:number;name:string}>>([]);
@@ -348,49 +351,44 @@ export default function Home() {
   const stopDeparture = trpc.govapark.community.stopDeparture.useMutation({ onSuccess: () => { toast.success("Départ arrêté et retiré de la carte"); setSelectedReportId(null); utils.govapark.community.list.invalidate(); } });
   const autoRelease = trpc.govapark.community.autoRelease.useMutation({ onSuccess: () => { toast.success("Votre départ a été détecté : la place est signalée libre, à confirmer par la communauté."); setSelectedReportId(null); utils.govapark.community.list.invalidate(); }, onError: (error) => toast.error(error.message) });
 
-  const GPS_NOTE = "Activez la localisation pour le suivi en direct";
-  // soft = true (bouton Démarrer) : aucun toast d'erreur, juste un message court non bloquant.
-  const locate = (soft = false) => {
-    if (!navigator.geolocation) { if (soft) setGpsNote(GPS_NOTE); else toast.error("La géolocalisation n’est pas disponible sur cet appareil"); return; }
-    if (watchId.current !== null) {
-      navigator.geolocation.clearWatch(watchId.current);
-      watchId.current = null;
-      setTrackingGps(false);
-      toast.message("Suivi GPS arrêté");
-      return;
+  // « Ma position » : CHAQUE toucher redemande la position (essai précis, puis essai réseau si le GPS tarde), centre la carte et
+  // affiche le point bleu. Aucun état « refusé » n'est mémorisé. soft = true (bouton Démarrer) : message discret au lieu d'un toast.
+  const applyPosition = (position: { latitude: number; longitude: number; accuracy: number }, speed: number | null | undefined, centre: boolean) => {
+    const next = { lat: position.latitude, lng: position.longitude, accuracy: position.accuracy };
+    setUserPosition(next);
+    if (speed !== undefined) setSpeedKmh(speed == null ? null : Math.max(0, Math.round(speed * 3.6)));
+    setTrackingGps(true); setGpsNote(null);
+    if (centre) { setTarget({ lat: next.lat, lng: next.lng }); setVisibleCenter({ lat: next.lat, lng: next.lng }); gpsInitialized.current = true; }
+    else {
+      // Suivi doux du véhicule : recentrer après environ 50 m de déplacement.
+      setTarget((previous) => {
+        const moved = Math.hypot((next.lat - previous.lat) * 111000, (next.lng - previous.lng) * 75000);
+        return moved >= 50 ? { lat: next.lat, lng: next.lng } : previous;
+      });
     }
-    setLocating(true);
-    gpsInitialized.current = false;
-    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
-    const onPosition = (position: GeolocationPosition) => {
-      const next = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy };
-      setUserPosition(next);
-      setSpeedKmh(position.coords.speed == null ? null : Math.max(0, Math.round(position.coords.speed * 3.6)));
-      setTrackingGps(true); setGpsNote(null);
-      if (!gpsInitialized.current) {
-        setTarget({ lat: next.lat, lng: next.lng });
-        setVisibleCenter({ lat: next.lat, lng: next.lng });
-        gpsInitialized.current = true;
-        toast.success("GPS activé : votre position est suivie");
-      } else {
-        // Suivi doux du véhicule : recentrer après environ 50 m de déplacement.
-        setTarget((previous) => {
-          const moved = Math.hypot((next.lat - previous.lat) * 111000, (next.lng - previous.lng) * 75000);
-          return moved >= 50 ? { lat: next.lat, lng: next.lng } : previous;
-        });
-      }
-      setLocating(false);
-    };
-    const onError = (error: GeolocationPositionError) => {
-      setLocating(false);
-      if (soft) { setGpsNote(GPS_NOTE); return; }
-      if (error.code === error.PERMISSION_DENIED) toast.error(/iPhone|iPad/i.test(navigator.userAgent) ? "Localisation refusée. Dans Safari : bouton « aA » de la barre d’adresse, Réglages du site web, Localisation, Autoriser. Tu peux aussi taper ton adresse de départ." : "Localisation refusée. Clique sur le cadenas à gauche de l’adresse du site pour l’autoriser, ou tape ton adresse de départ.");
-      else if (error.code === error.POSITION_UNAVAILABLE) toast.error("Position introuvable. Active le GPS ou le Wi‑Fi de ton appareil et réessaie.");
-      // Délai dépassé : on laisse le suivi continuer sans message.
-    };
-    // 1) un point rapide (réseau/Wi‑Fi) pour centrer la carte tout de suite, 2) un suivi précis qui prend le relais.
-    navigator.geolocation.getCurrentPosition(onPosition, () => { if (soft) setGpsNote(GPS_NOTE); }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 });
-    watchId.current = navigator.geolocation.watchPosition(onPosition, onError, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+  };
+  const startWatch = () => {
+    if (watchId.current !== null || !navigator.geolocation) return;
+    // Suivi en continu une fois la première position obtenue ; ses erreurs ne cassent rien (le diagnostic les garde).
+    watchId.current = navigator.geolocation.watchPosition(
+      (p) => applyPosition({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }, p.coords.speed, false),
+      (e) => noteGeolocError(e.code),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 },
+    );
+  };
+  const locate = async (soft = false) => {
+    if (locatingRef.current) return; // pas d'appels concurrents
+    locatingRef.current = true; setLocating(true);
+    try {
+      const device = await getDevicePosition(); // lancé directement dans le geste de l'utilisateur
+      applyPosition(device, undefined, true);
+      if (!soft) toast.success(device.accuracy > 500 ? `Position approximative (± ${Math.round(device.accuracy)} m)` : "Vous êtes ici", { id: "locate" });
+      startWatch();
+    } catch (error) {
+      const message = error instanceof GeolocError ? error.message : "Position indisponible pour le moment. Réessayez.";
+      setGpsNote(message);
+      if (!soft) toast.error(message, { id: "locate", duration: 15000 });
+    } finally { locatingRef.current = false; setLocating(false); }
   };
   useEffect(() => () => { if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current); }, []);
 
@@ -447,8 +445,12 @@ export default function Home() {
     // On n'attend JAMAIS la géolocalisation (refusée, indisponible ou en attente d'autorisation) : le trajet part tout de suite.
     const origin: { lat: number; lng: number } = userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
     setOriginNote(userPosition ? null : "Départ : ancien centre de la carte (position GPS non activée)");
+    if (!Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) return;
     if (distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng) < 100) {
-      toast.error("Choisissez une destination différente de votre position."); return;
+      // Départ = position réelle : on est déjà sur place. Départ = simple centre de la carte : ce n'est pas une position, on le dit sans erreur.
+      setNavDest(null);
+      toast.message(userPosition ? "Vous êtes à moins de 100 m de cette destination." : "Position inconnue : touchez « Ma position » (la cible en haut) pour calculer le trajet depuis chez vous.", { id: "route-near" });
+      return;
     }
     setRouteLoading(true); setRouteOptions([]); setRouteServices([]);
     try {
@@ -645,7 +647,7 @@ export default function Home() {
     if (first && "speechSynthesis" in window) { const speech = new SpeechSynthesisUtterance(`Guidage vocal activé. ${first.instruction}`); speech.lang = "fr-FR"; window.speechSynthesis.speak(speech); spokenStepIndex.current = 1; }
   };
   // ----- Navigation plein écran -----
-  const requestLocation = () => { if (watchId.current === null) locate(true); };
+  const requestLocation = () => { if (watchId.current === null) void locate(true); };
   const startNavigation = () => {
     if (!drivingRoute || drivingRoute.offline || !navDest) return;
     setNavActive(true); setNavFollow(true); setRouteFocus((n) => n + 1);
@@ -744,7 +746,8 @@ export default function Home() {
               {!searchingAddress && suggestions.length === 0 && <p>Aucun résultat. Essaie une adresse, une ville ou un quartier.</p>}
             </div>}
           </div>
-          <button className={`m-round ${trackingGps ? "on" : ""}`} onClick={() => locate()} aria-label={trackingGps ? "Arrêter le suivi GPS" : "Me localiser"}><LocateFixed size={22} className={locating ? "spinning" : ""} /></button>
+          <button className={`m-round ${trackingGps ? "on" : ""}`} onClick={() => void locate()} disabled={locating} aria-label="Ma position"><LocateFixed size={22} className={locating ? "spinning" : ""} /></button>
+          {locating && <div className="m-locating" role="status" aria-live="polite">Localisation…</div>}
           <button className="m-round" onClick={() => setMenuOpen((open) => !open)} aria-label="Plus d’options" aria-expanded={menuOpen}><SlidersHorizontal size={21} /></button>
         </div>
 
@@ -781,6 +784,7 @@ export default function Home() {
               <ul className="m-legend" aria-label="Légende des couleurs des places">
                 <li><i className="green" />Libre (signalé il y a X min)</li><li><i className="orange" />Peut-être libre</li><li><i className="red" />Prise</li><li><i className="gray" />Place</li>
               </ul>
+              <p className="m-diag" onClick={() => void refreshPermissionState()}>Diagnostic position : autorisation {geolocDiag.permission} · dernière erreur {geolocDiag.lastCode ?? "aucune"}{geolocDiag.lastReason ? ` (${geolocDiag.lastReason})` : ""} · précision {geolocDiag.accuracy != null ? `${geolocDiag.accuracy} m (${geolocDiag.attempt})` : "aucune"}</p>
               <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
               <p>{PARIS_ATTRIBUTION}</p>
               {parisOn && parisNote && <p>{parisNote}</p>}

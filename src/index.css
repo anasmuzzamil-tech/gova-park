@@ -804,3 +804,8 @@ body.is-navigating .bottom-nav { display: none; }
 
 /* ===== Carte lisible : groupes de places privées plus légers (plus de grosses taches sombres à gros chiffres) ===== */
 .pk-cluster, .pk-cluster.maplibregl-marker { min-width: 30px; height: 30px; padding: 0 5px; background: rgba(109, 74, 224, 0.86); border: 2px solid #fff; font: 800 12px/1 "Manrope", sans-serif; box-shadow: 0 2px 8px #1b1e3a40; }
+
+/* Position : état « Localisation… » et diagnostic discret du panneau « i » */
+.m-locating { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 78px); left: 50%; transform: translateX(-50%); z-index: 60; background: #17142b; color: #fff; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; box-shadow: 0 6px 20px #1a143a40; }
+.m-round:disabled { opacity: .75; }
+.m-diag { font-size: 11px; color: #6b6785; word-break: break-word; }

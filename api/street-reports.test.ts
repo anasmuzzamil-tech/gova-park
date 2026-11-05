@@ -292,15 +292,14 @@ describe("retour visible après un signalement", () => {
 });
 
 describe("message de position refusée (court, 2 lignes au plus)", () => {
-  it("iPhone : texte demandé, sans règle des 50 m ni long paragraphe", () => {
+  it("iPhone : texte exact demandé (Réglages, Service de localisation, Safari, aA)", () => {
     const m = geolocMessage("denied", true);
-    expect(m).toBe("Position nécessaire pour signaler votre place. Réglages iPhone > Safari > Localisation (ou Réglages du site), puis réessayez.");
-    expect(m.length).toBeLessThan(140);
+    expect(m).toBe("Position refusée. Réglages > Confidentialité et sécurité > Service de localisation > activé, puis Safari (Sites web) > Lors de l'utilisation. Dans Safari : icône aA > Réglages du site web > Position > Autoriser.");
     expect(m.includes("50 m")).toBe(false);
   });
   it("autres navigateurs et autres causes : courts, sans la règle des 50 m", () => {
     for (const reason of ["denied", "timeout", "unsupported", "unavailable"] as const) {
-      for (const ios of [true, false]) { const m = geolocMessage(reason, ios); expect(m.length).toBeLessThan(150); expect(m.includes("50 m")).toBe(false); }
+      for (const ios of [true, false]) { const m = geolocMessage(reason, ios); expect(m.length).toBeLessThan(260); expect(m.includes("50 m")).toBe(false); }
     }
   });
 });
