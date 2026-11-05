@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  STREET_RULES, checkDeviceDistance, checkReportRate, distanceMeters, expiresAtFor, parseStreetListInput, parseStreetReportInput,
+  STREET_RULES, checkDeviceDistance, countFreeNearby, checkReportRate, distanceMeters, expiresAtFor, parseStreetListInput, parseStreetReportInput,
   prepareStreetReport, resolveStreetSpots, type StreetReportRow,
 } from "@contracts/street-reports";
 
@@ -195,5 +195,25 @@ describe("places en rue : validation stricte des entrées", () => {
     expect(() => parseStreetListInput({ south: 48.8, north: 95, west: 2.3, east: 2.4 })).toThrow();
     expect(() => parseStreetListInput({ south: 48.8, north: 48.9, west: 2.3, east: 2.4, limit: STREET_RULES.maxLimit + 1 })).toThrow();
     expect(() => parseStreetListInput({ south: 48.8, north: 48.9, west: 2.3, east: 2.4, limit: 1.5 })).toThrow();
+  });
+});
+
+describe("compteur d'accueil (places libres signalées il y a moins de 5 min près de vous)", () => {
+  const ref = { lat: P.latitude, lng: P.longitude };
+  const spot = (over: Record<string, unknown>) => ({ status: "free" as const, ...P, reportedAt: minutesAgo(1).toISOString(), ...over });
+  it("0 s'il n'y a aucun signalement", () => {
+    expect(countFreeNearby([], ref, now)).toEqual({ count: 0, examples: 0 });
+  });
+  it("compte les places libres vertes proches, pas les prises, les orange ni les lointaines", () => {
+    const list = [
+      spot({}), spot({ reportedAt: minutesAgo(4.9).toISOString() }),
+      spot({ reportedAt: minutesAgo(5).toISOString() }), spot({ status: "taken" }),
+      spot({ latitude: P.latitude + 0.01 }),
+    ];
+    expect(countFreeNearby(list, ref, now).count).toBe(2);
+  });
+  it("compte les exemples de démo à part et ignore les dates du futur", () => {
+    const list = [spot({ example: true }), spot({ reportedAt: new Date(now.getTime() + 600000).toISOString() })];
+    expect(countFreeNearby(list, ref, now)).toEqual({ count: 1, examples: 1 });
   });
 });

@@ -514,7 +514,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
   .m-card { flex-basis: 250px; }
 }
 @media (max-width: 899px) {
-  .home-screen { --sheet-h: 330px; }
+  .home-screen { --sheet-h: 520px; }
   .m-sheet { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); padding-bottom: 6px; }
   .leaflet-bottom.leaflet-right .leaflet-control-zoom { display: none; }
 }
@@ -657,7 +657,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-sheet-toggle svg { color: #17142b; flex: none; }
 .m-sheet .m-cards[hidden] { display: none; }
 @media (max-width: 899px) {
-  .home-screen:has(.m-sheet.is-closed) { --sheet-h: 150px; }
+  .home-screen:has(.m-sheet.is-closed) { --sheet-h: 330px; }
 }
 
 /* Carte 3D indisponible : message explicite au lieu d'un repli silencieux */
@@ -691,9 +691,28 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .pk-s-green { background: #12a150; }.pk-s-red { background: #e5483c; }.pk-s-orange { background: #f08a14; }.pk-s-gray { background: #8a8f9c; }
 .m-street-bar { display: flex; gap: 10px; padding: 0 14px 10px; pointer-events: none; }
 .m-street-bar > * { pointer-events: auto; }
-.m-street-btn { flex: 1; min-height: 48px; padding: 0 12px; border: 0; border-radius: 24px; color: #fff; font: 800 15px "Manrope", sans-serif; box-shadow: 0 8px 22px #1a143a40; }
-.m-street-btn.free { background: #12a150; }.m-street-btn.taken { background: #e5483c; }
+.m-street-btn { flex: 1; min-height: 52px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 16px; color: #fff; font: 800 15px "Manrope", sans-serif; }
+.m-street-btn.free { background: #0b7a3b; }.m-street-btn.taken { background: #c8302a; }
 .m-street-btn:disabled { opacity: .6; }
 .m-street-help { margin: 0 14px 10px; padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; border-radius: 16px; background: #fff; color: #17142b; font: 700 12.5px/1.35 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; pointer-events: auto; }
 .m-street-help span { flex: 1; }
-.m-street-help button { flex: none; min-width: 32px; min-height: 32px; border: 0; background: transparent; color: #17142b; }
+.m-street-help button { flex: none; min-width: 44px; min-height: 44px; margin: -10px -12px -10px 0; display: grid; place-items: center; border: 0; background: transparent; color: #17142b; }
+
+/* Écran d'accueil : panneau « Places en rue » (compteur honnête + deux signalements en un geste) */
+.m-street-panel { margin: 0 14px 10px; padding: 14px; border-radius: 22px; background: #fff; color: #17142b; box-shadow: 0 10px 30px #1a143a38; display: grid; gap: 12px; }
+.m-street-panel .m-street-bar { padding: 0; }
+.sp-main { display: flex; align-items: center; gap: 14px; min-height: 56px; }
+.sp-num { flex: none; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: #ecebf3; color: #4b4963; font: 800 30px/1 "Manrope", sans-serif; font-variant-numeric: tabular-nums; }
+.sp-num.has { background: #0b7a3b; color: #fff; }
+.sp-num.unknown { background: #ecebf3; color: #4b4963; }
+.sp-text { display: grid; gap: 3px; min-width: 0; }
+.sp-text strong { font: 800 15px/1.25 "Manrope", sans-serif; }
+.sp-text span { font: 600 12.5px/1.35 "Manrope", sans-serif; color: #4b4963; }
+.sp-text .sp-example { color: #8a4b00; font-weight: 800; }
+.sp-link { min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #4a2fb8; font: 800 13.5px "Manrope", sans-serif; text-decoration: underline; justify-self: start; }
+.sp-skel { background: linear-gradient(100deg, #ecebf3 30%, #f7f6fc 50%, #ecebf3 70%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
+.sp-line { display: block; height: 14px; border-radius: 7px; width: 100%; }
+.sp-line.short { width: 60%; }
+.sp-text:has(.sp-line) { flex: 1; gap: 8px; }
+.m-street-btn:disabled { opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .sp-skel { animation: none; } }

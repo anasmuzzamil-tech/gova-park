@@ -15,6 +15,7 @@ import { STATUS_COLORS } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
+import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -90,7 +91,8 @@ export default function Home() {
   const [view, setView] = useState<"map" | "list">("map");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(true);
+  // Mobile : panneau des places privées replié au départ (la carte et les places en rue restent lisibles) ; ouvert sur grand écran.
+  const [sheetOpen, setSheetOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 900);
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
@@ -192,6 +194,7 @@ export default function Home() {
   const streetQuery = trpc.govapark.street.list.useQuery(streetInput ?? { south: 0, north: 0.01, west: 0, east: 0.01 }, { enabled: streetOn && online && streetInput !== null, refetchInterval: 15000, placeholderData: (previous) => previous });
   type StreetSpotData = NonNullable<typeof streetQuery.data>["spots"][number];
   const streetSpots = useMemo<StreetSpotData[]>(() => (streetOn && online && streetInput ? streetQuery.data?.spots ?? [] : []), [streetOn, online, streetInput, streetQuery.data]);
+  const streetPanelState: StreetPanelState = !streetOn ? "off" : !online ? "offline" : streetInput === null ? "zoom" : streetQuery.isError ? "error" : streetQuery.isLoading ? "loading" : "ok";
   const selectedStreet = streetSpots.find((spot) => spot.id === selectedStreetId) ?? null;
   const streetCreate = trpc.govapark.street.create.useMutation({
     onSuccess: (result, variables) => {
@@ -683,12 +686,11 @@ export default function Home() {
         </div>}
 
         <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
-          {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={16} /></button></div>}
-          {streetOn && streetInput === null && <div className="m-street-help" role="status"><span>Zoomez sur la carte pour voir les places en rue.</span></div>}
-          <div className="m-street-bar" aria-label="Places gratuites en rue">
-            <button className="m-street-btn free" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("free")}>Je libère ma place</button>
-            <button className="m-street-btn taken" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken")}>Je me gare</button>
-          </div>
+          {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={18} /></button></div>}
+          <StreetPanel state={streetPanelState} spots={streetSpots} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
+            busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"}
+            onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
+            onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} onLocate={() => locate(true)} />
           <div className="m-sheet-head">
             <ul className="m-legend" aria-label="Légende des couleurs des places">
               <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>

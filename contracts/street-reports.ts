@@ -30,6 +30,8 @@ export const STREET_RULES = {
   sameSpotMeters: 15,
   /** Des signalements concordants sont « rapprochés » s'ils sont à moins de cette durée du plus récent. */
   concordantWithinMinutes: 5,
+  /** Rayon du compteur « places libres signalées près de vous » de l'écran d'accueil. */
+  nearbyRadiusMeters: 500,
   /** Taille maximale (en degrés) de la zone demandée par la carte. */
   maxSpanDeg: 0.25,
   defaultLimit: 200,
@@ -173,6 +175,27 @@ export function spotFromCluster(cluster: StreetReportRow[], now: Date, example =
     source: STREET_SOURCE, reportedAt: new Date(created).toISOString(), expiresAt: expires.toISOString(), ageMinutes: age, agoText: agoText(age),
     reliabilityPct: rel.pct, reliability: level, reliabilityText: `${reliabilityWord[level]} (${rel.pct} %)`, agreeing: rel.agreeing, example,
   };
+}
+
+/**
+ * Compteur de l'écran d'accueil : places signalées LIBRES depuis moins de greenMinutes (donc vertes à l'instant `now`),
+ * à moins de `radiusMeters` du point de référence. Calculé à partir de la date du signalement, pas de la couleur reçue
+ * (qui peut dater de quelques secondes). Retourne 0 s'il n'y a aucun signalement : jamais de nombre inventé.
+ */
+export function countFreeNearby(
+  spots: Array<{ status: StreetStatus; latitude: number; longitude: number; reportedAt: string; example?: boolean }>,
+  ref: { lat: number; lng: number }, now: Date, radiusMeters: number = STREET_RULES.nearbyRadiusMeters,
+): { count: number; examples: number } {
+  let count = 0, examples = 0;
+  for (const s of spots) {
+    if (s.status !== "free") continue;
+    const created = ms(s.reportedAt);
+    if (!Number.isFinite(created) || created > now.getTime() + minute) continue;
+    if (now.getTime() - created >= STREET_RULES.greenMinutes * minute) continue;
+    if (distanceMeters(ref.lat, ref.lng, s.latitude, s.longitude) > radiusMeters) continue;
+    count += 1; if (s.example) examples += 1;
+  }
+  return { count, examples };
 }
 
 export function inBBox(lat: number, lng: number, b: StreetBBox): boolean {
