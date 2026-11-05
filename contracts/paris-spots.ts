@@ -25,8 +25,10 @@ export const SPOT_TYPE_LABEL: Record<number, string> = {
 /** Symbole affiché dans l'icône (la couleur, elle, ne dit que le statut). */
 export const SPOT_TYPE_GLYPH: Record<number, string> = { 0: "?", 1: "€", 2: "P", 3: "L", 4: "V", 5: "M", 6: "C", 7: "PMR", 8: "R" };
 export const SPOT_TYPE_CODES: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 0];
-/** Affichés par défaut : les emplacements où une VOITURE ordinaire peut se garer (payant, mixte, gratuit). Les autres restent activables par le filtre. */
-export const DEFAULT_SPOT_TYPES: number[] = [SPOT_TYPE.paid, SPOT_TYPE.free];
+/** Types où une VOITURE ordinaire peut se garer (payant, mixte, gratuit) : seuls ceux-là peuvent être colorés par un signalement « place libre / prise ». */
+export const CAR_SPOT_TYPES: number[] = [SPOT_TYPE.paid, SPOT_TYPE.free];
+/** Affichés par défaut (« Voitures et motos ») : voitures (payant, mixte, gratuit) et deux-roues motorisés. Les autres (vélos, livraison, autocars, PMR, services, autre) restent activables par « Tout afficher ». */
+export const DEFAULT_SPOT_TYPES: number[] = [SPOT_TYPE.paid, SPOT_TYPE.free, SPOT_TYPE.moto];
 
 const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
@@ -65,8 +67,8 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
       if (q === "velos") return info(SPOT_TYPE.bike, false, "Stationnement vélos", "Réservé aux vélos");
       if (q === "velo-cargo") return info(SPOT_TYPE.bike, false, "Vélos cargo", "Réservé aux vélos cargo");
       if (q === "box a velos") return info(SPOT_TYPE.bike, false, "Box à vélos", "Réservé aux vélos");
-      if (q === "motos payant mixte" || q === "motos payant rotatif") return info(SPOT_TYPE.moto, false, "Deux-roues motorisés (payant)", "Réservé aux deux-roues motorisés");
-      if (q === "mixte") return info(SPOT_TYPE.moto, false, "Stationnement deux-roues", "Réservé aux deux-roues (régime : Mixte)");
+      if (q === "motos payant mixte" || q === "motos payant rotatif") return info(SPOT_TYPE.moto, false, "Place moto / deux-roues motorisés", "Réservée aux deux-roues motorisés (payant), pas aux voitures");
+      // « Mixte » seul : le fichier ne dit pas s'il s'agit de motos ou de vélos (les lignes ont presque toutes des arceaux comme mobilier) : jamais deviné.
       return rawRegime(prio, part);
     case "livraison":
       if (q === "zl permanente") return info(SPOT_TYPE.delivery, false, "Zone de livraison (permanente)", "Réservée aux livraisons");

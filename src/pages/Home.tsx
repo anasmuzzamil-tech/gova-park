@@ -20,7 +20,7 @@ import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
-import { DEFAULT_SPOT_TYPES, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
+import { CAR_SPOT_TYPES, DEFAULT_SPOT_TYPES, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
@@ -232,8 +232,11 @@ export default function Home() {
   const parisMerged = useMemo(() => {
     const officials: OfficialSpot[] = parisLoad?.status === "ok" ? parisLoad.spots : [];
     if (parisLoad?.status !== "ok" || parisLoad.mode !== "detail") return { gray: officials.map((s): ParisSpot => ({ ...s, color: "gray", reportId: 0 })), hot: [] as ParisSpot[], matched: new Set<number>() };
-    const merged = mergeWithReports(officials, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt })));
-    return { gray: merged.spots.filter((x) => x.reportId === 0), hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
+    // Seuls les emplacements voiture peuvent être colorés : un signalement « libre / prise » vient d'un conducteur, jamais d'une place moto, vélo ou autre (restées grises).
+    const cars = officials.filter((s) => CAR_SPOT_TYPES.includes(s.t));
+    const others = officials.filter((s) => !CAR_SPOT_TYPES.includes(s.t)).map((s): ParisSpot => ({ ...s, color: "gray", reportId: 0 }));
+    const merged = mergeWithReports(cars, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt })));
+    return { gray: [...merged.spots.filter((x) => x.reportId === 0), ...others], hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
   }, [parisLoad, streetSpots]);
   const streetSpotsOnMap = useMemo(() => streetSpots.filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, parisMerged]);
   const streetCreate = trpc.govapark.street.create.useMutation({
@@ -933,8 +936,8 @@ export default function Home() {
       {parisFilterOpen && <Modal title="Types d’emplacements de Paris" onClose={() => setParisFilterOpen(false)}>
         <div className="form-stack">
           {SPOT_TYPE_CODES.map((code) => <label className="check-row" key={code}><input type="checkbox" checked={parisTypes.has(code)} onChange={() => setParisTypes((previous) => { const next = new Set(previous); if (next.has(code)) next.delete(code); else next.add(code); return next; })} /> {SPOT_TYPE_LABEL[code]}</label>)}
-          <p className="field-help">Par défaut : emplacements où une voiture peut se garer (payant, mixte, gratuit). Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
-          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(DEFAULT_SPOT_TYPES))}>Voitures seulement</button><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
+          <p className="field-help">Par défaut : emplacements où une voiture peut se garer (payant, mixte, gratuit) et places moto (deux-roues motorisés). Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
+          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(DEFAULT_SPOT_TYPES))}>Voitures et motos</button><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
         </div>
       </Modal>}
 

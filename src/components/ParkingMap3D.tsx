@@ -166,7 +166,7 @@ export default function ParkingMap3D({
   onStreetSpot?: (spot: MapStreetSpot) => void;
   /** Emplacements officiels de Paris (gris, regroupés) et ceux colorés par un signalement (jamais regroupés). */
   parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void;
-  /** Contours en pointillés des emprises de Paris (zoom rue seulement) : couche active et types cochés (le filtre « Voitures seulement / Tout afficher »). Carte 3D uniquement. */
+  /** Contours en pointillés des emprises de Paris (zoom rue seulement) : couche active et types cochés (le filtre « Voitures et motos / Tout afficher »). Carte 3D uniquement. */
   polygonsOn?: boolean; polygonTypes?: ReadonlySet<number>;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
