@@ -653,6 +653,15 @@ export default function Home() {
       .sort((a, b) => a.meters - b.meters)
       .slice(0, 8);
   }, [filtered, userPosition, visibleCenter]);
+  // Liste du bas : les places EN RUE signalées d'abord (libres avant prises, puis la plus proche), puis les places privées (jamais mêlées).
+  const nearStreet = useMemo(() => {
+    const from = userPosition ?? visibleCenter;
+    const rank: Record<string, number> = { green: 0, orange: 1, red: 2, gray: 3 };
+    return streetOfVehicle
+      .map((spot) => ({ spot, meters: distanceMeters(from.lat, from.lng, spot.latitude, spot.longitude) }))
+      .sort((a, b) => (rank[a.spot.color] ?? 3) - (rank[b.spot.color] ?? 3) || a.meters - b.meters)
+      .slice(0, 8);
+  }, [streetOfVehicle, userPosition, visibleCenter]);
   // Pendant un trajet : uniquement les places proches du trajet ou de l'arrivée.
   const arrival = drivingRoute ? drivingRoute.coordinates[drivingRoute.coordinates.length - 1] : null;
   const mapListings = useMemo(() => !drivingRoute || !arrival ? filtered : filtered.filter((item) => distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) <= 2500 || distanceToRoute({ lat: item.latitude, lng: item.longitude }, drivingRoute.coordinates) <= 1000), [filtered, drivingRoute, arrival]);
@@ -771,7 +780,7 @@ export default function Home() {
     : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
     : `${parisLoad.mode === "overview" ? "Zoomez pour voir chaque emplacement." : ""}${parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""}`.trim();
 
-  const placesNear = nearLabel(filtered.length, { hasPosition: !!userPosition, address: destination?.label });
+  const placesNear = nearLabel(filtered.length + nearStreet.length, { hasPosition: !!userPosition, address: destination?.label });
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />
@@ -922,12 +931,17 @@ export default function Home() {
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}
               {searchNote && <div className="m-empty">{searchNote}</div>}
               {searchTruncated && <div className="m-empty">Trop de places dans cette zone : seules les 300 premières sont chargées. Zoomez ou affinez les filtres.</div>}
+              {nearStreet.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`near-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
+                <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
+                <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalée par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
+                <span className="m-dist">{meters(away)}</span>
+              </button>)}
               {!listingsQuery.isLoading && !searchNote && nearby.length === 0 && <div className="m-empty">Aucune place avec ces filtres. <button onClick={() => { setFilters(initialFilters); setOnlyAvailable(false); }}>Tout afficher</button></div>}
               {nearby.map(({ item, meters: away }) => <article className="m-card" key={item.id}>
                 <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                   <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
                   {statePillLabel(item.parkingStatus) && <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{statePillLabel(item.parkingStatus)}</span>}
-                  <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span><span className="m-sub">{item.covered ? "Couvert" : "Extérieur"} · ★ {item.rating.toFixed(1)}</span></span>
+                  <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span><span className="m-sub">Place privée · {item.covered ? "Couvert" : "Extérieur"} · ★ {item.rating.toFixed(1)}</span></span>
                 </button>
                 <button className="m-card-go" onClick={() => void startRoute(item.id)}><Navigation size={16} />Y aller</button>
               </article>)}
