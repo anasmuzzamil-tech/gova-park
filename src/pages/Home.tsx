@@ -24,7 +24,7 @@ import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
 import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE, SPOT_TYPE_CODES, formatStreet, interpretRegime, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
-import { DEFAULT_VEHICLE, DISPLAY_CHIP, isDisplayType, type DisplayType, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
+import { VEHICLE_SPOT_TYPES, DEFAULT_VEHICLE, DISPLAY_CHIP, isDisplayType, type DisplayType, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { PlaceSheet } from "@/components/PlaceSheet";
 import { parisSheetContent, type ParisSpotInfo } from "@/lib/place-sheet";
@@ -33,6 +33,7 @@ import { spotContext, type SpotContext } from "@/lib/spot-context";
 import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
 import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
 import { loadTariffs } from "@/lib/paris-tariffs";
+import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
 import { nearLabel } from "@/lib/near-label";
@@ -42,6 +43,7 @@ import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
 import { capAlternatives, routeCrossesZfe, tripTag, viaRoad } from "@/lib/route-compare";
 import { modeTabs } from "@/lib/route-modes";
+import { ARRIVAL_RADIUS_M, arrivalBounds, arrivalReports, arrivalSentence, countStreetPlaces, reportsSentence } from "@/lib/arrival-parking";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -305,6 +307,37 @@ export default function Home() {
     }
     void calculateRoutes(trip.dest, navDest?.label ?? "Destination", drivingRoute.destinationId, navDest ?? undefined, mode);
   };
+  // Stationnement à l'arrivée : places en rue officielles (tuiles existantes) et signalements récents du même type de véhicule, à moins de 200 m de la destination. Rien d'autre, aucune note.
+  const arrivalDest = drivingRoute && navDest ? { lat: navDest.lat, lng: navDest.lng } : null;
+  const arrivalVehicle: VehicleType = drivingRoute?.profile ?? vehicle;
+  const [arrivalLoad, setArrivalLoad] = useState<ParisLoad | null>(null);
+  const [arrivalTariff, setArrivalTariff] = useState<string | null>(null);
+  const [arrivalTick, setArrivalTick] = useState(0);
+  const arrivalBox = useMemo(() => { if (!arrivalDest) return null; const b = arrivalBounds(arrivalDest); const r = (v: number) => Math.round(v * 1e5) / 1e5; return { south: r(b.south), north: r(b.north), west: r(b.west), east: r(b.east) }; }, [arrivalDest?.lat, arrivalDest?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  const arrivalStreetQuery = trpc.govapark.street.list.useQuery(arrivalBox ?? { south: 0, north: 0.01, west: 0, east: 0.01 }, { enabled: arrivalBox !== null && online, refetchInterval: 30000 });
+  useEffect(() => {
+    setArrivalLoad(null);
+    if (!arrivalDest) return;
+    let alive = true;
+    void loadParisSpots(arrivalBounds(arrivalDest), arrivalDest, new Set(VEHICLE_SPOT_TYPES[arrivalVehicle])).then((load) => { if (alive) setArrivalLoad(load); });
+    return () => { alive = false; };
+  }, [arrivalDest?.lat, arrivalDest?.lng, arrivalVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!arrivalDest) return; const timer = window.setInterval(() => setArrivalTick((n) => n + 1), 30000); return () => window.clearInterval(timer); }, [arrivalDest?.lat, arrivalDest?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
+  const arrival = useMemo(() => {
+    if (!arrivalDest) return null;
+    const views = online && arrivalStreetQuery.data ? arrivalReports(arrivalStreetQuery.data.spots, arrivalDest, arrivalVehicle, new Date()) : null;
+    if (arrivalLoad?.status !== "ok" || arrivalLoad.mode !== "detail") return { state: arrivalLoad === null ? "loading" as const : "unavailable" as const, count: null, views, sentence: null };
+    const count = countStreetPlaces(arrivalLoad.spots, arrivalDest, arrivalVehicle);
+    return { state: "ok" as const, count, views, sentence: arrivalSentence(count, views, arrivalVehicle) };
+  }, [arrivalDest?.lat, arrivalDest?.lng, arrivalVehicle, arrivalLoad, arrivalStreetQuery.data, online, arrivalTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const arrivalPaid = arrival?.count?.paidSections ?? 0;
+  useEffect(() => {
+    setArrivalTariff(null);
+    if (!arrivalDest || arrivalPaid === 0) return;
+    let alive = true;
+    void loadTariffs().then((file) => { if (alive) setArrivalTariff(tariffLineFor(file, arrivalVehicle === "moto" ? SPOT_TYPE.moto : SPOT_TYPE.paid, arrivalDest.lat, arrivalDest.lng)); });
+    return () => { alive = false; };
+  }, [arrivalDest?.lat, arrivalDest?.lng, arrivalVehicle, arrivalPaid]); // eslint-disable-line react-hooks/exhaustive-deps
   // Bornes de recharge (IRVE) : couche « Bornes de recharge » OU type « Électrique » du sélecteur (affichage seulement, ni signalement ni disponibilité).
   const [chargeOn, setChargeOn] = useState(initialLayers.charge);
   const [irveDate, setIrveDate] = useState<string | null>(null);
@@ -987,13 +1020,22 @@ export default function Home() {
 {!drivingRoute.offline && <div className="m-trip-list" role="group" aria-label="Trajets comparés">
   {routeOptions.map((option) => { const tag = tripTag(option.label); const bike = option.profile === "bike"; return <button type="button" key={option.id} className={`m-trip-card${drivingRoute.id === option.id ? " on" : ""}`} aria-pressed={drivingRoute.id === option.id} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>
     <span className="m-trip-top"><b>{formatDuration(option.duration)}</b><span>{formatDistance(option.distance)}</span>{tag && <em>{tag}</em>}</span>
-    {option.via && <span className="m-trip-line">via {option.via}</span>}
-    <span className="m-trip-line">{bike ? "0 € · vélo" : `${formatEuro(option.costEur ?? 0)}${option.costAssumed ? " (prix supposé)" : ""} de carburant${option.profile === "moto" ? " · estimation" : ""}`}</span>
+    <span className="m-trip-line" title={option.via ? `via ${option.via}` : undefined}>{bike ? "0 € · vélo" : `${formatEuro(option.costEur ?? 0)}${option.costAssumed ? " (prix supposé)" : ""} de carburant${option.profile === "moto" ? " · estimation" : ""}`}{option.via ? ` · via ${option.via}` : ""}</span>
     {zfeCrossing[option.id] && <span className="m-trip-zfe">Traverse la zone à faibles émissions de Paris</span>}
   </button>; })}
   <small className="m-trip-note">{routeOptions.length > 1 ? "Durées" : "Un seul itinéraire proposé pour ce trajet. Durée"} {NO_TRAFFIC}.</small>
 </div>}
-{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Y aller</button>}</div>
+{drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Y aller</button>}
+{arrival && <section className="m-arrival" aria-label="Stationnement à l’arrivée">
+  <h3>Stationnement à l’arrivée</h3>
+  <p className="m-arrival-main">{arrival.state === "loading" ? "Recherche des places autour de l’arrivée…" : arrival.sentence ?? (arrival.views ? `Nombre de places en rue indisponible pour le moment · ${reportsSentence(arrival.views)}` : "Places en rue indisponibles pour le moment.")}</p>
+  {(arrival.views?.length || arrivalTariff || arrival.state === "ok") && <details className="m-arrival-more"><summary>Détails</summary>
+    {arrival.views?.slice(0, 3).map((v) => <p className="m-arrival-rep" key={v.id}><i className={`dot ${v.color}`} aria-hidden="true" /><b>{v.word}</b> à {v.time} · à {v.meters} m<small>Signalé par un utilisateur{v.example ? " (exemple)" : ""} · rien n’est garanti</small></p>)}
+    {arrivalTariff && <p className="m-arrival-tariff">{arrivalTariff}<small>Stationnement payant dans le rayon · à vérifier sur paris.fr</small></p>}
+    <small className="m-arrival-src">Rayon {ARRIVAL_RADIUS_M} m. Places : Ville de Paris, licence ODbL, non exhaustives (Paris seulement). Les signalements sont des avis d’utilisateurs.</small>
+  </details>}
+</section>}
+</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
           </div>
           <div className="m-sheet-title">Places près de l’arrivée<span>{nearArrival.length}</span></div>
