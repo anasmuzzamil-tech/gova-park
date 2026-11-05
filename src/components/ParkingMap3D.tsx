@@ -466,7 +466,7 @@ export default function ParkingMap3D({
     });
     listingMarkers.current = [...clusters, ...singles.map((listing) => {
       const color = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
-      const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
+      const statusText = listing.parkingStatus?.label ?? "Aucun signalement récent";
       const label = `${listing.title} — ${statusText}`;
       const node = detailed
         ? text("span", formatRate(listing.hourlyCents), `pk-pill pk-${color}`)
@@ -510,7 +510,7 @@ export default function ParkingMap3D({
     reportMarkers.current = reports.map((report) => {
       const symbol = report.kind === "free" ? "?" : report.kind === "occupied" ? "×" : "↗";
       const node = el("span", `pk-bubble pk-b-${report.parkingStatus?.color ?? "gray"}${detailed ? "" : " pk-sm"}`, `<i class="pk-ring"></i><b>${detailed ? symbol : ""}</b>`);
-      const rlabel = `${report.address} — ${report.parkingStatus?.label ?? "Disponibilité inconnue"}`; node.title = rlabel; node.setAttribute("aria-label", rlabel); node.style.cursor = "pointer";
+      const rlabel = `${report.address} — ${report.parkingStatus?.label ?? "Aucun signalement récent"}`; node.title = rlabel; node.setAttribute("aria-label", rlabel); node.style.cursor = "pointer";
       node.addEventListener("click", (e) => { e.stopPropagation(); cb.current.onReport(report); });
       return new maplibregl.Marker({ element: node }).setLngLat([report.longitude, report.latitude]).addTo(map);
     });

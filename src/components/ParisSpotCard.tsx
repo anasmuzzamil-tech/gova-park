@@ -1,16 +1,16 @@
 import { Navigation } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATUS_COLORS } from "@contracts/parking-status";
-import { PARIS_SOURCE, describeParisSpot, interpretRegime } from "@contracts/paris-spots";
-import { PARIS_POLYGONS_NOTE } from "@contracts/paris-polygons";
+import { describeParisSpot, interpretRegime } from "@contracts/paris-spots";
 import { STREET_RULES, distanceMeters } from "@contracts/street-reports";
 
 export type ParisSpotInfo = { lat: number; lng: number; t: number; places: number; regime: number; street: string; num: number; color: string; reportId: number };
 export type ParisSpotReport = { status: "free" | "taken"; reportedAt: string; example: boolean };
 
 /**
- * Fiche d'un emplacement officiel de la Ville de Paris, en langage clair, 5 lignes au plus :
- * titre (type + rue), nombre de places du tronçon, précision de régime, statut (gris tant qu'aucun signalement récent), source en petit.
+ * Fiche d'une place de Paris, en langage clair, 4 lignes au plus :
+ * titre (type + rue), nombre de places, précision de régime, et une ligne de statut SEULEMENT si un utilisateur l'a signalée (place grise : aucun texte de statut).
+ * La source, la licence et la mention « à titre indicatif » sont dans le panneau « i », pas ici.
  * Aucune promesse « vous pouvez vous garer » : seul le régime décide (voir interpretRegime), jamais la couleur.
  * Les boutons de signalement n'apparaissent que si le GPS de l'appareil est déjà à portée de la place ET si le régime autorise une voiture.
  */
@@ -32,9 +32,7 @@ export function ParisSpotCard({ spot, regimes, report, device, onGo, onReport, o
       <div className="pf">
         <p className="pf-places">{card.places}</p>
         {card.note && <p className="pf-note">{card.note}</p>}
-        <p className="pf-status"><span className="report-status-dot" style={{ background: dot }} />{card.status}</p>
-        <p className="pf-source">{PARIS_POLYGONS_NOTE}</p>
-        <p className="pf-source">Source : {PARIS_SOURCE.producer}, licence {PARIS_SOURCE.license}</p>
+        {card.status && <p className="pf-status"><span className="report-status-dot" style={{ background: dot }} />{card.status}</p>}
         <button className="btn btn-secondary btn-full" onClick={onGo}><Navigation size={18} />Y aller</button>
         {card.carsOk && near && <div className="pf-report">
           <button className="btn btn-secondary" onClick={() => onReport("free")}>Je libère cette place</button>

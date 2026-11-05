@@ -1,4 +1,4 @@
-// Emplacements officiels de stationnement sur voie publique de Paris, affichés en GRIS « statut inconnu ».
+// Places de stationnement sur voie publique de Paris (données de la Ville), affichées en GRIS : une place, sans texte de statut.
 // Source : jeu de données « Stationnement sur voie publique - emplacements » de la Ville de Paris, licence ODbL.
 // Les données changent vite et la Ville ne garantit pas leur exhaustivité : ce sont des EMPLACEMENTS, jamais une disponibilité.
 // Décision d'Anas : aucune DISPONIBILITÉ pré-remplie. Seul un signalement utilisateur récent (contracts/street-reports.ts) colore
@@ -14,7 +14,7 @@ export const PARIS_SOURCE = {
   url: "https://www.data.gouv.fr/datasets/stationnement-sur-voie-publique-emplacements",
 } as const;
 
-export const PARIS_ATTRIBUTION = "Emplacements : Ville de Paris, licence ODbL, non exhaustifs. Statut inconnu (gris) sauf signalement récent d'un utilisateur.";
+export const PARIS_ATTRIBUTION = "Places : Ville de Paris, licence ODbL, données non exhaustives. La couleur vient uniquement d'un signalement récent d'un utilisateur.";
 
 /** Types d'emplacement (codes stockés dans les fichiers). 0 = régime non reconnu : jamais deviné. */
 export const SPOT_TYPE = { other: 0, paid: 1, free: 2, delivery: 3, bike: 4, moto: 5, coach: 6, pmr: 7, reserved: 8 } as const;
@@ -58,11 +58,11 @@ export function interpretRegime(prioritaire: string | null | undefined, particul
   const p = norm(prio), q = norm(part);
   switch (p) {
     case "payant mixte":
-      return q === "mixte" ? info(SPOT_TYPE.paid, true, "Stationnement payant", "Ouvert à tous les véhicules") : rawRegime(prio, part);
+      return q === "mixte" ? info(SPOT_TYPE.paid, true, "Place payante", "Ouvert à tous les véhicules") : rawRegime(prio, part);
     case "payant rotatif":
-      return q === "rotatif" ? info(SPOT_TYPE.paid, true, "Stationnement payant (rotatif)") : rawRegime(prio, part);
+      return q === "rotatif" ? info(SPOT_TYPE.paid, true, "Place payante (rotatif)") : rawRegime(prio, part);
     case "gratuit":
-      return q === "gratuit" ? info(SPOT_TYPE.free, true, "Stationnement gratuit") : rawRegime(prio, part);
+      return q === "gratuit" ? info(SPOT_TYPE.free, true, "Place gratuite") : rawRegime(prio, part);
     case "2 roues":
       if (q === "velos") return info(SPOT_TYPE.bike, false, "Stationnement vélos", "Réservé aux vélos");
       if (q === "velo-cargo") return info(SPOT_TYPE.bike, false, "Vélos cargo", "Réservé aux vélos cargo");
@@ -150,12 +150,12 @@ export function describeParisSpot(input: {
   regime: RegimeInfo; places: number; street: string; numeroCode: number;
   /** Signalement d'utilisateur qui colore l'emplacement, sinon null. */
   report?: { status: "free" | "taken"; minutes: number; stale: boolean; example: boolean } | null;
-}): { title: string; places: string; note: string | null; status: string; carsOk: boolean } {
+}): { title: string; places: string; note: string | null; /** Texte de statut : seulement pour une place signalée par un utilisateur, null pour une place grise (aucun texte). */ status: string | null; carsOk: boolean } {
   const street = formatStreet(input.street, input.numeroCode);
-  const places = input.places > 0 ? `${input.places} ${input.places > 1 ? "places" : "place"} sur ce tronçon` : "Nombre de places non renseigné";
+  const places = input.places > 0 ? `${input.places} ${input.places > 1 ? "places" : "place"}` : "Nombre de places non renseigné";
   const r = input.report;
-  const status = !r ? "Aucun signalement récent : disponibilité inconnue"
-    : `Signalé ${r.status === "free" ? "libre" : "pris"} ${r.minutes < 1 ? "à l'instant" : `il y a ${r.minutes} min`} par un utilisateur${r.stale ? " (à vérifier)" : ""}${r.example ? " · exemple" : ""}`;
+  const status = !r ? null
+    : `Signalée ${r.status === "free" ? "libre" : "prise"} ${r.minutes < 1 ? "à l'instant" : `il y a ${r.minutes} min`} par un utilisateur${r.stale ? " (à vérifier)" : ""}${r.example ? " · exemple" : ""}`;
   return { title: street ? `${input.regime.title} · ${street}` : input.regime.title, places, note: input.regime.note, status, carsOk: input.regime.cars === true };
 }
 

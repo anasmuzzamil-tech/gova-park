@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveStatus, type StatusSignal } from "@contracts/parking-status";
+import { resolveStatus, statePillLabel, type StatusSignal } from "@contracts/parking-status";
 
 const now = new Date("2026-11-04T12:00:00Z");
 const minutesAgo = (m: number) => new Date(now.getTime() - m * 60000);
@@ -9,6 +9,16 @@ describe("statut des places", () => {
   it("sans donnée : gris et disponibilité inconnue", () => {
     const s = resolveStatus([], now);
     expect(s.color).toBe("gray"); expect(s.availability).toBe("unknown"); expect(s.source).toBeNull();
+    expect(s.label).toBe("Aucun signalement récent"); expect(/inconnu/i.test(`${s.label} ${s.detail}`)).toBe(false);
+  });
+  it("pastille de carte : jamais de texte sur une place grise, jamais « Dispo » sans source verte", () => {
+    expect(statePillLabel(resolveStatus([], now))).toBeNull();
+    expect(statePillLabel(null)).toBeNull(); expect(statePillLabel(undefined)).toBeNull();
+    expect(statePillLabel({ color: "green", availability: "available" })).toBe("Dispo");
+    expect(statePillLabel({ color: "red", availability: "unavailable" })).toBe("Occupée");
+    expect(statePillLabel({ color: "orange", availability: "uncertain" })).toBe("À vérifier");
+    expect(statePillLabel({ color: "gray", availability: "unavailable" })).toBe("Fermée");
+    expect(statePillLabel({ color: "gray", availability: "unknown" })).toBeNull();
   });
   it("source fiable libre récente : vert", () => {
     const s = resolveStatus([{ state: "free", sourceType: "owner", source: "Calendrier du propriétaire", observedAt: minutesAgo(1) }], now);

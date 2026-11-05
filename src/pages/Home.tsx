@@ -12,7 +12,7 @@ const ParkingMap3D = lazy(() => importWithRetry(() => import("@/components/Parki
 const initialWebGL = detectWebGL();
 import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
-import { STATUS_COLORS } from "@contracts/parking-status";
+import { STATUS_COLORS, statePillLabel } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
@@ -765,7 +765,7 @@ export default function Home() {
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
             {infoOpen && <div className="m-info-panel" role="dialog" aria-label="Légende et sources">
               <ul className="m-legend" aria-label="Légende des couleurs des places">
-                <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
+                <li><i className="green" />Libre (signalé il y a X min)</li><li><i className="orange" />Peut-être libre</li><li><i className="red" />Prise</li><li><i className="gray" />Place</li>
               </ul>
               <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
               <p>{PARIS_ATTRIBUTION}</p>
@@ -796,7 +796,7 @@ export default function Home() {
             {nearArrival.map(({ item, meters: away }) => <article className="m-card" key={`arr-${item.id}`}>
               <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                 <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
-                <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
+                {statePillLabel(item.parkingStatus) && <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{statePillLabel(item.parkingStatus)}</span>}
                 <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span></span>
               </button>
               <button className="m-card-go" disabled={!online} title={online ? undefined : "La réservation demande une connexion"} onClick={() => navigate(`/reserver/${item.id}`)}>{online ? "Réserver" : "Indisponible hors ligne"}</button>
@@ -809,12 +809,12 @@ export default function Home() {
             <div className="m-cards m-cards-dest">
               {destPlaces.street.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
                 <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
-                <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalé par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
+                <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalée par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
                 <span className="m-dist">{meters(away)}</span>
               </button>)}
               {destPlaces.street.length === 0 && <div className="m-empty m-empty-line">{streetPanelState === "ok" ? "Aucune place signalée libre ici pour l’instant." : "Places en rue indisponibles pour le moment."}</div>}
               {destPlaces.privatePlaces.map(({ item, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-priv-${item.id}`} onClick={() => navigate(`/place/${item.id}`)}>
-                <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
+                {statePillLabel(item.parkingStatus) && <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{statePillLabel(item.parkingStatus)}</span>}
                 <span className="m-scard-main"><strong>{item.title}</strong><small>Place privée · {euros(item.hourlyCents)}/h</small></span>
                 <span className="m-dist">{meters(away)}</span>
               </button>)}
@@ -833,7 +833,7 @@ export default function Home() {
               {nearby.map(({ item, meters: away }) => <article className="m-card" key={item.id}>
                 <button className="m-card-open" onClick={() => navigate(`/place/${item.id}`)}>
                   <img src={item.photos[item.mainPhoto] || item.photos[0]} alt="" loading="lazy" />
-                  <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{item.parkingStatus?.color === "green" ? "Dispo" : item.parkingStatus?.color === "red" ? "Occupée" : item.parkingStatus?.color === "orange" ? "À vérifier" : item.parkingStatus?.availability === "unavailable" ? "Fermée" : "Inconnu"}</span>
+                  {statePillLabel(item.parkingStatus) && <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{statePillLabel(item.parkingStatus)}</span>}
                   <span className="m-card-body"><span className="m-card-row"><strong className="m-price">{euros(item.hourlyCents)}<small>/h</small></strong><span className="m-dist">{meters(away)}</span></span><span className="m-title">{item.title}</span><span className="m-sub">{item.covered ? "Couvert" : "Extérieur"} · ★ {item.rating.toFixed(1)}</span></span>
                 </button>
                 <button className="m-card-go" onClick={() => void startRoute(item.id)}><Navigation size={16} />Y aller</button>

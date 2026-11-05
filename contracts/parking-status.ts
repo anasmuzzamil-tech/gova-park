@@ -95,7 +95,7 @@ export function resolveStatus(signals: StatusSignal[], now: Date = new Date()): 
   }
 
   if (latestExpired) return { color: "gray", availability: "unknown", label: "Information trop ancienne", detail: "Le dernier signalement ou la dernière donnée a expiré : la disponibilité réelle n'est pas connue.", source: latestExpired.source, updatedAt: new Date(latestExpired.observedAt).toISOString(), expiresAt: expiryOf(latestExpired).toISOString(), reliability: "none", reliabilityPct: null, stale: true };
-  return { color: "gray", availability: "unknown", label: "Disponibilité inconnue", detail: "Aucune donnée temps réel pour cette place : seules les informations statiques sont affichées.", source: null, updatedAt: null, expiresAt: null, reliability: "none", reliabilityPct: null, stale: false };
+  return { color: "gray", availability: "unknown", label: "Aucun signalement récent", detail: "Aucune donnée temps réel pour cette place : seules les informations statiques sont affichées.", source: null, updatedAt: null, expiresAt: null, reliability: "none", reliabilityPct: null, stale: false };
 }
 
 export const reliabilityLabel = (r: ParkingStatus["reliability"]) => ({ high: "élevée", medium: "moyenne", low: "faible", none: "aucune" }[r]);
@@ -110,4 +110,17 @@ export function listingStatus(input: { openNow: boolean; blockedNow: boolean; bo
 /** Statut d'un signalement communautaire (jamais vert). */
 export function reportStatus(report: { kind: "free" | "occupied" | "departure"; updatedAt: Date | string; confidence?: number | null; confirmations?: number; contradictions?: number; estimatedDeparture?: Date | string | null; source?: string }, now: Date = new Date()): ParkingStatus {
   return resolveStatus([{ state: report.kind, sourceType: "community", source: report.source ?? "Communauté", observedAt: report.updatedAt, confidence: report.confidence ?? 50, confirmations: report.confirmations ?? 0, contradictions: report.contradictions ?? 0, estimatedDeparture: report.estimatedDeparture ?? null }], now);
+}
+
+/**
+ * Pastille d'une carte de place : seulement quand une source ou un signalement le justifie (vert, rouge, orange, fermée).
+ * Une place grise n'a AUCUNE pastille : elle ne promet pas qu'elle est libre et ne parle pas de « statut ».
+ */
+export function statePillLabel(status: { color: string; availability: string } | null | undefined): string | null {
+  if (!status) return null;
+  if (status.color === "green") return "Dispo";
+  if (status.color === "red") return "Occupée";
+  if (status.color === "orange") return "À vérifier";
+  if (status.availability === "unavailable") return "Fermée";
+  return null;
 }

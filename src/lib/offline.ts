@@ -50,9 +50,9 @@ export function savePlaces<T extends { id: number }>(fresh: T[]) {
   } catch { /* stockage indisponible : le mode hors ligne s'en passe */ }
 }
 
-/** Statut affiché pour une place issue du cache : toujours gris/inconnu, avec la date de dernière actualisation. */
+/** Statut affiché pour une place issue du cache : toujours grise, avec la date de dernière actualisation. */
 export function offlineStatus(savedAt: number, reason: "offline" | "server" = "offline") {
-  const when = savedAt ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(savedAt)) : "date inconnue";
+  const when = savedAt ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date(savedAt)) : "date non enregistrée";
   return {
     color: "gray" as const,
     availability: "unknown" as const,

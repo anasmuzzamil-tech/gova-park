@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_SPOT_TYPES, DEFAULT_SPOT_TYPES, GRID, SPOT_TYPE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, decodeNumero, decodeOverview, decodeTile, describeParisSpot, displayMode, encodeNumero, formatStreet,
+  CAR_SPOT_TYPES, DEFAULT_SPOT_TYPES, GRID, PARIS_ATTRIBUTION, SPOT_TYPE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, aggregateOverview, bucketTiles, decodeNumero, decodeOverview, decodeTile, describeParisSpot, displayMode, encodeNumero, formatStreet,
   interpretRegime, limitNearCenter, mergeWithReports, streetKey, tileKey, tilesForBounds, titleCaseVoie,
   type OfficialSpot, type RawPoint, type ReportLite,
 } from "@contracts/paris-spots";
@@ -84,7 +84,7 @@ describe("interprétation des régimes du fichier de Paris", () => {
   });
   it("payant mixte = payant, tous véhicules", () => {
     const r = interpretRegime("PAYANT MIXTE", "Mixte");
-    expect(r.title).toBe("Stationnement payant");
+    expect(r.title).toBe("Place payante");
     expect(r.note).toBe("Ouvert à tous les véhicules");
   });
   it("livraison, autocars, deux-roues motorisés et vélos sont réservés à leur usage", () => {
@@ -134,7 +134,7 @@ describe("interprétation des régimes du fichier de Paris", () => {
       expect(r.title).toBe("Place moto / deux-roues motorisés");
       const d = describeParisSpot({ regime: r, places: 4, street: streetKey("RUE", "X"), numeroCode: 0 });
       expect(d.title).toBe("Place moto / deux-roues motorisés · Rue X");
-      expect(d.places).toBe("4 places sur ce tronçon");
+      expect(d.places).toBe("4 places");
       expect(d.carsOk).toBe(false);
       expect(d.note).toContain("pas aux voitures");
       expect(`${d.title} ${d.note} ${d.status}`.toLowerCase().includes("vous pouvez")).toBe(false);
@@ -167,21 +167,32 @@ describe("rue, numéro et fiche d'un emplacement", () => {
     expect(decodeNumero(0)).toBe("");
     expect(titleCaseVoie("SAINT-HONORE")).toBe("Saint-Honore");
   });
-  it("compteur de places du tronçon : « X places sur ce tronçon », 1 place au singulier, 0 = non renseigné", () => {
+  it("nombre de places : « X places », 1 place au singulier, 0 = non renseigné", () => {
     const base = { regime: interpretRegime("PAYANT MIXTE", "Mixte"), street: streetKey("RUE DU", "CHERCHE-MIDI"), numeroCode: encodeNumero("61") };
-    expect(describeParisSpot({ ...base, places: 7 }).places).toBe("7 places sur ce tronçon");
-    expect(describeParisSpot({ ...base, places: 1 }).places).toBe("1 place sur ce tronçon");
+    expect(describeParisSpot({ ...base, places: 7 }).places).toBe("7 places");
+    expect(describeParisSpot({ ...base, places: 1 }).places).toBe("1 place");
     expect(describeParisSpot({ ...base, places: 0 }).places).toBe("Nombre de places non renseigné");
   });
-  it("sans signalement : gris, « disponibilité inconnue » ; avec signalement : heure relative + « par un utilisateur »", () => {
+  it("sans signalement : place grise, AUCUN texte de statut ; avec signalement : heure relative + « par un utilisateur »", () => {
     const base = { regime: interpretRegime("PAYANT MIXTE", "Mixte"), places: 7, street: streetKey("RUE DU", "CHERCHE-MIDI"), numeroCode: encodeNumero("61") };
     const none = describeParisSpot(base);
-    expect(none.status).toBe("Aucun signalement récent : disponibilité inconnue");
-    expect(none.title).toBe("Stationnement payant · 61 rue du Cherche-Midi");
+    expect(none.status).toBeNull();
+    expect(none.title).toBe("Place payante · 61 rue du Cherche-Midi");
     expect(none.carsOk).toBe(true);
-    expect(describeParisSpot({ ...base, report: { status: "free", minutes: 3, stale: false, example: false } }).status).toBe("Signalé libre il y a 3 min par un utilisateur");
-    expect(describeParisSpot({ ...base, report: { status: "taken", minutes: 0, stale: false, example: false } }).status).toBe("Signalé pris à l'instant par un utilisateur");
-    expect(describeParisSpot({ ...base, report: { status: "free", minutes: 7, stale: true, example: true } }).status).toBe("Signalé libre il y a 7 min par un utilisateur (à vérifier) · exemple");
+    expect(describeParisSpot({ ...base, report: { status: "free", minutes: 3, stale: false, example: false } }).status).toBe("Signalée libre il y a 3 min par un utilisateur");
+    expect(describeParisSpot({ ...base, report: { status: "taken", minutes: 0, stale: false, example: false } }).status).toBe("Signalée prise à l'instant par un utilisateur");
+    expect(describeParisSpot({ ...base, report: { status: "free", minutes: 7, stale: true, example: true } }).status).toBe("Signalée libre il y a 7 min par un utilisateur (à vérifier) · exemple");
+  });
+  it("vocabulaire : aucune formulation « inconnu », « officiel » ou « voirie » dans la fiche, les titres de régime ni la mention de source", () => {
+    const banned = /inconnu|officiel|voirie|exhaustiv.*place disponible|statut/i;
+    for (const [p, q] of REAL_COMBOS) {
+      const r = interpretRegime(p, q);
+      const d = describeParisSpot({ regime: r, places: 3, street: streetKey("AV DES", "CHAMPS ELYSEES"), numeroCode: 0 });
+      expect(banned.test(`${d.title} ${d.places} ${d.note ?? ""} ${d.status ?? ""}`), `${p} | ${q}`).toBe(false);
+    }
+    expect(banned.test(PARIS_ATTRIBUTION)).toBe(false);
+    expect(PARIS_ATTRIBUTION).toContain("ODbL");
+    expect(describeParisSpot({ regime: interpretRegime("GRATUIT", "Gratuit"), places: 5, street: streetKey("AV DES", "CHAMPS ELYSEES"), numeroCode: 0 }).title).toBe("Place gratuite · Avenue des Champs Elysees");
   });
   it("une place PMR ou une livraison ne dit jamais qu'une voiture peut s'y garer", () => {
     for (const [p, q] of [["GIG/GIC", "GIG/GIC Standard"], ["LIVRAISON", "ZL permanente"], ["AUTRE REGIME", "Travaux"]]) {

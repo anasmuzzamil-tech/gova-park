@@ -229,7 +229,7 @@ export default function ParkingMap({
       {clusterPoints(listings, zoom).filter((g) => g.items.length > 1).map((g) => <ClusterMarker key={`c-${g.lat.toFixed(4)}-${g.lng.toFixed(4)}-${g.items.length}`} lat={g.lat} lng={g.lng} count={g.items.length} />)}
       {clusterPoints(listings, zoom).filter((g) => g.items.length === 1).map((g) => g.items[0]).map((listing) => {
         const statusColor = listing.parkingStatus?.color ?? (confirmedIds.has(listing.id) ? "blue" : "gray");
-        const statusText = listing.parkingStatus?.label ?? "Disponibilité inconnue";
+        const statusText = listing.parkingStatus?.label ?? "Aucun signalement récent";
         return <Marker
           key={`l-${listing.id}`}
           position={[listing.latitude, listing.longitude]}
@@ -257,7 +257,7 @@ export default function ParkingMap({
           key={`r-${report.id}`}
           position={[report.latitude, report.longitude]}
           title={report.address}
-          icon={reportBubble(report.parkingStatus?.color ?? "gray", text, `${report.address} — ${report.parkingStatus?.label ?? "Disponibilité inconnue"}`, !detailed)}
+          icon={reportBubble(report.parkingStatus?.color ?? "gray", text, `${report.address} — ${report.parkingStatus?.label ?? "Aucun signalement récent"}`, !detailed)}
           eventHandlers={{ click: () => onReport(report) }}
         />;
       })}
