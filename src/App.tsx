@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, useNavigate } from "react-router";
+import { Routes, Route, useLocation, useNavigate } from "react-router";
 import { Toaster } from "sonner";
 import AppShell from "@/components/AppShell";
 import Home from "@/pages/Home";
@@ -31,7 +31,10 @@ function ResumeAfterLogin() {
   return null;
 }
 
+// Les messages (toasts) ont UN seul emplacement : en haut, centrés, sous la rangée de puces de la carte (et à 16 px du haut des autres pages).
+const MAP_TOAST_TOP = "calc(env(safe-area-inset-top, 0px) + 138px)";
 export default function App() {
+  const onMap = useLocation().pathname === "/";
   return <><ResumeAfterLogin /><Routes>
     <Route element={<AppShell />}>
       <Route path="/" element={<Home />} />
@@ -50,5 +53,5 @@ export default function App() {
     </Route>
     <Route path="/login" element={<Login />} />
     <Route path="*" element={<NotFound />} />
-  </Routes><Toaster position="bottom-center" richColors closeButton duration={3500} offset={{ bottom: 24 }} mobileOffset={{ bottom: 90 }} /></>;
+  </Routes><Toaster position="top-center" richColors closeButton duration={4000} visibleToasts={1} className="gp-toaster" offset={{ top: onMap ? MAP_TOAST_TOP : 16 }} mobileOffset={{ top: onMap ? MAP_TOAST_TOP : 16 }} /></>;
 }

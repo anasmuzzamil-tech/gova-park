@@ -843,12 +843,12 @@ export default function Home() {
             <button type="button" className="m-info" aria-expanded={infoOpen} aria-label="Légende des couleurs et sources" onClick={() => setInfoOpen((open) => !open)}><Info size={17} /></button>
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
             {infoOpen && <div className="m-info-panel" role="dialog" aria-label="Légende et sources">
+              <h3 className="m-info-h">Légende</h3>
               <ul className="m-legend" aria-label="Légende des couleurs des places">
                 <li><i className="green" />Libre (signalé il y a X min)</li><li><i className="orange" />Peut-être libre</li><li><i className="red" />Prise</li><li><i className="gray" />Place</li>
               </ul>
-              <p className="m-diag" onClick={() => void refreshPermissionState()}>Diagnostic position : autorisation {geolocDiag.permission} · dernière erreur {geolocDiag.lastCode ?? "aucune"}{geolocDiag.lastReason ? ` (${geolocDiag.lastReason})` : ""} · précision {geolocDiag.accuracy != null ? `${geolocDiag.accuracy} m (${geolocDiag.attempt})` : "aucune"}</p>
-              <p className="m-diag">{mapDiagLine(getMapDiag())}</p>
               <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
+              <h3 className="m-info-h">Sources et licences</h3>
               <p>{PARIS_ATTRIBUTION}</p>
               {parisOn && parisNote && <p>{parisNote}</p>}
               {parisOn && <p>{PARIS_POLYGONS_NOTE}</p>}
@@ -865,6 +865,8 @@ export default function Home() {
               {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}
               {forbiddenOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
               {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}
+              <p className="m-diag" onClick={() => void refreshPermissionState()}>Diagnostic position : autorisation {geolocDiag.permission} · dernière erreur {geolocDiag.lastCode ?? "aucune"}{geolocDiag.lastReason ? ` (${geolocDiag.lastReason})` : ""} · précision {geolocDiag.accuracy != null ? `${geolocDiag.accuracy} m (${geolocDiag.attempt})` : "aucune"}</p>
+              <p className="m-diag">{mapDiagLine(getMapDiag())}</p>
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
           </div>
