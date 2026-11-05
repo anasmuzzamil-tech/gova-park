@@ -743,12 +743,12 @@ export default function Home() {
       .slice(0, 8);
   }, [streetOfVehicle, userPosition, visibleCenter]);
   // Pendant un trajet : uniquement les places proches du trajet ou de l'arrivée.
-  const arrival = drivingRoute ? drivingRoute.coordinates[drivingRoute.coordinates.length - 1] : null;
-  const mapListings = useMemo(() => !drivingRoute || !arrival ? filtered : filtered.filter((item) => distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) <= 2500 || distanceToRoute({ lat: item.latitude, lng: item.longitude }, drivingRoute.coordinates) <= 1000), [filtered, drivingRoute, arrival]);
-  const nearArrival = useMemo(() => !arrival ? [] : [...mapListings]
-    .map((item) => ({ item, meters: distanceMeters(arrival[0], arrival[1], item.latitude, item.longitude) }))
+  const routeEnd = drivingRoute ? drivingRoute.coordinates[drivingRoute.coordinates.length - 1] : null;
+  const mapListings = useMemo(() => !drivingRoute || !routeEnd ? filtered : filtered.filter((item) => distanceMeters(routeEnd[0], routeEnd[1], item.latitude, item.longitude) <= 2500 || distanceToRoute({ lat: item.latitude, lng: item.longitude }, drivingRoute.coordinates) <= 1000), [filtered, drivingRoute, routeEnd]);
+  const nearArrival = useMemo(() => !routeEnd ? [] : [...mapListings]
+    .map((item) => ({ item, meters: distanceMeters(routeEnd[0], routeEnd[1], item.latitude, item.longitude) }))
     .sort((a, b) => (Number(b.item.currentAvailability === "available") - Number(a.item.currentAvailability === "available")) || a.meters - b.meters)
-    .slice(0, 4), [mapListings, arrival]);
+    .slice(0, 4), [mapListings, routeEnd]);
   // Une adresse choisie centre la carte (zoom rue) et affiche les places autour : AUCUN itinéraire n'est calculé ici.
   // Places autour de la destination choisie : places en rue signalées d'abord (libres avant prises, puis la plus proche), puis places privées.
   const destPlaces = useMemo(() => {
