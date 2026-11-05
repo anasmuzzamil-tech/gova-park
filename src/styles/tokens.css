@@ -16,8 +16,14 @@
   --gp-v-car: #2563EB; --gp-v-moto: #7C3AED; --gp-v-delivery: #DB2777; --gp-v-bike: #0E7490; --gp-v-all: #1F2937; --gp-v-pmr: #78350F; --gp-v-ev: #A21CAF;
   /* Rayons, ombres, espacements (multiples de 4) */
   --gp-r-1: 12px; --gp-r-2: 16px; --gp-r-3: 24px; --gp-r-pill: 999px;
-  --gp-shadow-1: 0 2px 8px #1a143a24;
-  --gp-shadow-2: 0 10px 30px #1a143a38;
+  --gp-shadow-1: 0 1px 2px #1a143a1f, 0 2px 8px #1a143a1f;
+  --gp-shadow-2: 0 2px 4px #1a143a14, 0 12px 32px #1a143a33;
+  /* Filet fin autour des surfaces posées sur la carte (les sépare du fond sans bordure épaisse) */
+  --gp-ring: 0 0 0 1px #1a143a14;
+  /* Teintes des pastilles de statut : fond clair + texte foncé (AA). La couleur de statut elle-même (--gp-green…) ne change pas. */
+  --gp-green-tint: #e6f6ec; --gp-orange-tint: #fff1de; --gp-red-tint: #fdecea; --gp-gray-tint: #eef0f3; --gp-gray-ink: #4b5563;
+  --gp-accent-ink: #4a2fb8;   /* liens et texte d'accent sur fond clair */
+  --gp-ink-3: #6c6a85;        /* texte tertiaire (5,3:1 sur blanc) */
   --gp-s-1: 4px; --gp-s-2: 8px; --gp-s-3: 12px; --gp-s-4: 16px; --gp-s-5: 20px; --gp-s-6: 24px;
   /* Typographie (Manrope) */
   --gp-t-12: 12px; --gp-t-14: 14px; --gp-t-16: 16px; --gp-t-20: 20px; --gp-t-24: 24px;

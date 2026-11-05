@@ -71,3 +71,16 @@ Vide : une phrase et une action. Chargement : squelette (pas de roue). Erreur : 
 ## Écran carte, de haut en bas
 1. Recherche + « Ma position » + réglages. 2. Une rangée de puces « Mon véhicule ». 3. La carte, avec à droite le bouton rond « Couches ». 4. Feuille basse. 5. Onglets du bas (inchangés).
 Messages : un seul emplacement (toast en haut, sous la recherche, une ligne, 4 s). Source et licence : seulement dans le panneau « i ».
+
+## Direction visuelle (passe de design du 2026-11-05)
+**Principe : « zinc et encre »** : surfaces blanches nettes posées sur la carte, encre violet très sombre pour le texte, un seul accent violet (`--gp-accent-ink` #4a2fb8 pour le texte et les actions, 7,9:1 sur blanc), les couleurs de statut et de type de véhicule **inchangées**. Une seule chose est mise en avant : la barre d'action « compteur · Je libère · Je me gare » ; le reste reste calme.
+- **Profondeur** : trois niveaux seulement : filet fin `--gp-ring` (séparation sans bordure), `--gp-shadow-1` (puces, boutons ronds), `--gp-shadow-2` (recherche, barre d'action, feuilles, cartes). Ombres teintées violet, en deux couches.
+- **Rayons** : 12 (petits éléments), 16 (boutons internes, blocs), 24 (surfaces flottantes : recherche, cartes, barre, feuille, panneaux), 28 (fiche de place), pilule 999. Plus de 14, 15, 18, 20, 22.
+- **Typographie** : Manrope, chiffres tabulaires (prix, distances, compteur). Texte courant **14 px minimum** ; titres de carte 16 ; prix et compteur 24. Exceptions assumées, à 12 px : attribution/licence sous la carte, ligne de diagnostic du panneau « i », mention « libres » de la pastille compteur, étiquettes des onglets du bas, source du bloc d'arrivée. Pas de majuscules en étiquette.
+- **Pastille de statut** (`.m-state`) : fond clair teinté + point de la couleur du statut + mot en teinte foncée (AA). Avant : texte blanc sur vert/orange (3,5:1 / 2,4:1, insuffisant). La couleur ET le mot restent.
+- **Carte de place en rue** : statut et distance en haut, nom de rue, mention « Place en rue · signalée par un utilisateur » **entière** (elle était tronquée en « signalée p… »). Chaque carte garde sa hauteur propre.
+- **Fiche de place** : ligne de statut dans un bloc gris clair, « Y aller » en pilule pleine (54 px), actions secondaires 52 px.
+- **Trajets** : cartes comparées compactes (20 px pour la durée), onglets de mode 52 px lisibles à 14 px, « Démarrer » (vert foncé 5,4:1) et « Arrêter » sur la même ligne, bloc d'arrivée en surface propre, hauteurs bornées (route 52 dvh, arrivée 24 dvh) pour que « Démarrer » reste visible. Ces règles sont dans `src/styles/polish.css` mais **ne s'appliquent qu'après fusion de la branche `trajets-waze`** (ces composants n'existent pas encore dans `main`).
+- **Mouvement et focus** : inchangés (règles ci-dessus) ; anneau de focus 3 px `--gp-accent-ink` sur puces, boutons, cartes, interrupteurs.
+- **Mode sombre** : toujours absent, non ajouté. **Écran d'accueil** : l'application n'en a pas (l'écran de connexion n'a pas été retouché).
+Fichiers : `src/styles/tokens.css` (jetons ajoutés : `--gp-ring`, teintes de statut, `--gp-accent-ink`, `--gp-ink-3`), `src/styles/polish.css` (règles, chargé après `map-screen.css`).

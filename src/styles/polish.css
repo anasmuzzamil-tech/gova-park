@@ -1,0 +1,159 @@
+/* Passe de design (voir docs/DESIGN.md, « Direction visuelle »). Chargé après map-screen.css. Aucune couleur de statut ni de type de véhicule modifiée ; aucun texte ni comportement modifié. */
+
+/* ── Base : chiffres alignés, lissage, anneau de focus visible sur les surfaces blanches de la carte ── */
+.home-screen, .bottom-nav { -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+.m-round:focus-visible, .m-chip:focus-visible, .m-street-btn:focus-visible, .sp-pill:focus-visible, .m-card-open:focus-visible, .m-scard:focus-visible, .m-sheet-toggle:focus-visible, .gp-switch:focus-visible { outline: 3px solid var(--gp-accent-ink); outline-offset: 2px; }
+
+/* ── Recherche et boutons ronds : même surface, filet fin + ombre 1 ── */
+.m-search { border-radius: var(--gp-r-pill); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-search input::placeholder { color: var(--gp-ink-3); font-weight: 600; }
+.m-search > svg { color: var(--gp-accent-ink); }
+.m-round { box-shadow: var(--gp-ring), var(--gp-shadow-1); transition: transform var(--gp-anim) var(--gp-ease); }
+.m-round:active { transform: scale(.95); }
+.search-suggestions { border: 0; border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.search-suggestions span { font-size: var(--gp-t-14); }
+.search-suggestions small { font-size: var(--gp-t-14); color: var(--gp-ink-3); }
+.search-suggestions p { font-size: var(--gp-t-14); color: var(--gp-ink-2); }
+
+/* ── Puces « Mon véhicule » : 14 px, point de 8 px, ombre fine ── */
+.m-chip { height: 40px; padding: 0 14px; font-size: var(--gp-t-14); font-weight: 700; box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-chip[data-vt] { gap: 7px; padding: 0 14px 0 11px; font-size: var(--gp-t-14); }
+.m-chip[data-vt]::before { width: 8px; height: 8px; }
+.m-chip.on { box-shadow: var(--gp-shadow-1); }
+@media (max-width: 430px) { .m-chip, .m-chip[data-vt] { font-size: var(--gp-t-14); } }
+
+/* ── Barre d'action : une seule surface flottante (24 px), boutons internes 18 px ── */
+.m-street-bar { margin: 0 14px 6px; padding: 6px; grid-template-columns: 72px 1fr 1fr; border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-street-btn { min-height: 48px; border-radius: 18px; font-size: var(--gp-t-14); font-weight: 800; letter-spacing: -.005em; }
+.sp-pill { min-height: 48px; border-radius: 18px; }
+.sp-pill b { font-size: var(--gp-t-24); }
+.sp-pill span { max-width: 68px; font-size: 12px; font-weight: 700; }
+@media (max-width: 350px) { .m-street-bar { grid-template-columns: 64px 1fr 1fr; } }
+
+/* ── Ligne « i » et source : discrètes, lisibles ── */
+.m-info { box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-attrib { font-size: 12px; color: #3b3a55; box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+
+/* ── Poignée / titre du panneau : surface blanche 24 px, titre 16 px ── */
+.m-sheet-toggle { border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-sheet-toggle b { font-size: var(--gp-t-16); letter-spacing: -.01em; }
+.m-sheet-toggle span { font-size: var(--gp-t-14); }
+.m-grip { background: #cfcde0; }
+.m-sheet-title { font-size: var(--gp-t-16); }
+.m-sheet-title span { font-size: var(--gp-t-14); }
+
+/* ── Cartes : rayon 24 (surfaces), hauteur propre à chaque carte (une carte de rue ne s'étire plus à la hauteur d'une carte à photo) ── */
+.m-cards { scroll-padding: 0 14px; align-items: flex-start; gap: var(--gp-s-3); padding: 2px 14px 8px; }
+.m-card { border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-card-open img { height: 96px; }
+.m-card-body { gap: 4px; padding: 12px 16px 4px; }
+.m-price { font-size: var(--gp-t-24); font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.m-price small { font-size: var(--gp-t-14); color: var(--gp-ink-3); font-weight: 700; }
+.m-dist { color: var(--gp-accent-ink); font-size: var(--gp-t-14); font-weight: 800; font-variant-numeric: tabular-nums; }
+.m-title { font-size: var(--gp-t-16); font-weight: 700; }
+.m-sub { font-size: var(--gp-t-14); color: var(--gp-ink-2); }
+.m-card-go { margin: 8px 16px 16px; height: 46px; border-radius: 16px; font-size: var(--gp-t-14); font-weight: 800; }
+.m-card-skeleton { border-radius: var(--gp-r-3); box-shadow: var(--gp-ring); }
+.m-empty { padding: var(--gp-s-4) var(--gp-s-5); border-radius: var(--gp-r-3); font-size: var(--gp-t-14); line-height: 1.45; box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-empty button { min-height: var(--gp-touch); color: var(--gp-accent-ink); }
+
+/* Pastille de statut : fond clair + point de la COULEUR DU STATUT + mot en teinte foncée (AA). Couleur ET mot, jamais la couleur seule. */
+.m-state { top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: var(--gp-r-pill); background: var(--gp-gray-tint); color: var(--gp-gray-ink); font-size: var(--gp-t-14); font-weight: 800; line-height: 1.2; box-shadow: var(--gp-ring); }
+.m-state::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--gp-gray); }
+.m-state.free, .m-state.green { background: var(--gp-green-tint); color: var(--gp-green-ink); }
+.m-state.free::before, .m-state.green::before { background: var(--gp-green); }
+.m-state.orange { background: var(--gp-orange-tint); color: var(--gp-orange-ink); }
+.m-state.orange::before { background: var(--gp-orange); }
+.m-state.busy, .m-state.red { background: var(--gp-red-tint); color: var(--gp-red-ink); }
+.m-state.busy::before, .m-state.red::before { background: var(--gp-red); }
+.m-card-open > .m-state { background-clip: padding-box; }
+.m-card:has(img) .m-state { background-color: #fff; }
+
+/* Carte de place en rue : statut et distance en haut, nom de rue, puis la mention complète (qui n'est plus tronquée) */
+.m-scard { flex: 0 0 min(82vw, 300px); display: grid; grid-template-columns: 1fr auto; grid-template-areas: "state dist" "main main"; align-items: center; gap: var(--gp-s-2) var(--gp-s-3); padding: var(--gp-s-4); border-radius: var(--gp-r-3); }
+.m-scard .m-state { grid-area: state; justify-self: start; }
+.m-scard .m-dist { grid-area: dist; font-size: var(--gp-t-16); }
+.m-scard-main { grid-area: main; gap: 2px; }
+.m-scard-main strong { font-size: var(--gp-t-16); font-weight: 700; letter-spacing: -.01em; }
+.m-scard-main small { font-size: var(--gp-t-14); color: var(--gp-ink-2); white-space: normal; overflow: visible; line-height: 1.35; }
+.m-scard:active, .m-card-open:active { transform: scale(.985); }
+.m-cards-dest .m-scard { min-height: 0; max-height: none; }
+.m-dest-head b { border-radius: var(--gp-r-pill); padding: 10px 16px; font-size: var(--gp-t-14); box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-dest-go { border-radius: var(--gp-r-pill); color: var(--gp-accent-ink); box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-street-help { border-radius: var(--gp-r-2); font-size: var(--gp-t-14); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+
+/* ── Fiche de place ── */
+.gp-sheet { gap: var(--gp-s-3); padding: var(--gp-s-6) var(--gp-s-5) var(--gp-s-5); border-radius: 28px 28px 0 0; box-shadow: var(--gp-ring), 0 -8px 32px #1a143a2e; }
+.gp-sheet-title { font-size: var(--gp-t-20); font-weight: 800; letter-spacing: -.02em; }
+.gp-chip-info { min-height: 32px; padding: 0 12px; border-radius: var(--gp-r-pill); font-size: var(--gp-t-14); }
+.gp-chip-info.red { background: var(--gp-red-tint); } .gp-chip-info.orange { background: var(--gp-orange-tint); }
+.gp-note, .gp-warning { font-size: var(--gp-t-14); }
+.gp-warning { color: var(--gp-ink-3); }
+.gp-status { padding: var(--gp-s-3); border-radius: var(--gp-r-2); background: var(--gp-surface-2); font-size: var(--gp-t-14); }
+.gp-dot { width: 12px; height: 12px; }
+.gp-tariff { font-size: var(--gp-t-16); }
+.gp-go { min-height: 54px; border-radius: var(--gp-r-pill); background: var(--gp-accent-ink); box-shadow: 0 4px 14px #4a2fb83d; }
+.gp-action { min-height: 52px; border-radius: var(--gp-r-pill); font-size: var(--gp-t-14); }
+
+/* ── « Couches » et « i » ── */
+.m-layers { border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-layers-head b { font-weight: 800; }
+.m-layers-note { font-size: var(--gp-t-14); color: var(--gp-ink-2); line-height: 1.45; }
+.gp-switch.on i { background: var(--gp-accent-ink); }
+.m-info-panel { gap: var(--gp-s-2); padding: var(--gp-s-4) 48px var(--gp-s-4) var(--gp-s-4); border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-info-panel p { font-size: var(--gp-t-14); line-height: 1.45; color: var(--gp-ink-2); }
+.m-info-panel .m-diag { font-size: 12px; color: var(--gp-ink-3); }
+.m-info-panel a { font-size: var(--gp-t-14); color: var(--gp-accent-ink); }
+.m-info-h { font-size: var(--gp-t-16); font-weight: 800; }
+.m-legend { font-size: var(--gp-t-14); gap: var(--gp-s-2) var(--gp-s-4); }
+.m-legend i { width: 14px; height: 14px; }
+
+/* ── Toast : une ligne, surface blanche, ombre 2 ── */
+.gp-toaster [data-sonner-toast] { border: 0; box-shadow: var(--gp-ring), var(--gp-shadow-2); border-radius: var(--gp-r-2); }
+
+/* ── Onglets du bas : 12 px (barre d'onglets), actif plus net ── */
+.bottom-nav { box-shadow: 0 -1px 0 var(--gp-line), 0 -8px 24px #1a143a0f; border-top: 0; }
+.bottom-nav a { font-size: 12px; font-weight: 700; border-radius: var(--gp-r-2); transition: background-color var(--gp-anim) ease, color var(--gp-anim) ease; }
+.bottom-nav a.active { color: var(--gp-accent-ink); }
+
+/* ── Trajet (main) : bouton « Démarrer » en vert foncé lisible (blanc 5,4:1) ── */
+.m-route { border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-route-start { background: var(--gp-green-ink); border-radius: var(--gp-r-pill); font-size: var(--gp-t-16); }
+.m-route-stop { border-radius: var(--gp-r-pill); }
+.route-origin-note, .route-offline-note { font-size: var(--gp-t-14); color: var(--gp-ink-2); }
+
+/* ═══ Branche « trajets » (comparés, raccourcis, onglets de mode, stationnement à l'arrivée) : règles prêtes, sans effet tant que ces composants ne sont pas fusionnés dans main ═══ */
+.m-route:has(.m-trip-list), .m-route:has(.m-mode-tabs) { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: var(--gp-s-3) var(--gp-s-2); align-items: center; padding: var(--gp-s-3); }
+.m-route:has(.m-trip-list) .m-route-body, .m-route:has(.m-mode-tabs) .m-route-body { display: contents; }
+.m-route:has(.m-trip-list) .m-route-body > *, .m-route:has(.m-mode-tabs) .m-route-body > * { grid-column: 1 / -1; }
+.m-route:has(.m-trip-list) .m-route-start, .m-route:has(.m-mode-tabs) .m-route-start { grid-column: 1; grid-row: auto; min-height: 48px; }
+.m-route:has(.m-trip-list) .m-route-stop, .m-route:has(.m-mode-tabs) .m-route-stop { grid-column: 2; order: 9; }
+.m-mode-tabs button { min-height: 52px; border-radius: var(--gp-r-2); font-size: var(--gp-t-14); padding: var(--gp-s-1) 0; }
+.m-mode-tabs button b { font-size: var(--gp-t-14); font-weight: 800; }
+.m-mode-tabs button span { font-size: var(--gp-t-14); font-weight: 600; opacity: .85; }
+.m-mode-note { font-size: var(--gp-t-14); }
+.m-trip-card { border-radius: var(--gp-r-2); padding: var(--gp-s-2) var(--gp-s-3); gap: 2px; }
+.m-route:has(.m-trip-list) { max-height: 52dvh; }
+.m-arrival { max-height: 24dvh; overflow-y: auto; }
+.m-trip-card.on { border-color: var(--gp-accent-ink); background: #f6f4ff; box-shadow: 0 0 0 1px var(--gp-accent-ink) inset; }
+.m-trip-top b { font-size: var(--gp-t-20); letter-spacing: -.02em; }
+.m-trip-top span { font-size: var(--gp-t-14); }
+.m-trip-top em { padding: 3px 10px; background: var(--gp-accent-ink); font-size: var(--gp-t-14); }
+.m-trip-line { font-size: var(--gp-t-14); }
+.m-trip-zfe, .m-trip-note { font-size: var(--gp-t-14); }
+.m-arrival { border: 0; border-radius: var(--gp-r-3); padding: var(--gp-s-4); box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-arrival h3 { text-transform: none; letter-spacing: 0; font-size: var(--gp-t-14); color: var(--gp-ink-2); }
+.m-arrival-main { font-size: var(--gp-t-16); font-weight: 700; }
+.m-arrival-more summary { color: var(--gp-accent-ink); font-size: var(--gp-t-14); }
+.m-arrival-rep, .m-arrival-tariff, .m-arrival-rep small, .m-arrival-tariff small { font-size: var(--gp-t-14); }
+.m-arrival-src { font-size: 12px; }
+.m-places { border: 0; box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+.m-places .m-fav { height: auto; min-height: 52px; border-radius: var(--gp-r-2); }
+.m-places .m-fav-main { height: auto; min-height: 52px; padding: var(--gp-s-2) var(--gp-s-3); }
+.m-places .m-fav-main small { font-size: var(--gp-t-14); }
+.m-places .m-fav-del { width: var(--gp-touch); height: auto; }
+.m-places .m-places-title { text-transform: none; letter-spacing: 0; font-size: var(--gp-t-14); color: var(--gp-ink-2); }
+.m-places .m-places-note { font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .m-round, .bottom-nav a { transition: none; } .m-scard:active, .m-card-open:active { transform: none; } }
+@media (min-width: 900px) { .m-street-bar { max-width: 520px; } .m-sheet-toggle { max-width: 520px; } }

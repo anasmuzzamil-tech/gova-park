@@ -61,3 +61,6 @@ Une page, sans exagération. Légende : **Vérifié** = couvert par un test auto
 7. **Sécurité et qualité** : points ouverts de `docs/AUDIT.md` (limitation de débit contournable, dépôt de fichiers, lockfile, tests du routeur), typage non vérifié.
 8. **Infrastructure** : plan gratuit = veille après 15 min, une seule instance ; à revoir avant un usage réel.
 9. **Marché** : aucune donnée d'usage, de rétention ou de revenus n'existe ; ce document n'en avance aucune.
+
+## Passe de design (2026-11-05)
+Design seulement, aucune règle de données ni comportement modifiés : jetons (`tokens.css`) et règles (`polish.css`) décrits dans `docs/DESIGN.md`, section « Direction visuelle ». Vérifié : maquettes Chromium 390 px (écran carte replié / mi-hauteur / plein, Couches, « i », fiche, toast, chargement, vide, recherche, trajets, raccourcis) avec le vrai CSS ; fond de carte factice, **pas MapLibre ni l'application réelle**. Non testé : rendu sur iPhone réel, sur la vraie carte, pages secondaires (réglages, annonce, réservation, connexion : non retouchées), desktop 1280 (une seule maquette, sans rail latéral ni vraie mise en page à deux colonnes). Les règles des trajets comparés, raccourcis/récents, onglets de mode et stationnement à l'arrivée sont prêtes mais sans effet tant que `trajets-waze` n'est pas fusionnée.
