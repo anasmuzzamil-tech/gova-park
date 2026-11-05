@@ -70,7 +70,7 @@ export const reservations = mysqlTable("reservations", {
   vehiclePlate: varchar("vehiclePlate", { length: 12 }),
   status: mysqlEnum("reservationStatus", [
     "pending", "payment_pending", "confirmed", "in_progress", "completed",
-    "cancelled", "refund_pending", "refunded", "dispute",
+    "cancelled", "refund_pending", "refunded", "dispute", "expired",
   ]).notNull(),
   baseCents: int("baseCents").notNull(),
   feeCents: int("feeCents").notNull(),

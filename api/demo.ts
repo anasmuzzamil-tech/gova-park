@@ -1,4 +1,5 @@
 import { env } from "./lib/env";
+import { assertCanCreatePending, countPending, isPaymentHoldExpired, paymentHoldExpiry } from "./lib/reservation-holds";
 import { calculatePrice } from "@contracts/pricing";
 import { meterCostCents } from "@contracts/meter";
 import { checkBooking } from "@contracts/booking";
@@ -177,11 +178,13 @@ export function demoCreateReservation(input: { listingId: number; startAt: Date;
   if (!check.ok) throw new Error(check.message);
   const { startedHours: _hours, ...price } = calculatePrice({ ...input, ...listing, commissionBps: 1200 });
   const now = new Date();
+  const capacity = assertCanCreatePending(countPending(reservationsStore.filter((r) => r.userId === demoUser.id), now));
+  if (!capacity.ok) throw new Error(capacity.message);
   const id = nextReservationId++;
   reservationsStore.push({
     id, listingId: listing.id, userId: demoUser.id, startAt: input.startAt, endAt: input.endAt, vehiclePlate: input.vehiclePlate ?? null,
     status: listing.bookingMode === "instant" ? "payment_pending" : "pending", ...price,
-    expiresAt: new Date(now.getTime() + (listing.bookingMode === "validation" ? 24 * 3600000 : 30 * 60000)), createdAt: now, updatedAt: now,
+    expiresAt: listing.bookingMode === "validation" ? new Date(now.getTime() + 24 * 3600000) : paymentHoldExpiry(now), createdAt: now, updatedAt: now,
   });
   return { id, mode: listing.bookingMode };
 }
@@ -192,6 +195,8 @@ export function demoBookedSlots(listingId?: number) {
 }
 export function demoMyReservations() {
   const all = demoListings();
+  const nowDate = new Date();
+  for (const r of reservationsStore) if (isPaymentHoldExpired(r, nowDate)) { r.status = "expired"; r.updatedAt = nowDate; }
   return [...reservationsStore].sort((a, b) => b.startAt.getTime() - a.startAt.getTime()).map((r) => ({ ...r, listing: all.find((l) => l.id === r.listingId)! }));
 }
 export function demoCancelReservation(id: number) {

@@ -13,6 +13,8 @@ import { parseStreetListInput, parseStreetReportInput, prepareStreetReport, reso
 import { validateListing } from "@contracts/listing-validation";
 import { matchesFilters, isOpenAt, parseJson, type Schedule, type Period, type Slot } from "@contracts/parking-search";
 import { storage } from "./lib/storage";
+import { log } from "./lib/logger";
+import { assertCanCreatePending, paymentHoldExpiry, isPaymentHoldExpired } from "./lib/reservation-holds";
 import { MAX_UPLOAD_BASE64_CHARS, validateImageUpload } from "./lib/upload-validation";
 import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
 
@@ -26,6 +28,21 @@ async function withPhotoUrls<T extends { photos: string }>(rows: T[]) {
     ...row,
     photos: (JSON.parse(row.photos) as string[]).map((photo) => photo.startsWith("/parking/") ? photo : urlByKey.get(photo) ?? ""),
   }));
+}
+
+// Passe à « expired » (jamais de suppression) les réservations en attente de paiement dont l'heure limite est passée.
+// Le blocage de créneau ne dépend PAS de cette mise à jour (il se calcule avec expiresAt) : si elle échoue
+// (ex. colonne pas encore élargie sur la base), on ignore l'erreur. Non testé faute de base.
+async function expireStalePaymentHolds(userId?: number) {
+  try {
+    const now = new Date();
+    await getDb().update(reservations).set({ status: "expired" }).where(and(
+      eq(reservations.status, "payment_pending"), lt(reservations.expiresAt, now),
+      ...(userId != null ? [eq(reservations.userId, userId)] : []),
+    ));
+  } catch (error) {
+    log.warn("expiration des réservations en attente impossible", { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 function publicListing<T extends { exactAddress: string; accessInstructions: string }>(listing: T) {
@@ -270,11 +287,18 @@ export const govaparkRouter = createRouter({
   reservations: createRouter({
     create: authedQuery.input(reservationCreateInput).mutation(async ({ ctx, input }) => {
       if (isDemoMode) { try { return demoCreateReservation(input); } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: e instanceof Error ? e.message : "Réservation impossible." }); } }
+      await expireStalePaymentHolds(ctx.user.id);
       const db = getDb();
       return db.transaction(async (tx) => {
         const [listing] = await tx.select().from(listings).where(eq(listings.id, input.listingId)).for("update").limit(1);
         if (!listing) throw new TRPCError({ code: "NOT_FOUND" });
         if (listing.ownerId === ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Vous ne pouvez pas réserver votre propre place." });
+        // Plafond de réservations en attente par utilisateur (non expirées).
+        const [pendingNow] = await tx.select({ value: count() }).from(reservations).where(and(
+          eq(reservations.userId, ctx.user.id), inArray(reservations.status, ["pending", "payment_pending"]), gt(reservations.expiresAt, new Date()),
+        ));
+        const capacity = assertCanCreatePending(Number(pendingNow?.value ?? 0));
+        if (!capacity.ok) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: capacity.message });
         // Verrou de ligne sur l'annonce (for update) + recherche des créneaux déjà pris : deux utilisateurs ne peuvent pas réserver des créneaux qui se recoupent.
         const taken = await tx.select({ startAt: reservations.startAt, endAt: reservations.endAt }).from(reservations).where(and(
           eq(reservations.listingId, listing.id),
@@ -290,7 +314,7 @@ export const govaparkRouter = createRouter({
         const [created] = await tx.insert(reservations).values({
           ...input, userId: ctx.user.id, ...price,
           status: listing.bookingMode === "instant" ? "payment_pending" : "pending",
-          expiresAt: new Date(Date.now() + (listing.bookingMode === "validation" ? 24 * 3600000 : 30 * 60 * 1000)),
+          expiresAt: listing.bookingMode === "validation" ? new Date(Date.now() + 24 * 3600000) : paymentHoldExpiry(new Date()),
         }).$returningId();
         if (listing.ownerId) await tx.insert(notifications).values({ userId: Number(listing.ownerId), title: "Nouvelle demande de réservation", body: `Une demande a été créée pour « ${listing.title} ».`, kind: "reservation", reservationId: created.id });
         return { id: created.id, mode: listing.bookingMode };
@@ -300,6 +324,7 @@ export const govaparkRouter = createRouter({
       const [reservation] = await getDb().select().from(reservations)
         .where(and(eq(reservations.id, input.id), eq(reservations.userId, ctx.user.id))).limit(1);
       if (!reservation) throw new TRPCError({ code: "NOT_FOUND", message: "Réservation introuvable." });
+      if (isPaymentHoldExpired(reservation, new Date())) { await expireStalePaymentHolds(ctx.user.id); throw new TRPCError({ code: "BAD_REQUEST", message: "Cette réservation a expiré : le créneau n'est plus retenu. Créez une nouvelle réservation." }); }
       if (reservation.status !== "payment_pending") throw new TRPCError({ code: "BAD_REQUEST", message: "Cette réservation n’attend pas de paiement." });
       // Safety: never mark a booking as paid/confirmed without a verified payment-provider webhook.
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Le paiement sécurisé n’est pas encore activé. Aucun débit n’a été effectué et la réservation n’est pas confirmée." });
@@ -316,6 +341,7 @@ export const govaparkRouter = createRouter({
     }),
     mine: authedQuery.query(async ({ ctx }) => {
       if (isDemoMode) return demoMyReservations();
+      await expireStalePaymentHolds(ctx.user.id);
       const rows = await getDb().select({ reservation: reservations, listing: listings }).from(reservations)
         .innerJoin(listings, eq(reservations.listingId, listings.id)).where(eq(reservations.userId, ctx.user.id)).orderBy(desc(reservations.startAt));
       const hydrated = await withPhotoUrls(rows.map((row) => row.listing));
@@ -481,7 +507,7 @@ export const govaparkRouter = createRouter({
           lt(reservations.startAt, request.reservation.endAt), gt(reservations.endAt, request.reservation.startAt),
         )).for("update").limit(1);
         if (conflicts.length) throw new TRPCError({ code: "CONFLICT", message: "Un autre créneau confirmé se chevauche. Refusez cette demande." });
-        await tx.update(reservations).set({ status: "payment_pending", expiresAt: new Date(Date.now() + 30 * 60 * 1000) }).where(eq(reservations.id, request.reservation.id));
+        await tx.update(reservations).set({ status: "payment_pending", expiresAt: paymentHoldExpiry(new Date()) }).where(eq(reservations.id, request.reservation.id));
         await tx.insert(notifications).values({ userId: Number(request.reservation.userId), title: "Votre demande a été acceptée", body: "Le propriétaire a accepté votre demande. Le paiement sécurisé n’est pas encore activé : votre place n’est pas confirmée.", kind: "reservation", reservationId: request.reservation.id });
         return { status: "payment_pending", payment: "not_configured", message: "Demande acceptée. Le locataire devra payer lorsque le paiement sécurisé sera activé." };
       });
