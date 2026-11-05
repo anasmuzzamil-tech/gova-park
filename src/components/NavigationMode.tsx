@@ -18,6 +18,7 @@ export function spotReminder(dest: NavDest, nowMs: number): string | null {
       ? `Place signalée libre ${agoText(age)}, elle peut être prise${example}.`
       : `Place signalée prise ${agoText(age)}, l'information a peut-être changé${example}.`;
   }
+  if (dest.kind === "street") return "Emplacement de voirie : disponibilité inconnue, il peut être pris.";
   if (dest.kind === "listing") return "Place privée : vérifiez sa disponibilité sur la fiche, rien n'est garanti à l'arrivée.";
   return null;
 }

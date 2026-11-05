@@ -6,7 +6,8 @@
 //  - « libre » : VERT pendant 5 min, ORANGE de 5 à 10 min, puis la place disparaît de la carte.
 //  - « prise »  : ROUGE pendant 10 min, puis la place disparaît.
 //  - Le signalement le plus récent l'emporte ; des signalements concordants d'utilisateurs différents relèvent la fiabilité.
-//  - Jamais de vert sans signalement récent : aucune place n'est pré-remplie. Un signalement n'est jamais une vérité garantie.
+//  - Jamais de vert sans signalement récent : aucune DISPONIBILITÉ n'est pré-remplie. Les emplacements officiels de Paris (contracts/paris-spots.ts)
+//    sont affichés en gris « statut inconnu » et ne sont colorés que par un signalement récent. Un signalement n'est jamais une vérité garantie.
 // Fonctions pures, sans dépendance, partagées client/serveur et testées dans api/street-reports.test.ts.
 
 import { STATUS_COLORS, type StatusColor } from "./parking-status";

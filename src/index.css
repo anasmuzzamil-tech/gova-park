@@ -752,3 +752,7 @@ body.is-navigating .bottom-nav { display: none; }
 .nav-dist-label, .nav-dest { margin: 0; font-size: 15px; font-weight: 700; color: #4b4963; }
 .nav-end { min-height: 56px; border: 0; border-radius: 16px; background: #17142b; color: #fff; font: 800 17px "Manrope", sans-serif; }
 @media (max-width: 380px) { .nav-dist { font-size: 32px; } .nav-instr { font-size: 17px; } .nav-arrow { width: 60px; height: 60px; } }
+
+/* Emplacements officiels de Paris : source et licence toujours visibles, état honnête */
+.m-paris-line { margin: 0 14px 10px; padding: 8px 12px; border-radius: 14px; background: #fff; color: #4b4963; font: 600 11.5px/1.4 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; pointer-events: auto; }
+.m-paris-line a { display: inline-flex; align-items: center; min-height: 44px; margin: -14px 0; padding: 0 6px; color: #4a2fb8; font-weight: 800; text-decoration: underline; }

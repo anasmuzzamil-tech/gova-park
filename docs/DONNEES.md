@@ -14,6 +14,9 @@ Règles de couleur (`contracts/parking-status.ts`, testées dans `api/parking-st
 - **Rouge** : occupé confirmé (source fiable, ou signalement confirmé par au moins 2 utilisateurs avec fiabilité ≥ 70).
 - **Orange** : signalement récent non confirmé, départ annoncé, estimation. Pour les places privées, parkings et l'ancien « Signaler », un signalement d'utilisateur ne donne **jamais** du vert.
 
+### Emplacements de voirie de Paris (gris, statut inconnu)
+Source : « Stationnement sur voie publique - emplacements », Ville de Paris, licence **ODbL** (https://www.data.gouv.fr/datasets/stationnement-sur-voie-publique-emplacements). Points de types payant, rotatif, mixte, livraison, car, vélo, deux-roues motorisés. Les données changent vite, sans garantie d'exhaustivité. Aucune disponibilité : seuls les signalements d'utilisateurs colorent un emplacement (à moins de 15 m). Mention de la source et de la licence affichée sur la carte. Import : `scripts/import-paris-spots.mjs` (fichiers statiques `public/data/paris/`, à générer et à committer après contrôle avec `--inspect` ; non encore fait). Logique : `contracts/paris-spots.ts`, tests `api/paris-spots.test.ts`.
+
 ### Places en rue (exception décidée par Anas)
 Règles dans `contracts/street-reports.ts`, testées dans `api/street-reports.test.ts` :
 - « libre » : **vert** moins de 5 min, **orange** de 5 à 10 min, puis la place disparaît de la carte ; « prise » : **rouge** 10 min puis disparaît.

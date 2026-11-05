@@ -18,6 +18,8 @@ import { GeolocError, getDevicePosition } from "@/lib/street";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
+import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
+import { PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -42,6 +44,7 @@ function distanceToRoute(point: {lat:number;lng:number}, line: [number,number][]
 type AddressSuggestion = { label: string; lat: number; lng: number; kind: "listing" | "address"; subtitle?: string };
 
 // Île-de-France : centre de Paris pour le biais de localisation et cadre approximatif (lon min, lat min, lon max, lat max).
+const NO_PARIS: ParisSpot[] = [];
 const PARIS_CENTER = { lat: 48.8566, lng: 2.3522 };
 const IDF_BOX = { west: 1.45, south: 48.12, east: 3.56, north: 49.25 };
 const inIleDeFrance = (lat: number, lng: number) => lat >= IDF_BOX.south && lat <= IDF_BOX.north && lng >= IDF_BOX.west && lng <= IDF_BOX.east;
@@ -193,6 +196,12 @@ export default function Home() {
   const [selectedStreetId, setSelectedStreetId] = useState<number | null>(null);
   const [streetLocating, setStreetLocating] = useState(false);
   const [streetHelp, setStreetHelp] = useState<string | null>(null);
+  // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
+  const [parisOn, setParisOn] = useState(true);
+  const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(SPOT_TYPE_CODES));
+  const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
+  const [parisFilterOpen, setParisFilterOpen] = useState(false);
+  const [selectedParis, setSelectedParis] = useState<{ lat: number; lng: number; t: number } | null>(null);
   const streetInput = useMemo(() => {
     const r = (v: number) => Math.round(v * 1000) / 1000;
     const b = visibleBounds ?? { south: visibleCenter.lat - 0.01, north: visibleCenter.lat + 0.01, west: visibleCenter.lng - 0.015, east: visibleCenter.lng + 0.015 };
@@ -204,6 +213,23 @@ export default function Home() {
   const streetSpots = useMemo<StreetSpotData[]>(() => (streetOn && online && streetInput ? streetQuery.data?.spots ?? [] : []), [streetOn, online, streetInput, streetQuery.data]);
   const streetPanelState: StreetPanelState = !streetOn ? "off" : !online ? "offline" : streetInput === null ? "zoom" : streetQuery.isError ? "error" : streetQuery.isLoading ? "loading" : "ok";
   const selectedStreet = streetSpots.find((spot) => spot.id === selectedStreetId) ?? null;
+  useEffect(() => {
+    if (!parisOn || !visibleBounds) { setParisLoad(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const result = await loadParisSpots(visibleBounds, visibleCenter, parisTypes);
+      if (!cancelled) setParisLoad(result);
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [parisOn, visibleBounds, visibleCenter, parisTypes, online]);
+  // Fusion : un signalement à moins de 15 m d'un emplacement le colore ; ce signalement n'est alors plus dessiné à part.
+  const parisMerged = useMemo(() => {
+    const officials: OfficialSpot[] = parisLoad?.status === "ok" ? parisLoad.spots : [];
+    if (parisLoad?.status !== "ok" || parisLoad.mode !== "detail") return { gray: officials.map((s): ParisSpot => ({ ...s, color: "gray", reportId: 0 })), hot: [] as ParisSpot[], matched: new Set<number>() };
+    const merged = mergeWithReports(officials, streetSpots.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, color: r.color, reportedAt: r.reportedAt })));
+    return { gray: merged.spots.filter((x) => x.reportId === 0), hot: merged.spots.filter((x) => x.reportId !== 0), matched: merged.matchedReportIds };
+  }, [parisLoad, streetSpots]);
+  const streetSpotsOnMap = useMemo(() => streetSpots.filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, parisMerged]);
   const streetCreate = trpc.govapark.street.create.useMutation({
     onSuccess: (result, variables) => {
       toast.success(result.example ? "Signalement d’exemple enregistré (mode démo)" : variables.status === "free" ? "Merci ! Place signalée libre : visible 10 min au maximum." : "Merci ! Place signalée prise : visible 10 min au maximum.");
@@ -212,7 +238,7 @@ export default function Home() {
     onError: (error) => toast.error(error.message),
   });
   // Signaler une place en rue : la position GPS de l'appareil est obligatoire (vérifiée par le serveur à moins de 50 m).
-  const reportStreet = async (status: "free" | "taken", spot?: StreetSpotData) => {
+  const reportStreet = async (status: "free" | "taken", spot?: { latitude: number; longitude: number }) => {
     if (!isAuthenticated) { requireAuth(); return; }
     setStreetLocating(true);
     try {
@@ -648,7 +674,9 @@ export default function Home() {
     driving: !!drivingRoute && (!navActive || navFollow), routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
     onListing: (id: number) => navigate(`/place/${id}`), onBook: (id: number) => navigate(`/reserver/${id}`), canBook: online, onRoute: startRoute,
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
-    streetSpots, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
+    streetSpots: streetSpotsOnMap, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),
+    parisSpots: parisOn ? parisMerged.gray : NO_PARIS, parisHot: parisOn ? parisMerged.hot : NO_PARIS,
+    onParisSpot: (spot: { lat: number; lng: number; t: number; reportId: number }) => { if (spot.reportId > 0) setSelectedStreetId(spot.reportId); else setSelectedParis({ lat: spot.lat, lng: spot.lng, t: spot.t }); },
   };
   // Carte 3D : si elle ne peut pas s'afficher, on l'explique (au lieu d'un repli silencieux) et on réessaie automatiquement.
   const [map3dFail, setMap3dFail] = useState<null | "webgl" | "load">(initialWebGL ? null : "webgl");
@@ -708,6 +736,7 @@ export default function Home() {
         </div>}
         {!destinationChosen && <div className="m-chips">
           <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
+          <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
@@ -722,6 +751,7 @@ export default function Home() {
           <button onClick={() => { setMenuOpen(false); void enableProximityAlerts(); }}><ThumbsUp size={19} />Alerte place à 800 m</button>
           <button onClick={() => { setMenuOpen(false); void enableBackgroundAlerts(); }}><Clock3 size={19} />Alertes en arrière-plan</button>
           {drivingRoute && <button onClick={() => { setMenuOpen(false); toggleVoice(); }}><Navigation size={19} />{voiceGuidanceEnabled ? "Couper la voix" : "Guidage vocal"}</button>}
+          <button onClick={() => { setMenuOpen(false); setParisFilterOpen(true); }}><SlidersHorizontal size={19} />Types d’emplacements Paris</button>
           <button onClick={() => { setMenuOpen(false); setOfflineOpen(true); }}><Download size={19} />Carte hors ligne</button>
           <button onClick={() => navigate("/messages")}><Mail size={19} />Messages</button>
           <button onClick={() => navigate("/mobilite")}><Fuel size={19} />Mobilité</button>
@@ -735,6 +765,10 @@ export default function Home() {
             busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"}
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
             onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} onLocate={() => locate(true)} />
+          {parisOn && <p className="m-paris-line" role="status">{parisLoad === null ? "Emplacements de Paris : chargement…"
+            : parisLoad.status === "missing" ? "Emplacements de Paris : données non installées sur ce site (import non exécuté), rien n’est affiché."
+            : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
+            : <>{PARIS_ATTRIBUTION}{parisLoad.mode === "overview" ? " Zoomez pour voir chaque emplacement." : ""}{parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""} <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source</a></>}</p>}
           <div className="m-sheet-head">
             <ul className="m-legend" aria-label="Légende des couleurs des places">
               <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
@@ -874,6 +908,21 @@ export default function Home() {
         <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedStreet; setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}><Navigation size={18} />Y aller</button>
         {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
         <small className="field-help">Pour signaler, votre position GPS doit être à moins de {STREET_RULES.deviceMaxMeters} m de la place.</small>
+      </Modal>}
+
+      {parisFilterOpen && <Modal title="Types d’emplacements de Paris" onClose={() => setParisFilterOpen(false)}>
+        <div className="form-stack">
+          {SPOT_TYPE_CODES.map((code) => <label className="check-row" key={code}><input type="checkbox" checked={parisTypes.has(code)} onChange={() => setParisTypes((previous) => { const next = new Set(previous); if (next.has(code)) next.delete(code); else next.add(code); return next; })} /> {SPOT_TYPE_LABEL[code]}</label>)}
+          <p className="field-help">Couche séparée des places privées et des parkings. Le type vient des données de la Ville de Paris ; il ne dit rien de la disponibilité.</p>
+          <div className="modal-actions"><button className="btn btn-ghost" onClick={() => setParisTypes(new Set(SPOT_TYPE_CODES))}>Tout afficher</button><button className="btn btn-primary" onClick={() => setParisFilterOpen(false)}>Fermer</button></div>
+        </div>
+      </Modal>}
+
+      {selectedParis && <Modal title="Emplacement de voirie" onClose={() => setSelectedParis(null)}>
+        <div className="report-detail-head"><span className="report-status-dot" style={{ background: STATUS_COLORS.gray }} /><div><strong>Statut inconnu</strong><p>Aucun signalement récent d’utilisateur sur cet emplacement : on ne sait pas s’il est libre.</p></div></div>
+        <dl className="report-facts"><div><dt>Type</dt><dd>{SPOT_TYPE_LABEL[selectedParis.t] ?? SPOT_TYPE_LABEL[0]}</dd></div><div><dt>Source</dt><dd>{PARIS_SOURCE.producer}, licence {PARIS_SOURCE.license}</dd></div></dl>
+        <p className="report-caution">Emplacement issu des données ouvertes de la Ville de Paris, qui changent vite et ne sont pas garanties exhaustives. Ce n’est pas une place disponible.</p>
+        <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedParis; setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, SPOT_TYPE_LABEL[spot.t] ?? "Emplacement de voirie", 0, { kind: "street" }); }}><Navigation size={18} />Y aller</button>
       </Modal>}
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>

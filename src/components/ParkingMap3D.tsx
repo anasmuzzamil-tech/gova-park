@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { MapListing, MapReport, MapStreetSpot, MapBounds } from "./ParkingMap";
 import { clusterPoints } from "@/lib/cluster";
 import { STATUS_COLORS } from "@contracts/parking-status";
+import { SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 type Center = { lat: number; lng: number };
@@ -64,14 +65,70 @@ function text(tag: string, value: string, className?: string) {
   return node;
 }
 
+// Icône d'un emplacement (carré arrondi aux couleurs du statut, symbole du type) dessinée une fois par couleur et par type.
+const PARIS_COLORS: Record<string, string> = { gray: STATUS_COLORS.gray, green: STATUS_COLORS.green, orange: STATUS_COLORS.orange, red: STATUS_COLORS.red };
+function parisIcon(color: string, glyph: string): ImageData | null {
+  const size = 72, canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const g = canvas.getContext("2d");
+  if (!g) return null;
+  g.fillStyle = "#ffffff"; g.beginPath(); g.roundRect(4, 4, size - 8, size - 8, 20); g.fill();
+  g.fillStyle = color; g.beginPath(); g.roundRect(10, 10, size - 20, size - 20, 15); g.fill();
+  g.fillStyle = "#ffffff"; g.font = "800 34px Manrope, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
+  return g.getImageData(0, 0, size, size);
+}
+function addParisLayers(map: maplibregl.Map, onPick: (props: { lat: number; lng: number; t: number; reportId: number; color: string }) => void) {
+  try {
+    for (const [name, color] of Object.entries(PARIS_COLORS)) for (const t of SPOT_TYPE_CODES) {
+      const img = parisIcon(color, SPOT_TYPE_GLYPH[t]);
+      if (img && !map.hasImage(`ps-${name}-${t}`)) map.addImage(`ps-${name}-${t}`, img, { pixelRatio: 2 });
+    }
+    // Source regroupée par MapLibre : le total d'un groupe additionne `n` (1 pour un emplacement réel, davantage pour la vue d'ensemble agrégée).
+    map.addSource("gp-paris", { type: "geojson", data: emptyFc(), cluster: true, clusterRadius: 46, clusterMaxZoom: 16, clusterProperties: { total: ["+", ["get", "n"]] } });
+    map.addSource("gp-paris-hot", { type: "geojson", data: emptyFc() });
+    const group = "#1f1b4d";
+    const radius = (field: string): maplibregl.ExpressionSpecification => ["step", ["get", field], 15, 10, 18, 100, 23, 1000, 28];
+    const textLayout = { "text-font": ["Noto Sans Bold"], "text-size": 13, "text-allow-overlap": true, "text-ignore-placement": true };
+    map.addLayer({ id: "gp-paris-cluster", type: "circle", source: "gp-paris", filter: ["has", "point_count"], paint: { "circle-color": group, "circle-radius": radius("total"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
+    map.addLayer({ id: "gp-paris-cluster-n", type: "symbol", source: "gp-paris", filter: ["has", "point_count"], layout: { ...textLayout, "text-field": ["to-string", ["get", "total"]] }, paint: { "text-color": "#ffffff" } });
+    map.addLayer({ id: "gp-paris-agg", type: "circle", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], [">", ["get", "n"], 1]], paint: { "circle-color": group, "circle-radius": radius("n"), "circle-stroke-color": "#ffffff", "circle-stroke-width": 3 } });
+    map.addLayer({ id: "gp-paris-agg-n", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], [">", ["get", "n"], 1]], layout: { ...textLayout, "text-field": ["to-string", ["get", "n"]] }, paint: { "text-color": "#ffffff" } });
+    const icon: maplibregl.ExpressionSpecification = ["concat", "ps-", ["get", "c"], "-", ["to-string", ["get", "t"]]];
+    const iconLayout = { "icon-image": icon, "icon-allow-overlap": true, "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 0.95] } as maplibregl.SymbolLayerSpecification["layout"];
+    map.addLayer({ id: "gp-paris-point", type: "symbol", source: "gp-paris", filter: ["all", ["!", ["has", "point_count"]], ["<=", ["get", "n"], 1]], layout: iconLayout });
+    map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { ...iconLayout, "symbol-sort-key": 1 } });
+    map.on("click", "gp-paris-cluster", async (e) => {
+      const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
+      try {
+        const zoom = await (map.getSource("gp-paris") as maplibregl.GeoJSONSource).getClusterExpansionZoom(Number(f.properties?.cluster_id));
+        map.easeTo({ center: f.geometry.coordinates as [number, number], zoom: Math.min(zoom + 0.5, 18.5), duration: 500 });
+      } catch { map.easeTo({ center: f.geometry.coordinates as [number, number], zoom: map.getZoom() + 2, duration: 500 }); }
+    });
+    map.on("click", "gp-paris-agg", (e) => { const f = e.features?.[0]; if (f && f.geometry.type === "Point") map.easeTo({ center: f.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom() + 2, 14.5), duration: 500 }); });
+    for (const layer of ["gp-paris-point", "gp-paris-hot-point"]) {
+      map.on("click", layer, (e) => {
+        const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
+        const [lng, lat] = f.geometry.coordinates as [number, number];
+        onPick({ lat, lng, t: Number(f.properties?.t ?? 0), reportId: Number(f.properties?.r ?? 0), color: String(f.properties?.c ?? "gray") });
+      });
+    }
+    for (const layer of ["gp-paris-cluster", "gp-paris-agg", "gp-paris-point", "gp-paris-hot-point"]) {
+      map.on("mouseenter", layer, () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; });
+    }
+  } catch (error) { console.warn("[GOVAPARK] Couche des emplacements de Paris impossible", error); }
+}
+
 export default function ParkingMap3D({
-  center, listings, reports, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   listings: MapListing[];
   reports: MapReport[];
   streetSpots?: MapStreetSpot[];
   onStreetSpot?: (spot: MapStreetSpot) => void;
+  /** Emplacements officiels de Paris (gris, regroupés) et ceux colorés par un signalement (jamais regroupés). */
+  parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: { lat: number; lng: number; t: number; reportId: number; color: string }) => void;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -99,8 +156,8 @@ export default function ParkingMap3D({
   const detailed = zoom >= 14;
 
   // Callbacks toujours à jour sans recréer les marqueurs.
-  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot });
-  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot };
+  const cb = useRef({ onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot });
+  cb.current = { onListing, onBook, onRoute, onReport, onMove, onPickRoute, onUnavailable, onStreetSpot, onParisSpot };
 
   const listingMarkers = useRef<maplibregl.Marker[]>([]);
   const reportMarkers = useRef<maplibregl.Marker[]>([]);
@@ -209,6 +266,7 @@ export default function ParkingMap3D({
       map.on("click", "gp-alts-line", (e) => { const id = e.features?.[0]?.properties?.id; if (id != null) cb.current.onPickRoute?.(String(id)); });
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
+      addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
       setZoom(map.getZoom());
       setReady(true);
     });
@@ -416,6 +474,15 @@ export default function ParkingMap3D({
       return new maplibregl.Marker({ element: node }).setLngLat([spot.longitude, spot.latitude]).addTo(map);
     });
   }, [ready, streetSpots]);
+
+  // Emplacements officiels de Paris : regroupement natif MapLibre (gris, jamais de disponibilité) + emplacements colorés par un signalement.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const feature = (s: ParisSpot): GeoJSON.Feature<GeoJSON.Point> => ({ type: "Feature", properties: { n: s.n, t: s.t, c: s.color, r: s.reportId }, geometry: { type: "Point", coordinates: [s.lng, s.lat] } });
+    (map.getSource("gp-paris") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisSpots.map(feature) });
+    (map.getSource("gp-paris-hot") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisHot.map(feature) });
+  }, [ready, parisSpots, parisHot]);
 
   // Stations et services du trajet.
   useEffect(() => {
