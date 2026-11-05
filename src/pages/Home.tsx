@@ -13,7 +13,7 @@ import { Modal } from "@/components/Modal";
 import { AuthGate } from "@/components/AuthGate";
 import { STATUS_COLORS } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
-import { agoText, STREET_RULES } from "@contracts/street-reports";
+import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
@@ -197,7 +197,6 @@ export default function Home() {
   const [visibleBounds, setVisibleBounds] = useState<MapBounds | null>(null);
   const [selectedStreetId, setSelectedStreetId] = useState<number | null>(null);
   const [streetLocating, setStreetLocating] = useState(false);
-  const [streetHelp, setStreetHelp] = useState<string | null>(null);
   // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
   const [parisOn, setParisOn] = useState(true);
   const [parisTypes, setParisTypes] = useState<Set<number>>(() => new Set(SPOT_TYPE_CODES));
@@ -234,18 +233,18 @@ export default function Home() {
   const streetSpotsOnMap = useMemo(() => streetSpots.filter((x) => !parisMerged.matched.has(x.id)), [streetSpots, parisMerged]);
   const streetCreate = trpc.govapark.street.create.useMutation({
     onSuccess: (result, variables) => {
-      toast.success(result.example ? "Signalement d’exemple enregistré (mode démo)" : variables.status === "free" ? "Merci ! Place signalée libre : visible 10 min au maximum." : "Merci ! Place signalée prise : visible 10 min au maximum.");
+      toast.success(reportSuccessText(variables.status, result.example), { duration: 6000 });
       setSelectedStreetId(null); utils.govapark.street.list.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
-  // Signaler une place en rue : la position GPS de l'appareil est obligatoire (vérifiée par le serveur à moins de 50 m).
+  // Signaler une place en rue : la position GPS de l'appareil est demandée au toucher (obligatoire pour SIGNALER seulement, vérifiée par le serveur).
+  // Chaque toucher a une réponse visible : bouton « Localisation… » puis « Envoi… », puis toast de confirmation ou message court.
   const reportStreet = async (status: "free" | "taken", spot?: { latitude: number; longitude: number }) => {
-    if (!isAuthenticated) { requireAuth(); return; }
+    if (!isAuthenticated) { toast.message("Connectez-vous pour signaler une place.", { id: "street-report" }); requireAuth(); return; }
     setStreetLocating(true);
     try {
       const device = await getDevicePosition();
-      setStreetHelp(null);
       let place = { latitude: device.latitude, longitude: device.longitude };
       if (spot) place = { latitude: spot.latitude, longitude: spot.longitude };
       else if (status === "taken") {
@@ -256,7 +255,7 @@ export default function Home() {
       }
       streetCreate.mutate({ status, ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
     } catch (error) {
-      if (error instanceof GeolocError) setStreetHelp(error.message); else toast.error("Signalement impossible pour le moment.");
+      toast.error(error instanceof GeolocError ? error.message : "Signalement impossible pour le moment.", { id: "street-report", duration: 9000 });
     } finally { setStreetLocating(false); }
   };
   const filtered = useMemo(() => listings.filter((listing) => {
@@ -753,7 +752,6 @@ export default function Home() {
         </div>}
 
         <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
-          {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={18} /></button></div>}
           <div className="m-meta">
             <button type="button" className="m-info" aria-expanded={infoOpen} aria-label="Légende des couleurs et sources" onClick={() => setInfoOpen((open) => !open)}><Info size={17} /></button>
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
@@ -761,6 +759,7 @@ export default function Home() {
               <ul className="m-legend" aria-label="Légende des couleurs des places">
                 <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
               </ul>
+              <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
               <p>{PARIS_ATTRIBUTION}</p>
               {parisOn && parisNote && <p>{parisNote}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
@@ -921,7 +920,6 @@ export default function Home() {
         <p className="report-caution">Place gratuite sur la voie publique, signalée par un utilisateur. Ce n’est pas une vérité garantie : elle a pu être prise depuis. Govapark ne la réserve pas.</p>
         <button className="btn btn-primary btn-full" onClick={() => { const spot = selectedStreet; setSelectedStreetId(null); setTarget({ lat: spot.latitude, lng: spot.longitude }); void calculateRoutes({ lat: spot.latitude, lng: spot.longitude }, "Place en rue", 0, { kind: "street", reportedAt: spot.reportedAt, status: spot.status, example: spot.example }); }}><Navigation size={18} />Y aller</button>
         {selectedStreet.status === "free" && <button className="btn btn-secondary btn-full" disabled={streetLocating || streetCreate.isPending} onClick={() => void reportStreet("taken", selectedStreet)}>Place prise (je m’y gare)</button>}
-        <small className="field-help">Pour signaler, votre position GPS doit être à moins de {STREET_RULES.deviceMaxMeters} m de la place.</small>
       </Modal>}
 
       {parisFilterOpen && <Modal title="Types d’emplacements de Paris" onClose={() => setParisFilterOpen(false)}>

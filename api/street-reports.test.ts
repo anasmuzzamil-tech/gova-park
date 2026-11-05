@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   STREET_RULES, checkDeviceDistance, countFreeNearby, checkReportRate, distanceMeters, expiresAtFor, parseStreetListInput, parseStreetReportInput,
-  prepareStreetReport, resolveStreetSpots, type StreetReportRow,
+  prepareStreetReport, reportSuccessText, resolveStreetSpots, type StreetReportRow,
 } from "@contracts/street-reports";
+import { geolocMessage } from "@/lib/street";
 
 const now = new Date("2026-11-05T12:00:00Z");
 const minutesAgo = (m: number) => new Date(now.getTime() - m * 60000);
@@ -215,5 +216,30 @@ describe("compteur d'accueil (places libres signalées il y a moins de 5 min pr�
   it("compte les exemples de démo à part et ignore les dates du futur", () => {
     const list = [spot({ example: true }), spot({ reportedAt: new Date(now.getTime() + 600000).toISOString() })];
     expect(countFreeNearby(list, ref, now)).toEqual({ count: 1, examples: 1 });
+  });
+});
+
+describe("retour visible après un signalement", () => {
+  it("confirme libre (vert 5 min puis orange) et prise (rouge 10 min), sans promesse de garantie", () => {
+    expect(reportSuccessText("free", false)).toBe("Merci, place signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
+    expect(reportSuccessText("taken", false)).toBe("Merci, place signalée prise : rouge 10 min.");
+  });
+  it("en démo, la confirmation dit « exemple » et que ce n'est pas un vrai signalement", () => {
+    expect(reportSuccessText("free", true)).toContain("Exemple (mode démo)");
+    expect(reportSuccessText("taken", true)).toContain("Ce n'est pas un vrai signalement");
+  });
+});
+
+describe("message de position refusée (court, 2 lignes au plus)", () => {
+  it("iPhone : texte demandé, sans règle des 50 m ni long paragraphe", () => {
+    const m = geolocMessage("denied", true);
+    expect(m).toBe("Position nécessaire pour signaler votre place. Réglages iPhone > Safari > Localisation (ou Réglages du site), puis réessayez.");
+    expect(m.length).toBeLessThan(140);
+    expect(m.includes("50 m")).toBe(false);
+  });
+  it("autres navigateurs et autres causes : courts, sans la règle des 50 m", () => {
+    for (const reason of ["denied", "timeout", "unsupported", "unavailable"] as const) {
+      for (const ios of [true, false]) { const m = geolocMessage(reason, ios); expect(m.length).toBeLessThan(150); expect(m.includes("50 m")).toBe(false); }
+    }
   });
 });

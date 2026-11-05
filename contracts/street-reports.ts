@@ -297,3 +297,11 @@ export function prepareStreetReport(
 }
 
 export const STREET_COLORS = STATUS_COLORS;
+
+/** Confirmation affichée après l'envoi d'un signalement (jamais présenté comme une vérité garantie ; « exemple » en démo). */
+export function reportSuccessText(status: StreetStatus, example: boolean): string {
+  const free = status === "free";
+  const life = free ? `verte ${STREET_RULES.greenMinutes} min, puis orange jusqu'à ${STREET_RULES.freeMaxMinutes} min` : `rouge ${STREET_RULES.takenMaxMinutes} min`;
+  if (example) return `Exemple (mode démo) : place signalée ${free ? "libre" : "prise"}, ${life}. Ce n'est pas un vrai signalement.`;
+  return `Merci, place signalée ${free ? "libre" : "prise"} : ${life}.`;
+}
