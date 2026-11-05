@@ -38,6 +38,11 @@ Règles dans `contracts/street-reports.ts`, testées dans `api/street-reports.te
 
 En mode démo (sans base), les annonces sont des exemples : leur statut indique « Simulation (mode démo) ».
 
+### Calcul de trajet selon « Mon véhicule » (au toucher de « Y aller » seulement)
+- **Voiture, livraison, moto** : serveurs OSRM publics déjà utilisés (`router.project-osrm.org`, puis `routing.openstreetmap.de/routed-car`), réseau routier voiture. La moto n'a pas de profil propre : même réseau, aucune promesse de remontée de files, libellé « estimation ».
+- **Vélo : service externe gratuit, sans clé, AJOUTÉ pour ce profil seulement** : `https://routing.openstreetmap.de/routed-bike/route/v1/driving/{lng,lat;lng,lat}` (FOSSGIS, données OpenStreetMap ODbL). Le segment `driving` est le nom de profil conventionnel des instances FOSSGIS, le profil vélo est choisi par le préfixe `routed-bike`. Aucun appel à ce service pour les autres véhicules. **À confirmer par Anas** (règle « aucun nouveau service externe sans accord »). Le format n'a PAS pu être vérifié en ligne depuis l'environnement de développement (proxy sortant : 403) : à contrôler au premier essai réel. Sans service : estimation « à vol d'oiseau » (Haversine × 1,3, 15 km/h), étiquetée comme telle, sans guidage.
+- **Coût** : km × consommation (L/100 km) ÷ 100 × prix du litre. Prix : le moins cher repéré près du trajet dans le flux data.economie.gouv.fr déjà utilisé ; sans prix, 1,80 €/L supposé et affiché « (prix supposé) ». Consommation par défaut : voiture et livraison 7,2, moto 4,5 L/100 km (réglable dans le panneau de trajet, pas dans le profil : aucun champ consommation n'y existe). Vélo : 0 €. Moto : SP95-E10 par défaut. Aucun trafic en temps réel : « sans traffic ». Péages non inclus.
+
 ## Stationnement public et parkings collectifs : pas encore de données branchées
 La recherche renvoie une liste vide pour ces catégories (avec un message), plutôt que d'afficher de fausses places.
 

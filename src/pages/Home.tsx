@@ -16,6 +16,7 @@ import { STATUS_COLORS, statePillLabel } from "@contracts/parking-status";
 import { bboxAround } from "@contracts/parking-search";
 import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
+import { DEFAULT_CONSUMPTION, NO_TRAFFIC, DEFAULT_FUEL_PRICE_EUR_L, bikeDurationSeconds, isSamePlace, routeEndpoints, straightLineEstimate, summaryLine, tripCostEur } from "@/lib/route-calc";
 import { getGeolocDiag, noteGeolocError, subscribeGeolocDiag, refreshPermissionState } from "@/lib/geoloc";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
@@ -34,7 +35,7 @@ type Filters = { maxPrice: number; maxDistance: number; type: string; covered: s
 const initialFilters: Filters = { maxPrice: 350, maxDistance: 30, type: "tous", covered: "tous", minHeight: 0, minLength: 0, minWidth: 0, accessible: false, priceMode: "tous", category: "private", from: "", to: "" };
 const reportTitle = { free: "Place signalée libre", occupied: "Place signalée occupée", departure: "Départ annoncé" };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
-type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean };
+type DrivingRoute = { id: string; label: string; coordinates: [number, number][]; distance: number; duration: number; destinationId: number; steps: RouteStep[]; fuelCost?: number; fuelPrice?: number; score?: number; offline?: boolean; costEur?: number; costAssumed?: boolean; profile?: VehicleType; estimate?: boolean };
 function distanceToSegmentMeters(point: {lat:number;lng:number}, a: [number,number], b: [number,number]) {
   const latScale = 111320, lngScale = 111320 * Math.cos(point.lat * Math.PI / 180);
   const px = point.lng * lngScale, py = point.lat * latScale;
@@ -220,6 +221,8 @@ export default function Home() {
     setVehicleChoice(next);
     try { localStorage.setItem("govapark.mapVehicle.v1", JSON.stringify(next)); } catch { /* facultatif */ }
   };
+  // Consommation et carburant par défaut selon le véhicule (réglables ensuite dans le panneau de trajet).
+  useEffect(() => { setFuelConsumption(DEFAULT_CONSUMPTION[vehicle] || DEFAULT_CONSUMPTION.car); setRouteFuelType(vehicle === "moto" ? "e10" : "gazole"); }, [vehicle]);
   const parisTypes = useMemo(() => spotTypesToShow(vehicle, vehicleChoice.all, SPOT_TYPE_CODES), [vehicle, vehicleChoice.all]);
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
@@ -446,7 +449,7 @@ export default function Home() {
     const origin: { lat: number; lng: number } = userPosition ?? originRef.current ?? { lat: visibleCenter.lat, lng: visibleCenter.lng };
     setOriginNote(userPosition ? null : "Départ : ancien centre de la carte (position GPS non activée)");
     if (!Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) return;
-    if (distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng) < 100) {
+    if (isSamePlace(origin, destination)) {
       // Départ = position réelle : on est déjà sur place. Départ = simple centre de la carte : ce n'est pas une position, on le dit sans erreur.
       setNavDest(null);
       toast.message(userPosition ? "Vous êtes à moins de 100 m de cette destination." : "Position inconnue : touchez « Ma position » (la cible en haut) pour calculer le trajet depuis chez vous.", { id: "route-near" });
@@ -456,11 +459,8 @@ export default function Home() {
     try {
       // Plusieurs serveurs de calcul d'itinéraire : si le premier est saturé ou injoignable, on essaie le suivant.
       const coords = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
-      const endpoints = [
-        `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=3`,
-        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=true`,
-        `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`,
-      ];
+      // Voiture, livraison et moto : réseau routier voiture. Vélo : service gratuit routing.openstreetmap.de (profil vélo), appelé pour ce profil seulement.
+      const endpoints = routeEndpoints(vehicle, coords);
       let response: Response | null = null;
       for (const url of endpoints) {
         try {
@@ -471,7 +471,10 @@ export default function Home() {
       if (!response) {
         // Pas d'itinéraire fabriqué : distance à vol d'oiseau et ligne droite étiquetée, sans guidage.
         const km = straightLineKm(origin.lat, origin.lng, destination.lat, destination.lng);
-        const line: DrivingRoute = { id: "offline-line", label: navigator.onLine === false ? "Itinéraire indisponible hors ligne" : "Itinéraire indisponible (service injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: km * 1000, duration: 0, destinationId: listingId, steps: [], offline: true };
+        const est = vehicle === "bike" ? straightLineEstimate(origin, destination) : null;
+        const line: DrivingRoute = est
+          ? { id: "offline-line", label: "À vol d’oiseau, estimation (service vélo injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: est.distanceM, duration: est.durationS, destinationId: listingId, steps: [], offline: true, estimate: true, costEur: 0, profile: "bike" }
+          : { id: "offline-line", label: navigator.onLine === false ? "Itinéraire indisponible hors ligne" : "Itinéraire indisponible (service injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: km * 1000, duration: 0, destinationId: listingId, steps: [], offline: true };
         setRouteOptions([line]); setDrivingRoute(line);
         return;
       }
@@ -479,7 +482,7 @@ export default function Home() {
       const rawRoutes = data.routes ?? [];
       if (!rawRoutes.length) throw new Error("Aucun itinéraire trouvé");
       // Le serveur ne propose parfois qu'un seul trajet : on en génère 2 autres en passant par un point décalé de chaque côté.
-      if (rawRoutes.length < 3) {
+      if (rawRoutes.length < 3 && vehicle !== "bike") {
         const total = distanceMeters(origin.lat, origin.lng, destination.lat, destination.lng);
         const offset = Math.min(4000, Math.max(150, total * 0.18));
         const midLat = (origin.lat + destination.lat) / 2, midLng = (origin.lng + destination.lng) / 2;
@@ -504,8 +507,18 @@ export default function Home() {
       const mapped: DrivingRoute[] = rawRoutes.slice(0,3).map((route,index) => {
         const rawSteps = route.legs?.flatMap((leg) => leg.steps ?? []) ?? [];
         const steps: RouteStep[] = mapOsrmSteps(rawSteps as Parameters<typeof mapOsrmSteps>[0], [destination.lat, destination.lng]);
-        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps };
+        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps, profile: vehicle };
       });
+      if (vehicle === "bike") {
+        // Vélo : durée du service (sinon 15 km/h), coût 0 €, pas de carburant ni de station. Les alternatives du service sont gardées telles quelles.
+        const bikeRoutes = mapped.map((r) => ({ ...r, duration: bikeDurationSeconds(r.duration, r.distance), costEur: 0 }));
+        const quickest = [...bikeRoutes].sort((x, y) => x.duration - y.duration)[0];
+        const labelledBike = bikeRoutes.map((r) => ({ ...r, label: r.id === quickest.id ? "Le plus rapide" : "Alternative" }));
+        setRouteOptions(labelledBike);
+        const chosen = labelledBike.find((r) => r.id === quickest.id) ?? labelledBike[0];
+        setDrivingRoute(chosen); spokenStepIndex.current = 0;
+        return;
+      }
       const fields="id,geom,adresse,ville,gazole_prix,gazole_maj,e10_prix,e10_maj,sp98_prix,sp98_maj,sp95_prix,sp95_maj,e85_prix,e85_maj,services_service";
       const field=({gazole:"gazole_prix",e10:"e10_prix",sp98:"sp98_prix",sp95:"sp95_prix",e85:"e85_prix"} as const)[routeFuelType]; const updateField=({gazole:"gazole_maj",e10:"e10_maj",sp98:"sp98_maj",sp95:"sp95_maj",e85:"e85_maj"} as const)[routeFuelType];
       const fuelResults=await Promise.all(mapped.map(async route=>{
@@ -519,7 +532,7 @@ export default function Home() {
           return {route,stations};
         } catch { return {route,stations:[] as RouteService[]}; }
       }));
-      const pricedRoutes=fuelResults.map(({route,stations})=>{const cheapest=stations[0]?.price;return {...route,fuelPrice:cheapest,fuelCost:cheapest==null?undefined:(route.distance/1000)*(fuelConsumption/100)*cheapest};});
+      const pricedRoutes=fuelResults.map(({route,stations})=>{const cheapest=stations[0]?.price;return {...route,fuelPrice:cheapest,fuelCost:cheapest==null?undefined:tripCostEur(vehicle,route.distance,fuelConsumption,cheapest),costEur:tripCostEur(vehicle,route.distance,fuelConsumption,cheapest??DEFAULT_FUEL_PRICE_EUR_L),costAssumed:cheapest==null};});
       const fastest=[...pricedRoutes].sort((a,b)=>a.duration-b.duration)[0];
       const costRank=[...pricedRoutes].filter(r=>r.fuelCost!=null).sort((a,b)=>(a.fuelCost??Infinity)-(b.fuelCost??Infinity));
       const cheapest=costRank.find(r=>r.id!==fastest.id)??costRank[0]??[...pricedRoutes].filter(r=>r.id!==fastest.id).sort((a,b)=>a.distance-b.distance)[0]??fastest;
@@ -800,11 +813,11 @@ export default function Home() {
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
             onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />
           {drivingRoute ? <><div className="m-route">
-            <div className="m-route-main">{drivingRoute.offline ? <><strong>{meters(drivingRoute.distance)}</strong><span>à vol d’oiseau · {drivingRoute.label}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
+            <div className="m-route-main">{drivingRoute.offline ? <><strong>{drivingRoute.estimate ? `${meters(drivingRoute.distance)} · ${Math.max(1, Math.round(drivingRoute.duration / 60))} min` : meters(drivingRoute.distance)}</strong><span>{drivingRoute.estimate ? `${drivingRoute.label} · 0 € · Vélo · ${NO_TRAFFIC}` : `à vol d’oiseau · ${drivingRoute.label}`}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{summaryLine({ vehicle: drivingRoute.profile ?? vehicle, distanceM: drivingRoute.distance, durationS: drivingRoute.duration, costEur: drivingRoute.costEur ?? 0, costAssumed: drivingRoute.costAssumed }).split(" · ").slice(1).join(" · ")}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">
 {originNote && <small className="route-origin-note">{originNote}</small>}
 {gpsNote && !trackingGps && <small className="route-origin-note">{gpsNote}</small>}
-{routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.fuelCost != null ? ` · ${option.fuelCost.toFixed(1).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
+{routeOptions.length > 1 && <div className="m-route-options">{routeOptions.map((option) => <button key={option.id} className={drivingRoute.id === option.id ? "on" : ""} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}><b>{Math.round(option.duration / 60)} min</b><span>{meters(option.distance)}{option.costEur != null ? ` · ${option.costEur.toFixed(option.costEur === 0 ? 0 : 2).replace(".", ",")} €` : ""}</span><em>{/rapide/i.test(option.label ?? "") ? "Rapide" : /moins cher|court/i.test(option.label ?? "") ? "Éco" : /rapport|compromis/i.test(option.label ?? "") ? "Équilibré" : "Autre"}</em></button>)}</div>}
 {drivingRoute.offline ? <small className="route-offline-note">Ligne droite indicative, sans guidage. Reconnectez-vous pour calculer un vrai trajet.</small> : <button className="m-route-start" onClick={startNavigation}><Navigation size={18} />Démarrer</button>}</div>
             <button className="m-route-stop" onClick={toggleRoute} aria-label="Arrêter le trajet"><X size={18} /><span>Arrêter</span></button>
           </div>
@@ -877,8 +890,8 @@ export default function Home() {
           <small className="prediction-footnote">Indice expérimental. Les prévisions reposent sur les observations communautaires des 90 derniers jours, regroupées par zone, jour et heure. Elles ne garantissent jamais une place libre.</small>
         </section>}
         {drivingRoute && !drivingRoute.offline && <section className="route-results"><div><strong>{routeOptions.length > 1 ? `Vos ${routeOptions.length} alternatives de trajet` : "Votre trajet"}</strong><span>{(drivingRoute.distance/1000).toFixed(1)} km · {Math.round(drivingRoute.duration/60)} min</span></div>
-          <div className="route-options">{routeOptions.map((option)=> <button key={option.id} className={`route-option ${drivingRoute.id===option.id?"selected":""}`} onClick={()=>{setDrivingRoute(option);void refreshRouteServices(option);spokenStepIndex.current=0;}}><strong>{option.label}</strong><span>{(option.distance/1000).toFixed(1)} km · {Math.round(option.duration/60)} min</span>{option.fuelPrice!=null?<small>Carburant estimé : {((option.distance/1000)*(fuelConsumption/100)*option.fuelPrice).toFixed(2)} €</small>:<small>Coût carburant indisponible</small>}</button>)}</div>
-          <div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destination)void calculateRoutes({lat:destination.lat,lng:destination.lng},destination.label);else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>
+          <div className="route-options">{routeOptions.map((option)=> <button key={option.id} className={`route-option ${drivingRoute.id===option.id?"selected":""}`} onClick={()=>{setDrivingRoute(option);void refreshRouteServices(option);spokenStepIndex.current=0;}}><strong>{option.label}</strong><span>{(option.distance/1000).toFixed(1)} km · {Math.round(option.duration/60)} min</span>{option.profile==="bike"?<small>Coût : 0 € · Vélo · {NO_TRAFFIC}</small>:option.fuelPrice!=null?<small>Carburant estimé : {((option.distance/1000)*(fuelConsumption/100)*option.fuelPrice).toFixed(2)} €</small>:<small>Coût carburant indisponible</small>}</button>)}</div>
+          {drivingRoute.profile!=="bike"&&<div className="route-cost-controls"><label>Carburant<select value={routeFuelType} onChange={e=>setRouteFuelType(e.target.value as typeof routeFuelType)}><option value="gazole">Gazole</option><option value="e10">SP95-E10</option><option value="sp95">SP95</option><option value="sp98">SP98</option><option value="e85">E85</option></select></label><label>Consommation moyenne<input type="number" min="1" max="60" step="0.1" value={fuelConsumption} onChange={e=>setFuelConsumption(Math.max(1,Math.min(60,Number(e.target.value)||7.2)))}/><small>L/100 km</small></label><button className="btn btn-secondary" onClick={()=>{if(drivingRoute?.destinationId)void startRoute(drivingRoute.destinationId);else if(destination)void calculateRoutes({lat:destination.lat,lng:destination.lng},destination.label);else toast.message("Sélectionnez d’abord une destination.");}}>Actualiser les prix</button></div>}
           <p>{routeServices.length} services et points d’intérêt repérés autour du trajet sélectionné · {routeListings.length} place(s) privée(s) disponible(s) à moins de 900 m</p>
           <div className="route-service-legend"><span>⚡ Bornes électriques</span><span>🅿️ Parkings</span><span>🛣️ Aires de repos</span><span>🚛 Poids lourds</span><span>🍴 Restauration</span><span>⛽ Carburant</span></div>
           <small className="route-cost-note">Après modification du type de carburant, relancez le calcul d’itinéraire pour actualiser les prix. Le coût carburant est une estimation à partir des prix du flux officiel du ministère de l’Économie repérés près du trajet et de votre consommation déclarée. Péages, trafic en temps réel, restrictions poids lourds et prix des recharges ne sont pas encore inclus. Vérifiez les prix et services avant le départ.</small>
