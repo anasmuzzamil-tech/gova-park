@@ -6,7 +6,7 @@
 //  - « libre » : VERT pendant 5 min, ORANGE de 5 à 10 min, puis la place disparaît de la carte.
 //  - « prise »  : ROUGE pendant 10 min, puis la place disparaît.
 //  - Le signalement le plus récent l'emporte ; des signalements concordants d'utilisateurs différents relèvent la fiabilité.
-//  - Chaque signalement porte un TYPE DE VÉHICULE (voiture, moto, utilitaire/PL, bus, vélo ; décision d'Anas) : le statut d'une place, le compteur et la
+//  - Chaque signalement porte un TYPE DE VÉHICULE (voiture, moto, bus, vélo ; décision d'Anas) : le statut d'une place, le compteur et la
 //    fiabilité ne tiennent compte que des signalements du même type. Les anciens signalements sont des voitures.
 //  - Jamais de vert sans signalement récent : aucune DISPONIBILITÉ n'est pré-remplie. Les emplacements officiels de Paris (contracts/paris-spots.ts)
 //    sont affichés en gris « statut inconnu » et ne sont colorés que par un signalement récent. Un signalement n'est jamais une vérité garantie.

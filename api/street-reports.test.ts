@@ -157,7 +157,7 @@ describe("signalements par type de véhicule", () => {
     expect(list.every((x) => x.agreeing === 1 && x.reliabilityPct === 50)).toBe(true);
   });
   it("les règles de couleur restent celles de la voiture pour tous les types : vert 5 min, orange jusqu'à 10 min, puis disparition", () => {
-    for (const v of ["car", "moto", "utility", "bus", "bike"] as const) {
+    for (const v of ["car", "moto", "bus", "bike"] as const) {
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(4) })])[0].color).toBe("green");
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(7) })])[0].color).toBe("orange");
       expect(spots([report({ vehicleType: v, createdAt: minutesAgo(10) })])).toEqual([]);
@@ -178,9 +178,9 @@ describe("signalements par type de véhicule", () => {
   });
   it("validation stricte : les cinq types sont acceptés, tout le reste refusé, absent = voiture", () => {
     const base = { status: "free", ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
-    for (const v of ["car", "moto", "utility", "bus", "bike"]) expect(parseStreetReportInput({ ...base, vehicleType: v }).vehicleType).toBe(v);
+    for (const v of ["car", "moto", "bus", "bike"]) expect(parseStreetReportInput({ ...base, vehicleType: v }).vehicleType).toBe(v);
     expect(parseStreetReportInput(base).vehicleType).toBe("car");
-    for (const bad of ["truck", "CAR", "", null, 1, {}, ["car"], "car "]) expect(() => parseStreetReportInput({ ...base, vehicleType: bad }), String(bad)).toThrow();
+    for (const bad of ["utility", "truck", "CAR", "", null, 1, {}, ["car"], "car "]) expect(() => parseStreetReportInput({ ...base, vehicleType: bad }), String(bad)).toThrow();
   });
   it("le type est enregistré dans la ligne préparée et sert au calcul de fiabilité (voisins d'un autre type ignorés)", () => {
     const input = { status: "free" as const, vehicleType: "moto" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
@@ -195,7 +195,7 @@ describe("signalements par type de véhicule", () => {
   });
   it("confirmations : la voiture garde son texte, les autres types sont nommés", () => {
     expect(reportSuccessText("free", false, "moto")).toBe("Merci, place moto signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
-    expect(reportSuccessText("taken", false, "utility")).toBe("Merci, place utilitaire/PL signalée prise : rouge 10 min.");
+    expect(reportSuccessText("taken", false, "bus")).toBe("Merci, place bus signalée prise : rouge 10 min.");
     expect(reportSuccessText("free", true, "bike")).toContain("place vélo signalée libre");
     expect(reportSuccessText("free", false)).toBe("Merci, place signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
   });

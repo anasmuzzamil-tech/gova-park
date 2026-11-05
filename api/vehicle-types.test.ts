@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SPOT_TYPE, interpretRegime, type OfficialSpot } from "@contracts/paris-spots";
 import {
-  DEFAULT_VEHICLE, HEAVY_VEHICLE_NOTE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_PARK_SUFFIX, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, toVehicleType, vehicleTypesForSpot,
+  DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_PARK_SUFFIX, VEHICLE_SPOT_TYPES, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, toVehicleType, vehicleTypesForSpot,
 } from "@contracts/vehicle-types";
 
 // Valeurs réelles « Régime prioritaire | Régime particulier » des types concernés (CSV de la Ville de Paris du 31/10/2026, effectifs en lignes).
@@ -9,7 +9,8 @@ const REAL: Array<[string, string, number, string | null]> = [
   ["PAYANT MIXTE", "Mixte", 0, "car"], ["PAYANT ROTATIF", "Rotatif", 0, "car"], ["GRATUIT", "Gratuit", 0, "car"],
   ["2 ROUES", "Motos payant Mixte", 5140, "moto"], ["2 ROUES", "Motos payant Rotatif", 940, "moto"],
   ["AUTOCAR", "Autocar (payant)", 100, "bus"], ["AUTOCAR", "Autocar dépose", 6, "bus"], ["AUTOCAR", "Autocar dépose/reprise", 27, "bus"], ["AUTOCAR", "Autocar reprise", 2, "bus"], ["AUTOCAR", "Autocar stationnement gratuit", 2, "bus"],
-  ["LIVRAISON", "ZL permanente", 3698, "utility"], ["LIVRAISON", "ZL périodique", 5593, "utility"],
+  // Zones de livraison : aucun type du sélecteur (pas de poids lourd sur Paris, décision d'Anas).
+  ["LIVRAISON", "ZL permanente", 3698, null], ["LIVRAISON", "ZL périodique", 5593, null],
   ["2 ROUES", "Vélos", 15267, "bike"], ["2 ROUES", "Vélo-cargo", 285, "bike"], ["2 ROUES", "Box à vélos", 37, "bike"],
   // Jamais devinés : aucun type de véhicule.
   ["2 ROUES", "Mixte", 238, null], ["PAYANT MIXTE", "Mixte Marché", 0, null], ["GRATUIT", "Gratuit Bois", 0, null], ["AUTRE REGIME", "Marché", 0, null], ["GIG/GIC", "GIG/GIC Standard", 0, null],
@@ -19,11 +20,11 @@ const report = (id: number, lat: number, lng: number, color: string, vehicleType
 
 describe("types de véhicule", () => {
   it("cinq types, voiture par défaut, validation stricte", () => {
-    expect([...VEHICLE_TYPES]).toEqual(["car", "moto", "utility", "bus", "bike"]);
+    expect([...VEHICLE_TYPES]).toEqual(["car", "moto", "bus", "bike"]);
     expect(DEFAULT_VEHICLE).toBe("car");
     for (const v of VEHICLE_TYPES) { expect(isVehicleType(v)).toBe(true); expect(VEHICLE_CHIP[v]).toBeTruthy(); expect(VEHICLE_NAME[v]).toBeTruthy(); }
     for (const bad of ["truck", "CAR", "", " car", null, undefined, 3, {}, ["car"]]) expect(isVehicleType(bad), String(bad)).toBe(false);
-    expect(VEHICLE_CHIP).toEqual({ car: "Voiture", moto: "Moto", utility: "Utilitaire/PL", bus: "Bus", bike: "Vélo" });
+    expect(VEHICLE_CHIP).toEqual({ car: "Voiture", moto: "Moto", bus: "Bus", bike: "Vélo" });
   });
   it("chaque valeur réelle du CSV est reliée au bon type de véhicule, les valeurs incertaines à aucun", () => {
     for (const [p, q, , v] of REAL) {
@@ -35,13 +36,13 @@ describe("types de véhicule", () => {
     const all = VEHICLE_TYPES.flatMap((v) => VEHICLE_SPOT_TYPES[v]);
     expect(new Set(all).size).toBe(all.length);
     expect(VEHICLE_SPOT_TYPES.car).toEqual([SPOT_TYPE.paid, SPOT_TYPE.free]);
-    expect(VEHICLE_SPOT_TYPES.utility).toEqual([SPOT_TYPE.delivery]);
-    for (const t of [SPOT_TYPE.pmr, SPOT_TYPE.reserved, SPOT_TYPE.other]) expect(vehicleTypesForSpot(t)).toEqual([]);
+    for (const t of [SPOT_TYPE.pmr, SPOT_TYPE.reserved, SPOT_TYPE.other, SPOT_TYPE.delivery]) expect(vehicleTypesForSpot(t)).toEqual([]);
   });
-  it("poids lourd : seulement les zones de livraison, avec la note d'honnêteté", () => {
-    expect(VEHICLE_SPOT_TYPES.utility).toEqual([SPOT_TYPE.delivery]);
-    expect(interpretRegime("LIVRAISON", "ZL permanente").title).toBe("Zone de livraison");
-    expect(HEAVY_VEHICLE_NOTE).toBe("Paris publie des zones de livraison et des places d'autocars ; il n'existe pas de données de stationnement poids lourd");
+  it("pas de poids lourd ni d'utilitaire : aucun type, aucune catégorie de livraison reliée à un véhicule", () => {
+    expect((VEHICLE_TYPES as readonly string[]).includes("utility")).toBe(false);
+    expect(isVehicleType("utility")).toBe(false); expect(isVehicleType("truck")).toBe(false);
+    expect(Object.keys(VEHICLE_SPOT_TYPES).sort()).toEqual(["bike", "bus", "car", "moto"]);
+    expect(VEHICLE_TYPES.flatMap((v) => VEHICLE_SPOT_TYPES[v]).includes(SPOT_TYPE.delivery)).toBe(false);
   });
   it("types affichés : le véhicule choisi seulement, ou tout avec « Tout »", () => {
     const all = [0, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -51,8 +52,8 @@ describe("types de véhicule", () => {
   });
   it("valeur stockée inconnue : voiture ; ancienne préférence du profil convertie", () => {
     expect(toVehicleType("moto")).toBe("moto"); expect(toVehicleType("tank")).toBe("car"); expect(toVehicleType(null)).toBe("car");
-    expect([fromProfileVehicle("car"), fromProfileVehicle("motorcycle"), fromProfileVehicle("van"), fromProfileVehicle("truck"), fromProfileVehicle("bus"), fromProfileVehicle("bike")]).toEqual(["car", "moto", "utility", "utility", "bus", "bike"]);
-    expect(fromProfileVehicle("walking")).toBeNull(); expect(fromProfileVehicle("other")).toBeNull(); expect(fromProfileVehicle(undefined)).toBeNull();
+    expect([fromProfileVehicle("car"), fromProfileVehicle("motorcycle"), fromProfileVehicle("bus"), fromProfileVehicle("bike")]).toEqual(["car", "moto", "bus", "bike"]);
+    expect(fromProfileVehicle("van")).toBeNull(); expect(fromProfileVehicle("truck")).toBeNull(); expect(fromProfileVehicle("walking")).toBeNull(); expect(fromProfileVehicle("other")).toBeNull(); expect(fromProfileVehicle(undefined)).toBeNull();
   });
   it("bouton « Je me gare » : véhicule entre parenthèses, rien pour la voiture", () => {
     expect(VEHICLE_PARK_SUFFIX.car).toBe(""); expect(`Je me gare${VEHICLE_PARK_SUFFIX.moto}`).toBe("Je me gare (moto)");

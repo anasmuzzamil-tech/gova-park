@@ -1,37 +1,31 @@
-// Types de véhicule (« Mon véhicule ») : voiture, moto / scooter, utilitaire / poids lourd, bus / autocar, vélo.
+// Types de véhicule (« Mon véhicule ») : voiture, moto / scooter, bus / autocar, vélo (pas de poids lourd : décision d'Anas, il n'y en a pas sur Paris).
 // Décision d'Anas : chaque signalement porte un type de véhicule ; le statut d'une place et le compteur ne tiennent compte que des signalements du même type.
 // Chaque type est relié aux catégories du jeu de données de Paris déjà classées (contracts/paris-spots.ts, interpretRegime), jamais devinées :
-//   voiture = payant / mixte / gratuit · moto = « 2 ROUES | Motos payant Mixte / Rotatif » · bus = « AUTOCAR » · utilitaire / PL = « LIVRAISON » (zones de livraison)
-//   vélo = « 2 ROUES | Vélos / Vélo-cargo / Box à vélos » (et Vélib', classé « Vélos »).
-// HONNÊTETÉ : le jeu de Paris ne contient pas de stationnement poids lourd, seulement des zones de livraison et des places d'autocars.
+//   voiture = payant / mixte / gratuit · moto = « 2 ROUES | Motos payant Mixte / Rotatif » · bus = « AUTOCAR » · vélo = « 2 ROUES | Vélos / Vélo-cargo / Box à vélos » (et Vélib', classé « Vélos »).
 // Fonctions pures, testées dans api/vehicle-types.test.ts.
 import { SPOT_TYPE, mergeWithReports, type OfficialSpot, type ParisSpot, type ReportLite } from "./paris-spots.ts";
 
-export const VEHICLE_TYPES = ["car", "moto", "utility", "bus", "bike"] as const;
+export const VEHICLE_TYPES = ["car", "moto", "bus", "bike"] as const;
 export type VehicleType = (typeof VEHICLE_TYPES)[number];
 /** Type choisi par défaut, et type des anciens signalements (colonne `vehicleType` de la migration 0017). */
 export const DEFAULT_VEHICLE: VehicleType = "car";
 
 /** Texte court des puces de la carte. */
-export const VEHICLE_CHIP: Record<VehicleType, string> = { car: "Voiture", moto: "Moto", utility: "Utilitaire/PL", bus: "Bus", bike: "Vélo" };
+export const VEHICLE_CHIP: Record<VehicleType, string> = { car: "Voiture", moto: "Moto", bus: "Bus", bike: "Vélo" };
 /** Précision pour les puces et les confirmations (jamais plus qu'une étiquette). */
 /** Nom court pour les confirmations (« place moto signalée libre »). */
-export const VEHICLE_SHORT: Record<VehicleType, string> = { car: "voiture", moto: "moto", utility: "utilitaire/PL", bus: "bus", bike: "vélo" };
-export const VEHICLE_NAME: Record<VehicleType, string> = { car: "voiture", moto: "moto ou scooter", utility: "utilitaire ou poids lourd", bus: "bus ou autocar", bike: "vélo" };
+export const VEHICLE_SHORT: Record<VehicleType, string> = { car: "voiture", moto: "moto", bus: "bus", bike: "vélo" };
+export const VEHICLE_NAME: Record<VehicleType, string> = { car: "voiture", moto: "moto ou scooter", bus: "bus ou autocar", bike: "vélo" };
 /** Texte du bouton « Je me gare » : le véhicule entre parenthèses, sauf pour la voiture (cas courant). */
-export const VEHICLE_PARK_SUFFIX: Record<VehicleType, string> = { car: "", moto: " (moto)", utility: " (PL)", bus: " (bus)", bike: " (vélo)" };
+export const VEHICLE_PARK_SUFFIX: Record<VehicleType, string> = { car: "", moto: " (moto)", bus: " (bus)", bike: " (vélo)" };
 
 /** Codes de type d'emplacement Paris (SPOT_TYPE) propres à chaque type de véhicule. Les types sont disjoints. */
 export const VEHICLE_SPOT_TYPES: Record<VehicleType, number[]> = {
   car: [SPOT_TYPE.paid, SPOT_TYPE.free],
   moto: [SPOT_TYPE.moto],
-  utility: [SPOT_TYPE.delivery],
   bus: [SPOT_TYPE.coach],
   bike: [SPOT_TYPE.bike],
 };
-
-/** Note du panneau « i » : ce que les données de Paris permettent pour les poids lourds. */
-export const HEAVY_VEHICLE_NOTE = "Paris publie des zones de livraison et des places d'autocars ; il n'existe pas de données de stationnement poids lourd";
 
 export const isVehicleType = (v: unknown): v is VehicleType => typeof v === "string" && (VEHICLE_TYPES as readonly string[]).includes(v);
 
@@ -43,7 +37,6 @@ export function fromProfileVehicle(v: unknown): VehicleType | null {
   switch (v) {
     case "car": return "car";
     case "motorcycle": return "moto";
-    case "van": case "truck": return "utility";
     case "bus": return "bus";
     case "bike": return "bike";
     default: return null;

@@ -53,7 +53,7 @@ export function isMotoRegime(prioritaire: string | null | undefined, particulier
 /** Emprises importées : celles affichées par défaut (« Voitures et motos »), voiture ordinaire OU deux-roues motorisé. */
 export const isDefaultRegime = (prioritaire: string | null | undefined, particulier: string | null | undefined): boolean => isCarRegime(prioritaire, particulier) || isMotoRegime(prioritaire, particulier);
 
-/** Type de véhicule d'une emprise d'après son régime (voiture, moto, utilitaire/PL = livraison, bus = autocar, vélo), ou null : régime autre ou incertain, jamais importé. */
+/** Type de véhicule d'une emprise d'après son régime (voiture, moto, bus = autocar, vélo ; les zones de livraison n'ont pas de type), ou null : régime autre ou incertain, jamais importé. */
 export function vehicleOfRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): VehicleType | null {
   return vehicleTypesForSpot(interpretRegime(prioritaire, particulier).t)[0] ?? null;
 }
