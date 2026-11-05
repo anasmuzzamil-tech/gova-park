@@ -2,6 +2,12 @@
 .m-chips { gap: var(--gp-s-2); padding: 2px 2px 4px; }
 .m-chip { height: var(--gp-touch); min-width: var(--gp-touch); padding: 0 var(--gp-s-4); border-radius: var(--gp-r-pill); font-size: var(--gp-t-14); font-weight: 700; color: var(--gp-ink); box-shadow: var(--gp-shadow-1); transition: transform var(--gp-anim) ease, background-color var(--gp-anim) ease; }
 .m-chip:active { transform: scale(.97); }
+/* Puces « Mon véhicule » : couleur du type. Inactive = blanche avec un point de 8 px ; active = fond plein de la couleur du type, texte blanc (la couleur d'accent reste pour le reste de l'interface). */
+.m-chip[data-vt] { display: inline-flex; align-items: center; gap: 8px; }
+.m-chip[data-vt]::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--vt); }
+.m-chip[data-vt="car"] { --vt: var(--gp-v-car); } .m-chip[data-vt="moto"] { --vt: var(--gp-v-moto); } .m-chip[data-vt="delivery"] { --vt: var(--gp-v-delivery); } .m-chip[data-vt="bike"] { --vt: var(--gp-v-bike); } .m-chip[data-vt="all"] { --vt: var(--gp-v-all); }
+.m-chip[data-vt].on { background: var(--vt); color: #fff; }
+.m-chip[data-vt].on::before { background: #fff; }
 .m-chip.on { background: var(--gp-accent); color: #fff; }
 
 /* Bouton « Couches » : rond, à droite sur la carte, sous la rangée de puces */

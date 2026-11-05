@@ -19,6 +19,29 @@ export const VEHICLE_NAME: Record<VehicleType, string> = { car: "voiture", moto:
 /** Texte du bouton « Je me gare » : le véhicule entre parenthèses, sauf pour la voiture (cas courant). */
 export const VEHICLE_PARK_SUFFIX: Record<VehicleType, string> = { car: "", moto: " (moto)", delivery: " (livraison)", bike: " (vélo)" };
 
+/**
+ * Couleur de chaque type (décision d'Anas) : puces, regroupements et pictogrammes de la carte. Source unique : les mêmes valeurs sont les jetons CSS `--gp-v-*` de src/styles/tokens.css (test de cohérence).
+ * Elles évitent exprès le vert, l'orange, le rouge et le gris, réservés aux STATUTS (contracts/parking-status.ts). Texte blanc dessus : contraste >= 4,5:1 (testé).
+ * Vélo : le cyan demandé (#0891B2) n'atteint que 3,7:1 avec du texte blanc ; nuance assombrie à #0E7490 (5,4:1).
+ */
+export const VEHICLE_COLORS: Record<VehicleType, string> = { car: "#2563EB", moto: "#7C3AED", delivery: "#DB2777", bike: "#0E7490" };
+/** « Tout » : ardoise foncée. */
+export const ALL_TYPES_COLOR = "#1F2937";
+export type TypeColorKey = VehicleType | "all";
+export const typeColor = (key: TypeColorKey): string => (key === "all" ? ALL_TYPES_COLOR : VEHICLE_COLORS[key]);
+
+/** Couleur du type d'un emplacement (voiture, moto, livraison, vélo), ou null (autocar, PMR, réservé, autre : pas de couleur de type). */
+export function spotTypeColor(spotType: number): string | null {
+  const v = vehicleTypesForSpot(spotType)[0];
+  return v ? VEHICLE_COLORS[v] : null;
+}
+
+/** « #7C3AED » -> « rgba(124, 58, 237, 0.9) ». */
+export function hexToRgba(hex: string, alpha: number): string {
+  const n = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  return `rgba(${n(1)}, ${n(3)}, ${n(5)}, ${alpha})`;
+}
+
 /** Codes de type d'emplacement Paris (SPOT_TYPE) propres à chaque type de véhicule. Les types sont disjoints. */
 export const VEHICLE_SPOT_TYPES: Record<VehicleType, number[]> = {
   car: [SPOT_TYPE.paid, SPOT_TYPE.free],

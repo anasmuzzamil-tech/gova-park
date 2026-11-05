@@ -14,7 +14,7 @@ import { isWorkActive } from "@contracts/paris-works";
 import { mapDiag } from "@/lib/map-diag";
 import { zfeLine } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
-import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
+import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES, hexToRgba, spotTypeColor, typeColor, type TypeColorKey } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 
@@ -78,13 +78,15 @@ function text(tag: string, value: string, className?: string) {
 
 // Icône d'un emplacement (carré arrondi aux couleurs du statut, symbole du type) dessinée une fois par couleur et par type.
 const PARIS_COLORS: Record<string, string> = { gray: STATUS_COLORS.gray, green: STATUS_COLORS.green, orange: STATUS_COLORS.orange, red: STATUS_COLORS.red };
-function parisIcon(color: string, glyph: string): ImageData | null {
+function parisIcon(color: string, glyph: string, ring: string = "#ffffff"): ImageData | null {
   const size = 72, canvas = document.createElement("canvas");
   canvas.width = size; canvas.height = size;
   const g = canvas.getContext("2d");
   if (!g) return null;
-  g.fillStyle = "#ffffff"; g.beginPath(); g.roundRect(4, 4, size - 8, size - 8, 20); g.fill();
-  g.fillStyle = color; g.beginPath(); g.roundRect(10, 10, size - 20, size - 20, 15); g.fill();
+  // Anneau = couleur du TYPE (voiture, moto, livraison, vélo ; blanc pour les autres types), fond = couleur du STATUT (gris sans signalement récent).
+  g.fillStyle = ring; g.beginPath(); g.roundRect(2, 2, size - 4, size - 4, 21); g.fill();
+  g.fillStyle = "#ffffff"; g.beginPath(); g.roundRect(8, 8, size - 16, size - 16, 17); g.fill();
+  g.fillStyle = color; g.beginPath(); g.roundRect(12, 12, size - 24, size - 24, 13); g.fill();
   g.fillStyle = "#ffffff"; g.font = `800 ${glyph.length > 1 ? 21 : 34}px Manrope, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
   return g.getImageData(0, 0, size, size);
 }
@@ -147,7 +149,7 @@ export type ParisPick = { lat: number; lng: number; t: number; reportId: number;
 function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
     for (const [name, color] of Object.entries(PARIS_COLORS)) for (const t of SPOT_TYPE_CODES) {
-      const img = parisIcon(color, SPOT_TYPE_GLYPH[t]);
+      const img = parisIcon(color, SPOT_TYPE_GLYPH[t], spotTypeColor(t) ?? "#ffffff");
       if (img && !map.hasImage(`ps-${name}-${t}`)) map.addImage(`ps-${name}-${t}`, img, { pixelRatio: 2 });
     }
     // Source regroupée par MapLibre : le total d'un groupe additionne `w` = nombre de PLACES (celles du tronçon, ou le total d'une cellule de la vue d'ensemble `a` = 1).
@@ -202,7 +204,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -221,6 +223,8 @@ export default function ParkingMap3D({
   worksOn?: boolean;
   /** Limite de la zone à faibles émissions de Paris (trait pointillé), carte 3D uniquement. */
   zfeOn?: boolean;
+  /** Couleur des regroupements numérotés : celle du type de véhicule affiché, ou « all » (ardoise) quand tous les types le sont. */
+  typeColorKey?: TypeColorKey;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -661,6 +665,13 @@ export default function ParkingMap3D({
     (map.getSource("gp-forbidden") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(forbidden));
   }, [ready, forbidden]);
 
+  // Regroupements numérotés : couleur du type affiché (ardoise en « Tout »).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const color = hexToRgba(typeColor(typeColorKey), 0.92);
+    for (const id of ["gp-paris-cluster", "gp-paris-agg"]) { try { if (map.getLayer(id)) map.setPaintProperty(id, "circle-color", color); } catch { /* couche absente : couleur d'origine */ } }
+  }, [ready, typeColorKey]);
   // Zone à faibles émissions : limite seulement.
   useEffect(() => {
     const map = mapRef.current;

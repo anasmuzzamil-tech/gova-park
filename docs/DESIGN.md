@@ -12,6 +12,17 @@ Principe : **la carte d'abord**. Au repos, seulement : recherche flottante, bout
 | `--gp-green`, `--gp-orange`, `--gp-red`, `--gp-gray` | #12a150, #f08a14, #e5483c, #8a8f9c | statuts, **identiques à `STATUS_COLORS` de `contracts/parking-status.ts`** |
 | `--gp-green-ink`, `--gp-orange-ink`, `--gp-red-ink` | #0b7a3b, #8a4b00, #b42318 | texte de statut sur fond clair (AA) |
 
+### Couleur des types de véhicule (puces, regroupements, pictogrammes)
+Source unique : `VEHICLE_COLORS` dans `contracts/vehicle-types.ts` = jetons `--gp-v-*` de `tokens.css` (un test vérifie qu'ils sont identiques).
+| Type | Couleur | Texte blanc dessus |
+|---|---|---|
+| Voiture | bleu #2563EB | 5,2:1 |
+| Moto | violet #7C3AED (l'ancien accent) | 5,7:1 |
+| Livraison | rose #DB2777 | 4,6:1 |
+| Vélo | cyan foncé #0E7490 (le cyan demandé #0891B2 n'atteignait que 3,7:1, nuance assombrie) | 5,4:1 |
+| Tout | ardoise #1F2937 | 14,7:1 |
+Ces couleurs évitent le vert, l'orange, le rouge et le gris, réservés aux **statuts**. Puce active = fond plein de la couleur du type ; puce inactive = blanche avec un point de 8 px de cette couleur. Regroupements numérotés de « Emplacements Paris » = couleur du type affiché (ardoise en « Tout »). Icône d'un emplacement : anneau de la couleur de son TYPE autour d'un fond de couleur de STATUT (gris sans signalement) ; autocar, PMR, réservé et autre : anneau blanc. « Je me gare », le badge « libre », la feuille « Couches » et le reste de l'interface ne changent pas (couleurs de statut, violet d'accent).
+
 Un statut se lit toujours par la couleur ET par un mot (Libre, Peut-être libre, Prise) : jamais la couleur seule. Mode sombre : il n'existe pas dans l'application, il n'est pas ajouté.
 
 ## Forme

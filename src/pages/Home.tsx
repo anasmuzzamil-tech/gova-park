@@ -779,7 +779,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} typeColorKey={vehicleChoice.all ? "all" : vehicle} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -803,8 +803,8 @@ export default function Home() {
         </div>
 
         <div className="m-chips">
-          {VEHICLE_TYPES.map((v) => <button key={v} className={`m-chip ${vehicle === v ? "on" : ""}`} aria-pressed={vehicle === v} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false })}>{VEHICLE_CHIP[v]}</button>)}
-          <button className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
+          {VEHICLE_TYPES.map((v) => <button key={v} data-vt={v} className={`m-chip ${vehicle === v ? "on" : ""}`} aria-pressed={vehicle === v} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false })}>{VEHICLE_CHIP[v]}</button>)}
+          <button data-vt="all" className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
         </div>
 
         <button type="button" className={`m-round m-layers-btn${layersOpen ? " on" : ""}`} aria-label="Couches de la carte" aria-expanded={layersOpen} onClick={() => setLayersOpen((open) => !open)}><Layers size={22} /></button>
