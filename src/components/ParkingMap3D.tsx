@@ -8,6 +8,8 @@ import { STATUS_COLORS } from "@contracts/parking-status";
 import { DEFAULT_SPOT_TYPES, SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
 import { POLY, buildPolygonFeatures, polygonsVisible, spotAnchorKey, type ParisPolygon, type PolygonColor } from "@contracts/paris-polygons";
 import { loadParisPolygons } from "@/lib/paris-polygons";
+import { LAYER, layerVisible, toGeoJson, type DecodedFeature } from "@contracts/geo-layers";
+import { loadLayer } from "@/lib/geo-layers";
 import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
@@ -97,6 +99,21 @@ function addPolygonLayers(map: maplibregl.Map) {
     });
   } catch (error) { console.warn("[GOVAPARK] Couche des contours d'emprises impossible", error); }
 }
+// Stationnement INTERDIT (Ville de Paris) : trait rouge FIN au zoom rue, jamais de remplissage ni de plein écran rouge.
+export const FORBIDDEN_BASE = "/data/paris-forbidden";
+function addForbiddenLayers(map: maplibregl.Map) {
+  try {
+    map.addSource("gp-forbidden", { type: "geojson", data: emptyFc() });
+    map.addLayer({
+      id: "gp-forbidden-line", type: "line", source: "gp-forbidden", minzoom: LAYER.streetZoom, filter: ["!=", ["geometry-type"], "Point"] as maplibregl.FilterSpecification, layout: { "line-join": "round", "line-cap": "butt" },
+      paint: { "line-color": "#d6362c", "line-width": ["interpolate", ["linear"], ["zoom"], 16, 0.8, 19, 1.8] as maplibregl.ExpressionSpecification, "line-opacity": 0.8, "line-dasharray": [3, 1.2] },
+    });
+    map.addLayer({
+      id: "gp-forbidden-pt", type: "circle", source: "gp-forbidden", minzoom: LAYER.streetZoom, filter: ["==", ["geometry-type"], "Point"] as maplibregl.FilterSpecification,
+      paint: { "circle-color": "#d6362c", "circle-radius": ["interpolate", ["linear"], ["zoom"], 16, 2, 19, 4] as maplibregl.ExpressionSpecification, "circle-opacity": 0.8, "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.8 },
+    });
+  } catch (error) { console.warn("[GOVAPARK] Couche du stationnement interdit impossible", error); }
+}
 export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
 function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
@@ -156,7 +173,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -169,6 +186,8 @@ export default function ParkingMap3D({
   parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void;
   /** Contours en pointillés des emprises de Paris (zoom rue seulement) : couche active et types cochés (le filtre « Voitures et motos / Tout afficher »). Carte 3D uniquement. */
   polygonsOn?: boolean; polygonTypes?: ReadonlySet<number>;
+  /** Tracés du stationnement interdit (Ville de Paris), au zoom rue seulement. Carte 3D uniquement. */
+  forbiddenOn?: boolean;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -307,6 +326,7 @@ export default function ParkingMap3D({
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
       addPolygonLayers(map);
+      addForbiddenLayers(map);
       addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
       setZoom(map.getZoom());
       setReady(true);
@@ -568,6 +588,30 @@ export default function ParkingMap3D({
     (map.getSource("gp-poly") as maplibregl.GeoJSONSource | undefined)?.setData(polygonFeatures.outlines);
     (map.getSource("gp-poly-sep") as maplibregl.GeoJSONSource | undefined)?.setData(polygonFeatures.separators);
   }, [ready, polygonFeatures]);
+
+  // Stationnement interdit : tuiles de la zone visible, au zoom rue seulement (fichiers absents : rien n'est dessiné).
+  const [forbidden, setForbidden] = useState<DecodedFeature[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false, timer: number | undefined;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        if (!layerVisible(map.getZoom(), LAYER.streetZoom, forbiddenOn)) { if (!cancelled) setForbidden((previous) => (previous.length ? [] : previous)); return; }
+        const b = map.getBounds(), c = map.getCenter();
+        const result = await loadLayer(FORBIDDEN_BASE, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng });
+        if (!cancelled) setForbidden(result.status === "ok" ? result.features : []);
+      }, 250);
+    };
+    map.on("moveend", refresh); refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); map.off("moveend", refresh); };
+  }, [ready, forbiddenOn]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource("gp-forbidden") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(forbidden));
+  }, [ready, forbidden]);
 
   // Emplacements officiels de Paris : regroupement natif MapLibre (gris, jamais de disponibilité) + emplacements colorés par un signalement.
   useEffect(() => {

@@ -27,6 +27,8 @@ import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
 import { DEFAULT_VEHICLE, VEHICLE_CHIP, VEHICLE_NAME, VEHICLE_TYPES, fromProfileVehicle, isVehicleType, mergeByVehicle, spotTypesToShow, vehicleTypesForSpot, type VehicleType } from "@contracts/vehicle-types";
 import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
+import { FORBIDDEN_ATTRIBUTION, FORBIDDEN_SOURCE } from "@contracts/paris-forbidden";
+import { spotContextLines } from "@/lib/spot-context";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -227,6 +229,15 @@ export default function Home() {
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
   const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
+  // Lignes de contexte de la fiche (ex. stationnement interdit), lues dans les couches de données autour de la place sélectionnée.
+  const [spotExtra, setSpotExtra] = useState<string[]>([]);
+  useEffect(() => {
+    setSpotExtra([]);
+    if (!selectedParis) return;
+    let cancelled = false;
+    void spotContextLines(selectedParis.lat, selectedParis.lng).then((lines) => { if (!cancelled) setSpotExtra(lines); });
+    return () => { cancelled = true; };
+  }, [selectedParis]);
   const streetInput = useMemo(() => {
     const r = (v: number) => Math.round(v * 1000) / 1000;
     const b = visibleBounds ?? { south: visibleCenter.lat - 0.01, north: visibleCenter.lat + 0.01, west: visibleCenter.lng - 0.015, east: visibleCenter.lng + 0.015 };
@@ -741,7 +752,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -804,6 +815,8 @@ export default function Home() {
               {parisOn && <p>{PARIS_POLYGONS_NOTE}</p>}
               {parisOn && <p>{PARIS_POLYGONS_ATTRIBUTION}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
+              {parisOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
+              {parisOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
               {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
@@ -969,7 +982,7 @@ export default function Home() {
         const rep = spot.reportId > 0 ? streetSpots.find((r) => r.id === spot.reportId) ?? null : null;
         const [regimePrio, regimePart] = parisRegimes[spot.regime] ?? ["", ""];
         const info = interpretRegime(regimePrio, regimePart);
-        return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition}
+        return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition} extra={spotExtra}
           onClose={() => setSelectedParis(null)}
           onGo={() => { setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, formatStreet(spot.street, spot.num) || info.title, 0, { kind: "street" }); }}
           onReport={(status) => { setSelectedParis(null); void reportStreet(status, { latitude: spot.lat, longitude: spot.lng }, vehicleTypesForSpot(spot.t)[0] ?? vehicle); }} />;
