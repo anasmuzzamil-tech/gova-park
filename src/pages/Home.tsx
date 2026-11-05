@@ -41,6 +41,7 @@ import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
 import { capAlternatives, routeCrossesZfe, tripTag, viaRoad } from "@/lib/route-compare";
+import { modeTabs } from "@/lib/route-modes";
 import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -170,6 +171,9 @@ export default function Home() {
   const [routeFuelType, setRouteFuelType] = useState<"gazole" | "e10" | "sp98" | "sp95" | "e85">("gazole");
   const [fuelConsumption, setFuelConsumption] = useState(7.2);
   const [routeLoading, setRouteLoading] = useState(false);
+  // Départ et arrivée du dernier trajet calculé (pour les onglets de mode) ; durée voiture de référence quand le trajet affiché est un trajet vélo.
+  const lastTrip = useRef<{ origin: { lat: number; lng: number }; dest: { lat: number; lng: number } } | null>(null);
+  const [carBase, setCarBase] = useState<{ durationS: number } | null>(null);
   // Navigation plein écran : destination (avec l'état du signalement pour le rappel d'arrivée), cap/recentrage.
   const [navActive, setNavActive] = useState(false);
   const [navFollow, setNavFollow] = useState(true);
@@ -268,6 +272,39 @@ export default function Home() {
   // Le périmètre sert aussi à dire si un trajet le traverse, même si la couche ZFE est masquée (petit fichier du site, aucun service externe).
   useEffect(() => { if (zfeOn || routeOptions.length > 0) void loadZfe().then(setZfeFile); }, [zfeOn, routeOptions.length]);
   const zfeCrossing = useMemo(() => Object.fromEntries(routeOptions.map((o) => [o.id, !o.offline && o.profile !== "bike" && routeCrossesZfe(o.coordinates, zfeFile?.ring)])) as Record<string, boolean>, [routeOptions, zfeFile]);
+  // Onglets de mode : durée voiture = meilleure option du réseau routier ; si le trajet affiché est un tracé vélo, la durée voiture vient d'un appel OSRM voiture (service déjà utilisé).
+  const carNetworkNow = !!drivingRoute && !drivingRoute.offline && (drivingRoute.profile ?? vehicle) !== "bike";
+  const bikeNow = !!drivingRoute && !drivingRoute.offline && drivingRoute.profile === "bike";
+  const bikeAny = !!drivingRoute && drivingRoute.profile === "bike" && (!drivingRoute.offline || !!drivingRoute.estimate);
+  useEffect(() => {
+    setCarBase(null);
+    if (!bikeAny || !lastTrip.current) return;
+    let alive = true;
+    void fetchOsrmRoute(lastTrip.current.origin, lastTrip.current.dest).then((r) => { if (alive && r) setCarBase({ durationS: r.duration }); });
+    return () => { alive = false; };
+  }, [bikeAny, drivingRoute?.id]);
+  const modeTabsNow = useMemo(() => {
+    const trip = lastTrip.current;
+    if (!drivingRoute || !trip || (drivingRoute.offline && !drivingRoute.estimate)) return [];
+    const best = (list: DrivingRoute[]) => list.length ? Math.min(...list.map((o) => o.duration)) : null;
+    return modeTabs({
+      carDurationS: carNetworkNow ? best(routeOptions) : carBase?.durationS ?? null,
+      bikeServiceDurationS: bikeNow ? best(routeOptions) : null,
+      straightDurationS: straightLineEstimate(trip.origin, trip.dest).durationS,
+    });
+  }, [drivingRoute, routeOptions, carBase, carNetworkNow, bikeNow]);
+  // Toucher un onglet = choisir ce véhicule dans « Mon véhicule » et recalculer le même trajet. Vélo : AUCUN appel au service vélo (non confirmé par Anas), estimation à vol d'oiseau étiquetée.
+  const switchMode = (mode: VehicleType) => {
+    const trip = lastTrip.current;
+    if (!trip || !drivingRoute || mode === (drivingRoute.profile ?? vehicle)) return;
+    chooseVehicle({ vehicle: mode, all: false, display: null });
+    if (mode === "bike") {
+      const est = straightLineEstimate(trip.origin, trip.dest);
+      const line: DrivingRoute = { id: "offline-line", label: "À vol d’oiseau, estimation (tracé vélo non calculé)", coordinates: [[trip.origin.lat, trip.origin.lng], [trip.dest.lat, trip.dest.lng]], distance: est.distanceM, duration: est.durationS, destinationId: drivingRoute.destinationId, steps: [], offline: true, estimate: true, costEur: 0, profile: "bike" };
+      setRouteOptions([line]); setDrivingRoute(line); return;
+    }
+    void calculateRoutes(trip.dest, navDest?.label ?? "Destination", drivingRoute.destinationId, navDest ?? undefined, mode);
+  };
   // Bornes de recharge (IRVE) : couche « Bornes de recharge » OU type « Électrique » du sélecteur (affichage seulement, ni signalement ni disponibilité).
   const [chargeOn, setChargeOn] = useState(initialLayers.charge);
   const [irveDate, setIrveDate] = useState<string | null>(null);
@@ -511,7 +548,11 @@ export default function Home() {
     await calculateRoutes({ lat: destination.latitude, lng: destination.longitude }, destination.title, listingId, { kind: "listing" });
   };
 
-  const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0, info?: Partial<NavDest>) => {
+  const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0, info?: Partial<NavDest>, mode?: VehicleType) => {
+    // `mode` : onglet de mode touché sur l'écran de trajet (la préférence « Mon véhicule » n'a pas encore eu le temps de changer). Sinon le véhicule choisi.
+    const veh: VehicleType = mode ?? vehicle;
+    const consumption = mode ? (DEFAULT_CONSUMPTION[mode] || DEFAULT_CONSUMPTION.car) : fuelConsumption;
+    const fuelKind: typeof routeFuelType = mode ? (mode === "moto" ? "e10" : "gazole") : routeFuelType;
     setNavDest({ lat: destination.lat, lng: destination.lng, label: destinationName || "Destination", kind: "address", ...info });
     // Départ : position GPS si elle est déjà connue, sinon centre de la carte (celui d'avant la recherche de destination).
     // On n'attend JAMAIS la géolocalisation (refusée, indisponible ou en attente d'autorisation) : le trajet part tout de suite.
@@ -524,12 +565,13 @@ export default function Home() {
       toast.message(userPosition ? "Vous êtes à moins de 100 m de cette destination." : "Position inconnue : touchez « Ma position » (la cible en haut) pour calculer le trajet depuis chez vous.", { id: "route-near" });
       return;
     }
+    lastTrip.current = { origin: { lat: origin.lat, lng: origin.lng }, dest: { lat: destination.lat, lng: destination.lng } };
     setRouteLoading(true); setRouteOptions([]); setRouteServices([]);
     try {
       // Plusieurs serveurs de calcul d'itinéraire : si le premier est saturé ou injoignable, on essaie le suivant.
       const coords = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
       // Voiture, livraison et moto : réseau routier voiture. Vélo : service gratuit routing.openstreetmap.de (profil vélo), appelé pour ce profil seulement.
-      const endpoints = routeEndpoints(vehicle, coords);
+      const endpoints = routeEndpoints(veh, coords);
       let response: Response | null = null;
       for (const url of endpoints) {
         try {
@@ -540,7 +582,7 @@ export default function Home() {
       if (!response) {
         // Pas d'itinéraire fabriqué : distance à vol d'oiseau et ligne droite étiquetée, sans guidage.
         const km = straightLineKm(origin.lat, origin.lng, destination.lat, destination.lng);
-        const est = vehicle === "bike" ? straightLineEstimate(origin, destination) : null;
+        const est = veh === "bike" ? straightLineEstimate(origin, destination) : null;
         const line: DrivingRoute = est
           ? { id: "offline-line", label: "À vol d’oiseau, estimation (service vélo injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: est.distanceM, duration: est.durationS, destinationId: listingId, steps: [], offline: true, estimate: true, costEur: 0, profile: "bike" }
           : { id: "offline-line", label: navigator.onLine === false ? "Itinéraire indisponible hors ligne" : "Itinéraire indisponible (service injoignable)", coordinates: [[origin.lat, origin.lng], [destination.lat, destination.lng]], distance: km * 1000, duration: 0, destinationId: listingId, steps: [], offline: true };
@@ -554,9 +596,9 @@ export default function Home() {
       const mapped: DrivingRoute[] = capAlternatives(rawRoutes.map((route) => ({ route, distance: route.distance, duration: route.duration, coordinates: route.geometry.coordinates }))).map(({ route }, index) => {
         const rawSteps = route.legs?.flatMap((leg) => leg.steps ?? []) ?? [];
         const steps: RouteStep[] = mapOsrmSteps(rawSteps as Parameters<typeof mapOsrmSteps>[0], [destination.lat, destination.lng]);
-        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps, profile: vehicle, via: viaRoad(steps) };
+        return { id: `route-${index}`, label: `Option ${index+1}`, coordinates:route.geometry.coordinates.map(([lng,lat])=>[lat,lng]), distance:route.distance, duration:route.duration, destinationId:listingId, steps, profile: veh, via: viaRoad(steps) };
       });
-      if (vehicle === "bike") {
+      if (veh === "bike") {
         // Vélo : durée du service (sinon 15 km/h), coût 0 €, pas de carburant ni de station. Les alternatives du service sont gardées telles quelles.
         const bikeRoutes = mapped.map((r) => ({ ...r, duration: bikeDurationSeconds(r.duration, r.distance), costEur: 0 }));
         const quickest = [...bikeRoutes].sort((x, y) => x.duration - y.duration)[0];
@@ -567,7 +609,7 @@ export default function Home() {
         return;
       }
       const fields="id,geom,adresse,ville,gazole_prix,gazole_maj,e10_prix,e10_maj,sp98_prix,sp98_maj,sp95_prix,sp95_maj,e85_prix,e85_maj,services_service";
-      const field=({gazole:"gazole_prix",e10:"e10_prix",sp98:"sp98_prix",sp95:"sp95_prix",e85:"e85_prix"} as const)[routeFuelType]; const updateField=({gazole:"gazole_maj",e10:"e10_maj",sp98:"sp98_maj",sp95:"sp95_maj",e85:"e85_maj"} as const)[routeFuelType];
+      const field=({gazole:"gazole_prix",e10:"e10_prix",sp98:"sp98_prix",sp95:"sp95_prix",e85:"e85_prix"} as const)[fuelKind]; const updateField=({gazole:"gazole_maj",e10:"e10_maj",sp98:"sp98_maj",sp95:"sp95_maj",e85:"e85_maj"} as const)[fuelKind];
       const fuelResults=await Promise.all(mapped.map(async route=>{
         const mid=route.coordinates[Math.floor(route.coordinates.length/2)];
         const where=`within_distance(geom, geom'POINT (${mid[1]} ${mid[0]})', 18000m)`;
@@ -579,7 +621,7 @@ export default function Home() {
           return {route,stations};
         } catch { return {route,stations:[] as RouteService[]}; }
       }));
-      const pricedRoutes=fuelResults.map(({route,stations})=>{const cheapest=stations[0]?.price;return {...route,fuelPrice:cheapest,fuelCost:cheapest==null?undefined:tripCostEur(vehicle,route.distance,fuelConsumption,cheapest),costEur:tripCostEur(vehicle,route.distance,fuelConsumption,cheapest??DEFAULT_FUEL_PRICE_EUR_L),costAssumed:cheapest==null};});
+      const pricedRoutes=fuelResults.map(({route,stations})=>{const cheapest=stations[0]?.price;return {...route,fuelPrice:cheapest,fuelCost:cheapest==null?undefined:tripCostEur(veh,route.distance,consumption,cheapest),costEur:tripCostEur(veh,route.distance,consumption,cheapest??DEFAULT_FUEL_PRICE_EUR_L),costAssumed:cheapest==null};});
       const fastest=[...pricedRoutes].sort((a,b)=>a.duration-b.duration)[0];
       const costRank=[...pricedRoutes].filter(r=>r.fuelCost!=null).sort((a,b)=>(a.fuelCost??Infinity)-(b.fuelCost??Infinity));
       const cheapest=costRank.find(r=>r.id!==fastest.id)??costRank[0]??[...pricedRoutes].filter(r=>r.id!==fastest.id).sort((a,b)=>a.distance-b.distance)[0]??fastest;
@@ -938,6 +980,10 @@ export default function Home() {
             <div className="m-route-body">
 {originNote && <small className="route-origin-note">{originNote}</small>}
 {gpsNote && !trackingGps && <small className="route-origin-note">{gpsNote}</small>}
+{modeTabsNow.length > 0 && <div className="m-mode-tabs" role="tablist" aria-label="Mode de déplacement">
+  {modeTabsNow.map((tab) => <button type="button" role="tab" key={tab.mode} data-vt={tab.mode} aria-selected={(drivingRoute.profile ?? vehicle) === tab.mode} className={(drivingRoute.profile ?? vehicle) === tab.mode ? "on" : ""} disabled={routeLoading} onClick={() => switchMode(tab.mode)}><span>{tab.label}</span><b>{tab.durationS === null ? "—" : `${tab.estimate ? "≈ " : ""}${formatDuration(tab.durationS)}`}</b></button>)}
+  {modeTabsNow.find((t) => t.mode === (drivingRoute.profile ?? vehicle))?.note && <small className="m-mode-note">{modeTabsNow.find((t) => t.mode === (drivingRoute.profile ?? vehicle))?.note}</small>}
+</div>}
 {!drivingRoute.offline && <div className="m-trip-list" role="group" aria-label="Trajets comparés">
   {routeOptions.map((option) => { const tag = tripTag(option.label); const bike = option.profile === "bike"; return <button type="button" key={option.id} className={`m-trip-card${drivingRoute.id === option.id ? " on" : ""}`} aria-pressed={drivingRoute.id === option.id} onClick={() => { setDrivingRoute(option); void refreshRouteServices(option); spokenStepIndex.current = 0; }}>
     <span className="m-trip-top"><b>{formatDuration(option.duration)}</b><span>{formatDistance(option.distance)}</span>{tag && <em>{tag}</em>}</span>

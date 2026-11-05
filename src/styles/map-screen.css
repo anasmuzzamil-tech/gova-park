@@ -153,3 +153,14 @@
 .m-trip-zfe { color: var(--gp-ink); font-size: var(--gp-t-12); font-weight: 600; }
 .m-trip-zfe::before { content: ""; display: inline-block; width: 10px; height: 0; margin-right: 6px; border-top: 2px dashed var(--gp-accent); vertical-align: middle; }
 .m-trip-note { color: var(--gp-ink-2); font-size: var(--gp-t-12); }
+
+/* ═══ Onglets par mode (voiture, moto, livraison, vélo) : mêmes couleurs que « Mon véhicule » ═══ */
+.m-route:has(.m-mode-tabs) .m-route-main { display: none; }
+.m-mode-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gp-s-1); }
+.m-mode-tabs button { min-height: var(--gp-touch); display: grid; justify-items: center; align-content: center; gap: 0; padding: var(--gp-s-1) 2px; border: 1.5px solid var(--gp-line); border-radius: var(--gp-r-1); background: var(--gp-surface); color: var(--gp-ink); font-size: var(--gp-t-12); font-weight: 600; }
+.m-mode-tabs button b { font-size: var(--gp-t-14); font-weight: 700; white-space: nowrap; }
+.m-mode-tabs button[data-vt="car"] { --vt: var(--gp-v-car); } .m-mode-tabs button[data-vt="moto"] { --vt: var(--gp-v-moto); } .m-mode-tabs button[data-vt="delivery"] { --vt: var(--gp-v-delivery); } .m-mode-tabs button[data-vt="bike"] { --vt: var(--gp-v-bike); }
+.m-mode-tabs button.on { background: var(--vt); border-color: var(--vt); color: #fff; }
+.m-mode-tabs button:active { transform: scale(.97); }
+.m-mode-tabs button:disabled { opacity: .45; cursor: not-allowed; }
+.m-mode-note { grid-column: 1 / -1; color: var(--gp-ink-2); font-size: var(--gp-t-12); }
