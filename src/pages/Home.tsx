@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,6 +32,7 @@ import { spotContextLines } from "@/lib/spot-context";
 import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
 import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
 import { loadTariffs } from "@/lib/paris-tariffs";
+import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
 import { loadLayerIndex } from "@/lib/geo-layers";
@@ -117,7 +118,9 @@ export default function Home() {
   // Légende des couleurs et sources : repliées derrière le bouton « i » (une carte lisible d'abord).
   const [infoOpen, setInfoOpen] = useState(false);
   // Mobile : panneau des places privées replié au départ (la carte et les places en rue restent lisibles) ; ouvert sur grand écran.
-  const [sheetOpen, setSheetOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 900);
+  // Feuille basse à 3 états : replié (poignée + une ligne), mi-hauteur (cartes), plein (liste complète). Un toucher sur la poignée passe à l'état suivant.
+  const [sheetMode, setSheetMode] = useState<"closed" | "half" | "full">(() => (typeof window === "undefined" || window.innerWidth >= 900 ? "half" : "closed"));
+  const sheetOpen = sheetMode !== "closed";
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
   const [draftFilters, setDraftFilters] = useState(initialFilters);
@@ -209,12 +212,15 @@ export default function Home() {
   // Hors ligne : les signalements communautaires (périssables) ne sont pas réaffichés depuis la mémoire.
   const reports = useMemo(() => (online ? reportsQuery.data ?? [] : []), [online, reportsQuery.data]);
   // Couche « Places en rue » (gratuites, signalées par la communauté) : séparée des places privées, chargée pour la zone affichée, avec limite.
-  const [streetOn, setStreetOn] = useState(true);
+  const [initialLayers] = useState(() => loadLayerPrefs());
+  const [streetOn, setStreetOn] = useState(initialLayers.street);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [visibleBounds, setVisibleBounds] = useState<MapBounds | null>(null);
   const [selectedStreetId, setSelectedStreetId] = useState<number | null>(null);
   const [streetLocating, setStreetLocating] = useState(false);
   // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
-  const [parisOn, setParisOn] = useState(true);
+  const [parisOn, setParisOn] = useState(initialLayers.paris);
+  const [forbiddenOn, setForbiddenOn] = useState(initialLayers.forbidden);
   // Par défaut : seulement les emplacements où une voiture peut se garer (payant, mixte, gratuit) ; livraison, vélos, deux-roues, autocars, PMR et le reste s'activent par le filtre.
   // « Mon véhicule » : voiture par défaut ; mémorisé dans le navigateur seulement (aucun champ de profil serveur n'existe pour le type de véhicule). « Tout » affiche tous les types sur la carte.
   const [vehicleChoice, setVehicleChoice] = useState<{ vehicle: VehicleType; all: boolean }>(() => {
@@ -236,12 +242,13 @@ export default function Home() {
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
   const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
   // Chantiers (Ville de Paris, non exhaustifs, peuvent être périmés) : couche désactivée par défaut ; la date des données vient du fichier généré.
-  const [worksOn, setWorksOn] = useState(false);
+  const [worksOn, setWorksOn] = useState(initialLayers.works);
   const [worksDate, setWorksDate] = useState<string | null>(null);
   // Zone à faibles émissions de Paris : limite seulement, désactivée par défaut ; liens de l'arrêté lus dans le fichier généré.
-  const [zfeOn, setZfeOn] = useState(false);
+  const [zfeOn, setZfeOn] = useState(initialLayers.zfe);
   const [zfeFile, setZfeFile] = useState<ZfeFile | null>(null);
   useEffect(() => { if (zfeOn) void loadZfe().then(setZfeFile); }, [zfeOn]);
+  useEffect(() => { saveLayerPrefs({ street: streetOn, paris: parisOn, forbidden: forbiddenOn, works: worksOn, zfe: zfeOn }); }, [streetOn, parisOn, forbiddenOn, worksOn, zfeOn]);
   // Tarifs de stationnement : date du fichier pour le panneau « i » (la ligne de fiche n'apparaît que pour une place payante).
   const [tariffDate, setTariffDate] = useState<string | null | undefined>(undefined);
   useEffect(() => { if (parisOn) void loadTariffs().then((file) => setTariffDate(file ? file.dataDate : undefined)); }, [parisOn]);
@@ -769,7 +776,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} worksOn={worksOn} zfeOn={zfeOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={forbiddenOn} worksOn={worksOn} zfeOn={zfeOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -795,15 +802,19 @@ export default function Home() {
         <div className="m-chips">
           {VEHICLE_TYPES.map((v) => <button key={v} className={`m-chip ${vehicle === v ? "on" : ""}`} aria-pressed={vehicle === v} aria-label={`Mon véhicule : ${VEHICLE_NAME[v]}`} onClick={() => chooseVehicle({ vehicle: v, all: false })}>{VEHICLE_CHIP[v]}</button>)}
           <button className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
-          <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
-          <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
-          <button className={`m-chip ${worksOn ? "on" : ""}`} aria-pressed={worksOn} onClick={() => setWorksOn(!worksOn)}>Chantiers</button>
-          <button className={`m-chip ${zfeOn ? "on" : ""}`} aria-pressed={zfeOn} onClick={() => setZfeOn(!zfeOn)}>ZFE</button>
-          <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
-          <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
-          <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
-          <button className={`m-chip ${filters.type === "garage" ? "on" : ""}`} onClick={() => setFilters({ ...filters, type: filters.type === "garage" ? "tous" : "garage" })}>Garage</button>
         </div>
+
+        <button type="button" className={`m-round m-layers-btn${layersOpen ? " on" : ""}`} aria-label="Couches de la carte" aria-expanded={layersOpen} onClick={() => setLayersOpen((open) => !open)}><Layers size={22} /></button>
+        {layersOpen && <div className="m-layers" role="dialog" aria-label="Couches de la carte">
+          <div className="m-layers-head"><b>Couches</b><button type="button" className="m-layers-close" onClick={() => setLayersOpen(false)} aria-label="Fermer les couches"><X size={20} /></button></div>
+            <button type="button" role="switch" aria-checked={streetOn} className={`gp-switch${streetOn ? " on" : ""}`} onClick={() => setStreetOn(!streetOn)}><span>Places en rue</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={parisOn} className={`gp-switch${parisOn ? " on" : ""}`} onClick={() => setParisOn(!parisOn)}><span>Emplacements de Paris</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={forbiddenOn} className={`gp-switch${forbiddenOn ? " on" : ""}`} onClick={() => setForbiddenOn(!forbiddenOn)}><span>Interdictions de stationner</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={worksOn} className={`gp-switch${worksOn ? " on" : ""}`} onClick={() => setWorksOn(!worksOn)}><span>Chantiers</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={zfeOn} className={`gp-switch${zfeOn ? " on" : ""}`} onClick={() => setZfeOn(!zfeOn)}><span>Zone à faibles émissions</span><i aria-hidden="true" /></button>
+            <button type="button" role="switch" aria-checked={onlyAvailable} className={`gp-switch${onlyAvailable ? " on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}><span>Dispo maintenant (places privées)</span><i aria-hidden="true" /></button>
+          <p className="m-layers-note">Les places privées et collectives restent dans la liste du bas, jamais mêlées aux places en rue.</p>
+        </div>}
 
         {menuOpen && <div className="m-menu" role="menu">
           <button onClick={() => { setMenuOpen(false); setDraftFilters(filters); setFiltersOpen(true); }}><SlidersHorizontal size={19} />Tous les filtres</button>
@@ -819,7 +830,7 @@ export default function Home() {
           <p className="m-version" aria-label="Version de l’application">Version {__APP_VERSION__}</p>
         </div>}
 
-        <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
+        <div className={`m-sheet${sheetOpen ? "" : " is-closed"}${sheetMode === "full" ? " is-full" : ""}`}>
           <div className="m-meta">
             <button type="button" className="m-info" aria-expanded={infoOpen} aria-label="Légende des couleurs et sources" onClick={() => setInfoOpen((open) => !open)}><Info size={17} /></button>
             {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
@@ -834,7 +845,7 @@ export default function Home() {
               {parisOn && <p>{PARIS_POLYGONS_NOTE}</p>}
               {parisOn && <p>{PARIS_POLYGONS_ATTRIBUTION}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
-              {parisOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
+              {forbiddenOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
               {parisOn && tariffDate !== undefined && <p>{tariffAttribution(tariffDate)}</p>}
               {zfeOn && zfeFile && <p>{zfeAttribution(zfeFile.dataDate)}</p>}
               {zfeOn && zfeFile?.urlArrete && <a href={zfeFile.urlArrete} target="_blank" rel="noopener noreferrer">Voir l'arrêté de la ZFE</a>}
@@ -843,7 +854,7 @@ export default function Home() {
               {worksOn && <p>{worksAttribution(worksDate)}</p>}
               {parisOn && tariffDate !== undefined && <a href={TARIFF_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des tarifs : data.gouv.fr</a>}
               {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}
-              {parisOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
+              {forbiddenOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
               {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
@@ -891,10 +902,10 @@ export default function Home() {
               </button>)}
             </div>
           </> : <>
-            <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((open) => !open)}>
+            <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} aria-label={`${filtered.length} ${filtered.length > 1 ? "places" : "place"} près de ${userPosition ? "vous" : "du centre de la carte"}. ${sheetMode === "closed" ? "Ouvrir la liste" : sheetMode === "half" ? "Agrandir la liste" : "Fermer la liste"}`} onClick={() => setSheetMode((mode) => (mode === "closed" ? "half" : mode === "half" ? "full" : "closed"))}>
               <i className="m-grip" aria-hidden="true" />
-              <b>{sheetOpen ? <ChevronDown size={20} aria-label="Fermer la liste" /> : <ChevronUp size={20} aria-label="Ouvrir la liste" />}{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
-              <span>{filtered.length} {filtered.length > 1 ? "places" : "place"}</span>
+              <b>{filtered.length} {filtered.length > 1 ? "places" : "place"} près de {userPosition ? "vous" : "du centre"}</b>
+              <span aria-hidden="true">{sheetMode === "full" ? <ChevronDown size={20} /> : <ChevronUp size={20} />}</span>
             </button>
             <div className="m-cards" hidden={!sheetOpen}>
               {listingsQuery.isLoading && [1, 2, 3].map((item) => <div className="m-card m-card-skeleton" key={item} role="status" aria-label="Chargement des places" />)}

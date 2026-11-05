@@ -18,7 +18,7 @@ Un statut se lit toujours par la couleur ET par un mot (Libre, Peut-être libre,
 - Rayons : 12 px (puces d'info, champs), 16 px (cartes), 24 px (feuille basse, barre de recherche), pilule 999 px (puces, boutons ronds).
 - Ombres : niveau 1 `--gp-shadow-1` (puces, boutons ronds), niveau 2 `--gp-shadow-2` (feuilles, barre de recherche).
 - Espacements : multiples de 4 px (`--gp-s-1` à `--gp-s-6`). Marge d'écran : 16 px.
-- Zone tactile minimale : 44 px (`--gp-touch`) ; bouton rond : 48 px ; boutons d'action de la feuille : 56 px.
+- Zone tactile minimale : 44 px (`--gp-touch`) ; boutons ronds de la barre du haut : 56 px (existant), bouton « Couches » : 48 px ; boutons d'action de la feuille : 56 px.
 
 ## Typographie (Manrope, déjà chargée)
 12 px (légendes, chips), 14 px (texte courant, puces), 16 px (titres de carte, champs : 16 px évite le zoom automatique d'iOS), 20 px (titre de fiche), 24 px (chiffres du compteur). Graisses : 500 texte, 600 libellés, 700 titres.
@@ -26,7 +26,8 @@ Un statut se lit toujours par la couleur ET par un mot (Libre, Peut-être libre,
 ## Composants (un seul style de chacun)
 - **Bouton primaire** : plein violet, texte blanc, 48 px de haut (« Y aller »). **Secondaire** : contour violet sur fond blanc (« Je libère », « Je me gare »). **Discret** : texte violet sans fond. États : pressé = légère réduction (`scale(.97)`), désactivé = 45 % d'opacité et curseur interdit.
 - **Puce** (`.m-chip`) : 40 px de haut, pilule, blanche ; active = violet plein. Rangée unique, défilante, sans retour à la ligne.
-- **Bouton rond** (`.m-round`) : 48 px, blanc, ombre 1 ; actif = violet.
+- **Bouton rond** (`.m-round`) : blanc, ombre 1 ; actif = violet (56 px dans la barre du haut, 48 px pour « Couches »).
+- **Interrupteur** (`.gp-switch`) : ligne de 52 px, libellé à gauche, curseur à droite (`role="switch"`), violet quand actif.
 - **Carte de place** : 16 px de rayon, titre (type + rue) en 16/700, puces d'info en dessous.
 - **Puce d'info** (`.gp-chip-info`) : 12 px, fond `--gp-surface-2`, texte `--gp-ink-2` ; variantes de statut avec teinte foncée.
 - **Icônes** : un seul jeu, `lucide-react` (pas d'émoji dans les nouveaux composants).
