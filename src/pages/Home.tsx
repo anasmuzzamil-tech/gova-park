@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info, Layers } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info, Layers, Briefcase, MapPin, Home as HomeIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -36,6 +36,7 @@ import { loadTariffs } from "@/lib/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
 import { nearLabel } from "@/lib/near-label";
+import { addRecent, getFavorite, loadPlaces, removeFavorite, removeRecent, savePlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
 import { loadZfe } from "@/lib/paris-zfe";
@@ -136,6 +137,12 @@ export default function Home() {
   const [destination, setDestination] = useState<{ lat: number; lng: number; label: string } | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ id: number; lat: number; lng: number; zoom: number } | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  // Raccourcis (Domicile, Travail, lieux nommés) et dernières destinations : stockés sur l'appareil seulement (src/lib/saved-places.ts).
+  const [places, setPlaces] = useState<PlacesStore>(() => loadPlaces());
+  const [pendingFav, setPendingFav] = useState<{ kind: SavedKind; name?: string } | null>(null);
+  const [newFavName, setNewFavName] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const updatePlaces = (next: PlacesStore) => { setPlaces(next); savePlaces(next); };
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [target, setTarget] = useState({ lat: 48.8566, lng: 2.3522 });
@@ -704,6 +711,14 @@ export default function Home() {
     return { street, privatePlaces };
   }, [destination, streetOfVehicle, filtered]);
   const chooseSuggestion = (suggestion: AddressSuggestion) => {
+    // Définition d'un raccourci (Domicile, Travail, lieu nommé) : l'adresse est enregistrée sur l'appareil, la carte ne bouge pas.
+    if (pendingFav) {
+      updatePlaces(setFavorite(places, pendingFav.kind, suggestion, pendingFav.name));
+      toast.message(`${pendingFav.kind === "custom" ? pendingFav.name : KIND_NAME[pendingFav.kind]} enregistré sur cet appareil.`, { id: "places" });
+      setPendingFav(null); setNewFavName(null); setSearch(""); setSearchFocused(false);
+      return;
+    }
+    updatePlaces(addRecent(places, suggestion, Date.now()));
     // Le point de départ d'un éventuel « Y aller » est mémorisé AVANT que la carte se recentre sur la destination.
     originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
     setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
@@ -713,6 +728,15 @@ export default function Home() {
     setTarget({ lat: suggestion.lat, lng: suggestion.lng });
     setFocusRequest((previous) => ({ id: (previous?.id ?? 0) + 1, lat: suggestion.lat, lng: suggestion.lng, zoom: 17 }));
   };
+  // Le panneau « raccourcis + récents » se ferme au toucher en dehors de la barre de recherche.
+  useEffect(() => {
+    if (!searchFocused) return;
+    const close = (e: PointerEvent) => { if (!(e.target as Element | null)?.closest?.(".m-search")) { setSearchFocused(false); setPendingFav(null); setNewFavName(null); } };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [searchFocused]);
+  const startPending = (next: { kind: SavedKind; name?: string }) => { setPendingFav(next); setNewFavName(null); setSearch(""); setDestination(null); setSearchFocused(true); window.setTimeout(() => searchInputRef.current?.focus(), 0); };
+  const pickSaved = (item: { label: string; lat: number; lng: number }) => chooseSuggestion({ label: item.label, lat: item.lat, lng: item.lng, kind: "address" });
   const toggleRoute = () => {
     if (drivingRoute) { setDrivingRoute(null); setRouteOptions([]); setRouteServices([]); return; }
     if (destination) { void calculateRoutes({ lat: destination.lat, lng: destination.lng }, destination.label); return; }
@@ -819,10 +843,33 @@ export default function Home() {
         <div className="m-top">
           <div className="m-search">
             <Search size={20} />
-            <input value={search} onChange={(e) => { setSearch(e.target.value); setDestination(null); }} onFocus={() => setSearchFocused(true)}
+            <input ref={searchInputRef} value={search} onChange={(e) => { setSearch(e.target.value); setDestination(null); }} onFocus={() => setSearchFocused(true)}
               onKeyDown={(e) => { if (e.key === "Enter" && suggestions[0]) { e.preventDefault(); chooseSuggestion(suggestions[0]); } }}
-              placeholder="Où tu veux te garer ?" aria-label="Rechercher une adresse" />
+              placeholder={pendingFav ? `Adresse de « ${pendingFav.kind === "custom" ? pendingFav.name : KIND_NAME[pendingFav.kind]} »` : "Où tu veux te garer ?"} aria-label="Rechercher une adresse" />
             {search && <button className="m-clear" onClick={() => { setSearch(""); setDestination(null); }} aria-label="Effacer la recherche"><X size={18} /></button>}
+            {searchFocused && search.trim().length === 0 && <div className="search-suggestions m-places" role="group" aria-label="Raccourcis et destinations récentes">
+              {pendingFav ? <div className="m-places-hint"><span>Tapez l’adresse de « {pendingFav.kind === "custom" ? pendingFav.name : KIND_NAME[pendingFav.kind]} »</span><button type="button" onClick={() => { setPendingFav(null); setNewFavName(null); }}>Annuler</button></div> : <>
+                <div className="m-fav-row">
+                  {(["home", "work"] as const).map((kind) => { const fav = getFavorite(places, kind); const Icon = kind === "home" ? HomeIcon : Briefcase; return fav
+                    ? <span className="m-fav" key={kind}><button type="button" className="m-fav-main" onClick={() => pickSaved(fav)}><Icon size={16} /><span>{fav.name}<small>{fav.label}</small></span></button><button type="button" className="m-fav-del" aria-label={`Supprimer ${fav.name}`} onClick={() => updatePlaces(removeFavorite(places, fav.id))}><X size={14} /></button></span>
+                    : <button type="button" className="m-fav m-fav-main m-fav-empty" key={kind} onClick={() => startPending({ kind })}><Icon size={16} /><span>{KIND_NAME[kind]}<small>À définir</small></span></button>; })}
+                  {places.favorites.filter((f) => f.kind === "custom").map((fav) => <span className="m-fav" key={fav.id}><button type="button" className="m-fav-main" onClick={() => pickSaved(fav)}><MapPin size={16} /><span>{fav.name}<small>{fav.label}</small></span></button><button type="button" className="m-fav-del" aria-label={`Supprimer ${fav.name}`} onClick={() => updatePlaces(removeFavorite(places, fav.id))}><X size={14} /></button></span>)}
+                  {newFavName === null && <button type="button" className="m-fav m-fav-main m-fav-new" onClick={() => setNewFavName("")}><Plus size={16} /><span>Nouveau</span></button>}
+                </div>
+                {newFavName !== null && <form className="m-fav-form" onSubmit={(e) => { e.preventDefault(); const name = newFavName.trim(); if (name) startPending({ kind: "custom", name }); }}>
+                  <input autoFocus value={newFavName} maxLength={MAX_NAME} onChange={(e) => setNewFavName(e.target.value)} placeholder="Nom du lieu (ex. Salle de sport)" aria-label="Nom du nouveau lieu" />
+                  <button type="submit" disabled={!newFavName.trim()}>Suivant</button>
+                </form>}
+                {places.recents.length > 0 && <>
+                  <p className="m-places-title">Récemment</p>
+                  {places.recents.map((r, index) => <div className="m-recent" key={`${r.lat}-${r.lng}-${r.at}`}>
+                    <button type="button" className="m-recent-main" onClick={() => pickSaved(r)}><Clock3 size={15} /><span>{r.label}{r.subtitle && <small>{r.subtitle}</small>}</span></button>
+                    <button type="button" className="m-recent-del" aria-label={`Retirer ${r.label} des destinations récentes`} onClick={() => updatePlaces(removeRecent(places, index))}><Trash2 size={15} /></button>
+                  </div>)}
+                </>}
+                <small className="m-places-note">Enregistré sur cet appareil seulement.</small>
+              </>}
+            </div>}
             {searchFocused && search.length > 1 && <div className="search-suggestions">
               {suggestions.map((suggestion, index) => <button key={`${suggestion.kind}-${suggestion.lat}-${suggestion.lng}-${index}`} onClick={() => chooseSuggestion(suggestion)}><Navigation size={15} /><span>{suggestion.label}<small>{suggestion.subtitle ?? (suggestion.kind === "address" ? "Adresse ou quartier" : "Place Govapark")}</small></span></button>)}
               {searchingAddress && <p>Recherche en cours…</p>}
