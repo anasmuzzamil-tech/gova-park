@@ -14,9 +14,8 @@ import { env } from "./lib/env";
 
 const scrypt = promisify(scryptCallback);
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
-function enforceAuthRateLimit(ctx: { req: Request }) {
-  const forwarded = ctx.req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const key = forwarded || "unknown-client";
+function enforceAuthRateLimit(ctx: { clientIp: string }) {
+  const key = ctx.clientIp || "unknown-client"; // IP determinee par api/lib/client-ip.ts, jamais l'en-tete brut du client
   const now = Date.now(); const current = authAttempts.get(key);
   if (!current || current.resetAt <= now) { authAttempts.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 }); return; }
   if (current.count >= 10) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Trop de tentatives. Réessayez dans 15 minutes." });

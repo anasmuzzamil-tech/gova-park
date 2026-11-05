@@ -11,8 +11,10 @@ import { Paths } from "@contracts/constants";
 import { log } from "./lib/logger";
 import { handleClientLog } from "./lib/clientlog";
 import { REQUEST_ID_HEADER, runWithRequestId } from "./lib/requestcontext";
+import { parseTrustedHops, resolveClientIp } from "./lib/client-ip";
+import { RateLimiter, rulesForRequest } from "./lib/rate-limit";
 
-const app = new Hono<{ Bindings: HttpBindings }>();
+const app = new Hono<{ Bindings: HttpBindings; Variables: { clientIp: string } }>();
 
 // One middleware for both halves of request observability, because they need the
 // same scope and the same id:
@@ -67,18 +69,29 @@ app.use("*", secureHeaders({ crossOriginEmbedderPolicy: false, crossOriginResour
 
 // Limitation de requetes par adresse IP (en memoire, suffisant pour une seule instance Render).
 // Pas de CORS ouvert : l'API n'est utilisable que depuis le site lui-meme.
-const hits = new Map<string, { count: number; resetAt: number }>();
+// L'IP n'est JAMAIS lue dans la partie gauche de X-Forwarded-For (le client peut l'inventer) :
+// voir lib/client-ip.ts. Nombre de proxys de confiance : variable TRUSTED_PROXY_HOPS (defaut 1 en production).
+const trustedHops = parseTrustedHops(process.env.TRUSTED_PROXY_HOPS, env.isProduction);
+const limiter = new RateLimiter(5000);
+let loggedForwardedShape = false;
 app.use("/api/*", async (c, next) => {
-  const ip = (c.req.header("x-forwarded-for") ?? "").split(",")[0]?.trim() || "inconnu";
-  const limit = c.req.path.startsWith("/api/log") ? 600 : 300; // par minute
+  const forwardedFor = c.req.header("x-forwarded-for") ?? null;
+  const ip = resolveClientIp({ forwardedFor, socketIp: c.env?.incoming?.socket?.remoteAddress, trustedHops });
+  c.set("clientIp", ip);
+  if (!loggedForwardedShape && env.isProduction) {
+    // Une seule fois : nombre d'entrees de X-Forwarded-For (jamais les adresses) pour verifier TRUSTED_PROXY_HOPS sur le deploiement reel.
+    loggedForwardedShape = true;
+    log.info("client-ip", { trustedHops, forwardedEntries: forwardedFor ? forwardedFor.split(",").length : 0 });
+  }
   const now = Date.now();
-  let entry = hits.get(ip);
-  if (!entry || entry.resetAt < now) { entry = { count: 0, resetAt: now + 60_000 }; hits.set(ip, entry); }
-  entry.count += 1;
-  if (hits.size > 5000) for (const [key, value] of hits) if (value.resetAt < now) hits.delete(key);
-  if (entry.count > limit) {
-    c.header("Retry-After", String(Math.ceil((entry.resetAt - now) / 1000)));
-    return c.json({ error: "Trop de requêtes, réessayez dans une minute." }, 429);
+  let retryAfter = 0;
+  for (const rule of rulesForRequest(c.req.method, c.req.path)) {
+    const result = limiter.hit(`${rule.name}|${ip}`, rule.limit, rule.windowMs, now);
+    if (!result.allowed) retryAfter = Math.max(retryAfter, result.retryAfterSec);
+  }
+  if (retryAfter > 0) {
+    c.header("Retry-After", String(retryAfter));
+    return c.json({ error: "Trop de requêtes, réessayez dans quelques instants." }, 429);
   }
   await next();
 });
@@ -104,7 +117,7 @@ app.use("/api/trpc/*", async (c) => {
     endpoint: "/api/trpc",
     req: c.req.raw,
     router: appRouter,
-    createContext,
+    createContext: (opts) => createContext(opts, c.get("clientIp")),
   });
 });
 // Browser-side log sink (see lib/clientlog.ts). Must be registered before the

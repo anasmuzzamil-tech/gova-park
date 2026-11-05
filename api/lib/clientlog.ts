@@ -147,12 +147,10 @@ export async function handleClientLog(c: Context): Promise<Response> {
     incoming.length = LOG_MAX_LINES_PER_REQUEST;
   }
 
-  // Identity for the rate limit: cf-connecting-ip first, then the forwarded
-  // chain. Absent headers collapse to "anon" — a weak key, but the line cap
-  // still bounds damage.
-  const clientKey =
-    c.req.header("cf-connecting-ip") ??
-    (c.req.header("x-forwarded-for") ?? "anon").split(",")[0].trim();
+  // Identity for the rate limit: the IP resolved by boot.ts (lib/client-ip.ts),
+  // never a raw client-supplied header. Absent, it collapses to "anon" — a weak
+  // key, but the line cap still bounds damage.
+  const clientKey = (c.get("clientIp") as string | undefined) ?? "anon";
 
   for (const item of incoming) {
     if (!item || typeof item !== "object") continue;
