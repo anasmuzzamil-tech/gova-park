@@ -33,7 +33,7 @@
 .m-sheet.is-closed .m-street-bar { position: absolute; left: 14px; right: 14px; bottom: calc(100% + 4px); margin: 0; padding: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--gp-s-2); background: transparent; box-shadow: none; border-radius: 0; }
 .m-sheet.is-closed .m-street-bar .sp-pill { margin-right: auto; width: 56px; height: 56px; min-height: 56px; border-radius: 50%; box-shadow: var(--gp-shadow-1); }
 .m-sheet.is-closed .m-street-btn { flex: none; width: auto; min-height: 56px; height: 56px; padding: 0 var(--gp-s-4); border-radius: 28px; box-shadow: var(--gp-shadow-2); }
-.m-sheet.is-closed .m-meta { position: absolute; left: 14px; bottom: calc(100% + 66px); padding: 0; }
+.m-sheet.is-closed .m-meta { position: absolute; left: 0; right: 0; bottom: calc(100% + 66px); padding: 0 14px; }
 .m-street-btn:active, .m-card-go:active { transform: scale(.97); }
 .m-street-btn:disabled { opacity: .45; cursor: not-allowed; }
 /* Plein : liste verticale, défilante, sous la recherche */
