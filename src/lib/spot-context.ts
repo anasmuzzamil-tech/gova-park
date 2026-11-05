@@ -1,9 +1,11 @@
 // Lignes de contexte d'une fiche de place : informations des couches statiques (stationnement interdit) lues autour de la place.
 // Une ligne n'apparaît QUE si la donnée la justifie ; aucune donnée ou fichiers absents = aucune ligne (jamais « autorisé »).
 import { FORBIDDEN_NEAR_METERS, forbiddenCardLine, forbiddenNear } from "@contracts/paris-forbidden";
+import { WORKS_NEAR_METERS, workCardLine, worksNear } from "@contracts/paris-works";
 import { loadLayer } from "@/lib/geo-layers";
 
 const FORBIDDEN_BASE = "/data/paris-forbidden";
+const WORKS_BASE = "/data/paris-works";
 const around = (lat: number, lng: number, meters: number) => {
   const dLat = meters / 111320, dLng = meters / (111320 * Math.cos((lat * Math.PI) / 180));
   return { south: lat - dLat, north: lat + dLat, west: lng - dLng, east: lng + dLng };
@@ -17,6 +19,13 @@ export async function spotContextLines(lat: number, lng: number): Promise<string
     if (result.status === "ok") {
       const hit = forbiddenNear(result.features, lat, lng);
       if (hit) lines.push(forbiddenCardLine(hit));
+    }
+  } catch { /* couche indisponible : pas de ligne */ }
+  try {
+    const result = await loadLayer(WORKS_BASE, around(lat, lng, WORKS_NEAR_METERS + 5), { lat, lng }, 500);
+    if (result.status === "ok") {
+      const hit = worksNear(result.features, lat, lng);
+      if (hit) lines.push(workCardLine(hit.props));
     }
   } catch { /* couche indisponible : pas de ligne */ }
   return lines;

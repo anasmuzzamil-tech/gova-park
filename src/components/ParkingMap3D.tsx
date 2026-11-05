@@ -10,6 +10,7 @@ import { POLY, buildPolygonFeatures, polygonsVisible, spotAnchorKey, type ParisP
 import { loadParisPolygons } from "@/lib/paris-polygons";
 import { LAYER, layerVisible, toGeoJson, type DecodedFeature } from "@contracts/geo-layers";
 import { loadLayer } from "@/lib/geo-layers";
+import { isWorkActive } from "@contracts/paris-works";
 import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
@@ -114,6 +115,23 @@ function addForbiddenLayers(map: maplibregl.Map) {
     });
   } catch (error) { console.warn("[GOVAPARK] Couche du stationnement interdit impossible", error); }
 }
+// Chantiers (Ville de Paris, non exhaustifs, peuvent être périmés) : polygones orange HACHURÉS au zoom rue, peu opaques.
+export const WORKS_BASE = "/data/paris-works";
+function hatchImage(): ImageData | null {
+  const size = 16, canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
+  const g = canvas.getContext("2d"); if (!g) return null;
+  g.strokeStyle = "#f08a14"; g.lineWidth = 2; g.globalAlpha = 0.85;
+  g.beginPath(); g.moveTo(-2, size + 2); g.lineTo(size + 2, -2); g.moveTo(-2, 2 * size + 2); g.lineTo(2 * size + 2, -2); g.moveTo(-size - 2, size + 2); g.lineTo(size + 2, -size - 2); g.stroke();
+  return g.getImageData(0, 0, size, size);
+}
+function addWorksLayers(map: maplibregl.Map) {
+  try {
+    map.addSource("gp-works", { type: "geojson", data: emptyFc() });
+    const img = hatchImage(); if (img && !map.hasImage("gp-hatch")) map.addImage("gp-hatch", img, { pixelRatio: 2 });
+    if (img) map.addLayer({ id: "gp-works-fill", type: "fill", source: "gp-works", minzoom: LAYER.streetZoom, paint: { "fill-pattern": "gp-hatch", "fill-opacity": 0.55 } });
+    map.addLayer({ id: "gp-works-line", type: "line", source: "gp-works", minzoom: LAYER.streetZoom, paint: { "line-color": "#f08a14", "line-width": 1.4, "line-opacity": 0.9 } });
+  } catch (error) { console.warn("[GOVAPARK] Couche des chantiers impossible", error); }
+}
 export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
 function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
@@ -173,7 +191,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -188,6 +206,8 @@ export default function ParkingMap3D({
   polygonsOn?: boolean; polygonTypes?: ReadonlySet<number>;
   /** Tracés du stationnement interdit (Ville de Paris), au zoom rue seulement. Carte 3D uniquement. */
   forbiddenOn?: boolean;
+  /** Chantiers perturbants (Ville de Paris), zoom rue seulement, carte 3D uniquement. */
+  worksOn?: boolean;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -326,6 +346,7 @@ export default function ParkingMap3D({
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
       addPolygonLayers(map);
+      addWorksLayers(map);
       addForbiddenLayers(map);
       addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
       setZoom(map.getZoom());
@@ -612,6 +633,31 @@ export default function ParkingMap3D({
     if (!map || !ready) return;
     (map.getSource("gp-forbidden") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(forbidden));
   }, [ready, forbidden]);
+
+  // Chantiers : seuls ceux dont les dates prévues n'excluent pas aujourd'hui sont dessinés.
+  const [works, setWorks] = useState<DecodedFeature[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false, timer: number | undefined;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        if (!layerVisible(map.getZoom(), LAYER.streetZoom, worksOn)) { if (!cancelled) setWorks((previous) => (previous.length ? [] : previous)); return; }
+        const b = map.getBounds(), c = map.getCenter();
+        const result = await loadLayer(WORKS_BASE, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng });
+        const now = new Date();
+        if (!cancelled) setWorks(result.status === "ok" ? result.features.filter((f) => isWorkActive(f.props, now)) : []);
+      }, 250);
+    };
+    map.on("moveend", refresh); refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); map.off("moveend", refresh); };
+  }, [ready, worksOn]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource("gp-works") as maplibregl.GeoJSONSource | undefined)?.setData(toGeoJson(works));
+  }, [ready, works]);
 
   // Emplacements officiels de Paris : regroupement natif MapLibre (gris, jamais de disponibilité) + emplacements colorés par un signalement.
   useEffect(() => {

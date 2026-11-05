@@ -29,6 +29,8 @@ import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE 
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { FORBIDDEN_ATTRIBUTION, FORBIDDEN_SOURCE } from "@contracts/paris-forbidden";
 import { spotContextLines } from "@/lib/spot-context";
+import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
+import { loadLayerIndex } from "@/lib/geo-layers";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
 import { ago, distanceMeters, euros, fullDate, placeTypeLabel, shortDate, toLocalInput } from "@/lib/format";
@@ -229,6 +231,10 @@ export default function Home() {
   const [parisLoad, setParisLoad] = useState<ParisLoad | null>(null);
   const [selectedParis, setSelectedParis] = useState<ParisSpotInfo | null>(null);
   const [parisRegimes, setParisRegimes] = useState<Array<[string, string]>>([]);
+  // Chantiers (Ville de Paris, non exhaustifs, peuvent être périmés) : couche désactivée par défaut ; la date des données vient du fichier généré.
+  const [worksOn, setWorksOn] = useState(false);
+  const [worksDate, setWorksDate] = useState<string | null>(null);
+  useEffect(() => { if (worksOn) void loadLayerIndex("/data/paris-works").then((index) => setWorksDate(index?.dataDate ?? null)).catch(() => setWorksDate(null)); }, [worksOn]);
   // Lignes de contexte de la fiche (ex. stationnement interdit), lues dans les couches de données autour de la place sélectionnée.
   const [spotExtra, setSpotExtra] = useState<string[]>([]);
   useEffect(() => {
@@ -752,7 +758,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} forbiddenOn={parisOn} worksOn={worksOn} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -780,6 +786,7 @@ export default function Home() {
           <button className={`m-chip ${vehicleChoice.all ? "on" : ""}`} aria-pressed={vehicleChoice.all} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all })}>Tout</button>
           <button className={`m-chip ${streetOn ? "on" : ""}`} aria-pressed={streetOn} onClick={() => setStreetOn(!streetOn)}>Places en rue</button>
           <button className={`m-chip ${parisOn ? "on" : ""}`} aria-pressed={parisOn} onClick={() => setParisOn(!parisOn)}>Emplacements Paris</button>
+          <button className={`m-chip ${worksOn ? "on" : ""}`} aria-pressed={worksOn} onClick={() => setWorksOn(!worksOn)}>Chantiers</button>
           <button className={`m-chip ${onlyAvailable ? "on" : ""}`} onClick={() => setOnlyAvailable(!onlyAvailable)}>Dispo maintenant</button>
           <button className={`m-chip ${filters.covered === "couvert" ? "on" : ""}`} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
           <button className={`m-chip ${filters.maxPrice <= 200 ? "on" : ""}`} onClick={() => setFilters({ ...filters, maxPrice: filters.maxPrice <= 200 ? initialFilters.maxPrice : 200 })}>Pas cher</button>
@@ -816,6 +823,8 @@ export default function Home() {
               {parisOn && <p>{PARIS_POLYGONS_ATTRIBUTION}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
               {parisOn && <p>{FORBIDDEN_ATTRIBUTION}</p>}
+              {worksOn && <p>{worksAttribution(worksDate)}</p>}
+              {worksOn && <a href={WORKS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des chantiers : data.gouv.fr</a>}
               {parisOn && <a href={FORBIDDEN_SOURCE.url} target="_blank" rel="noopener noreferrer">Source du stationnement interdit : data.gouv.fr</a>}
               {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
