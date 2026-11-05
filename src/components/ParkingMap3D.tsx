@@ -325,6 +325,10 @@ export default function ParkingMap3D({
     if (userPosition) { autoFitDone.current = true; return; }
     autoFitDone.current = true;
     const from = initialCenter.current;
+    // Cadrage sur Paris (ou la position connue) : si la place la plus proche est à plus de 8 km du centre voulu, on ne se laisse pas
+    // entraîner ailleurs en Île-de-France, on reste sur le centre à un zoom de quartier.
+    const nearest = listings.reduce((best, l) => Math.min(best, metersBetween(from, { lat: l.latitude, lng: l.longitude })), Infinity);
+    if (nearest > 8000) { map.jumpTo({ center: [from.lng, from.lat], zoom: 13.5, pitch: REST_PITCH, bearing: 0 }); return; }
     const candidates = [...listings]
       .map((l) => ({ lat: l.latitude, lng: l.longitude, d: metersBetween(from, { lat: l.latitude, lng: l.longitude }) }))
       .sort((a, b) => a.d - b.d).slice(0, 8);

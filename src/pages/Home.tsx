@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, LocateFixed, SlidersHorizontal, List, Map as MapIcon, Plus, ShieldAlert, X, Clock3, ThumbsUp, ThumbsDown, Navigation, Check, Mail, Settings, Gauge, Fuel, Download, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
@@ -97,6 +97,8 @@ export default function Home() {
   const [view, setView] = useState<"map" | "list">("map");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Légende des couleurs et sources : repliées derrière le bouton « i » (une carte lisible d'abord).
+  const [infoOpen, setInfoOpen] = useState(false);
   // Mobile : panneau des places privées replié au départ (la carte et les places en rue restent lisibles) ; ouvert sur grand écran.
   const [sheetOpen, setSheetOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 900);
   const [onlyAvailable, setOnlyAvailable] = useState(false);
@@ -690,6 +692,11 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [map3dFail]);
 
+  // Détail de l'état de la couche Paris, affiché dans le panneau « i » (le texte court reste sur la carte).
+  const parisNote = parisLoad === null ? "" : parisLoad.status === "missing" ? "Emplacements de Paris : données non installées sur ce site (import non exécuté), rien n’est affiché."
+    : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
+    : `${parisLoad.mode === "overview" ? "Zoomez pour voir chaque emplacement." : ""}${parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""}`.trim();
+
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />
@@ -747,6 +754,7 @@ export default function Home() {
 
         {menuOpen && <div className="m-menu" role="menu">
           <button onClick={() => { setMenuOpen(false); setDraftFilters(filters); setFiltersOpen(true); }}><SlidersHorizontal size={19} />Tous les filtres</button>
+          <button onClick={() => { setMenuOpen(false); setReportOpen(true); }}><Plus size={19} />Partager une information</button>
           <button onClick={() => { setMenuOpen(false); setView("list"); }}><List size={19} />Voir en liste</button>
           <button onClick={() => { setMenuOpen(false); void enableProximityAlerts(); }}><ThumbsUp size={19} />Alerte place à 800 m</button>
           <button onClick={() => { setMenuOpen(false); void enableBackgroundAlerts(); }}><Clock3 size={19} />Alertes en arrière-plan</button>
@@ -761,21 +769,27 @@ export default function Home() {
 
         <div className={`m-sheet${sheetOpen ? "" : " is-closed"}`}>
           {streetHelp && <div className="m-street-help" role="alert"><span>{streetHelp}</span><button onClick={() => setStreetHelp(null)} aria-label="Fermer le message"><X size={18} /></button></div>}
+          <div className="m-meta">
+            <button type="button" className="m-info" aria-expanded={infoOpen} aria-label="Légende des couleurs et sources" onClick={() => setInfoOpen((open) => !open)}><Info size={17} /></button>
+            {parisOn && <p className="m-attrib" role="status">{parisLoad === null ? "Emplacements de Paris : chargement…"
+              : parisLoad.status === "missing" ? "Emplacements de Paris : données non installées"
+              : parisLoad.status === "error" ? "Emplacements de Paris indisponibles (réseau)"
+              : `Emplacements : ${PARIS_SOURCE.producer}, licence ${PARIS_SOURCE.license}, non exhaustifs`}</p>}
+            {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
+            {infoOpen && <div className="m-info-panel" role="dialog" aria-label="Légende et sources">
+              <ul className="m-legend" aria-label="Légende des couleurs des places">
+                <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
+              </ul>
+              <p>{PARIS_ATTRIBUTION}</p>
+              {parisOn && parisNote && <p>{parisNote}</p>}
+              <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
+              <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
+            </div>}
+          </div>
           <StreetPanel state={streetPanelState} spots={streetSpots} reference={userPosition ?? visibleCenter} hasPosition={!!userPosition}
             busy={streetLocating || streetCreate.isPending} busyLabel={streetLocating ? "Localisation…" : "Envoi…"}
             onFree={() => void reportStreet("free")} onTaken={() => void reportStreet("taken")}
-            onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} onLocate={() => locate(true)} />
-          {parisOn && <p className="m-paris-line" role="status">{parisLoad === null ? "Emplacements de Paris : chargement…"
-            : parisLoad.status === "missing" ? "Emplacements de Paris : données non installées sur ce site (import non exécuté), rien n’est affiché."
-            : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
-            : <>{PARIS_ATTRIBUTION}{parisLoad.mode === "overview" ? " Zoomez pour voir chaque emplacement." : ""}{parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""} <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source</a></>}</p>}
-          <div className="m-sheet-head">
-            <ul className="m-legend" aria-label="Légende des couleurs des places">
-              <li><i className="green" />Dispo</li><li><i className="red" />Occupée</li><li><i className="orange" />Estimée</li><li><i className="gray" />Inconnue</li>
-            </ul>
-            {trackingGps && speedKmh != null && vehiclePrefs.speedometer !== false && <span className="m-speed"><Gauge size={16} />{speedKmh} km/h</span>}
-            <button className="m-fab" onClick={() => setReportOpen(true)}><Plus size={20} />Signaler</button>
-          </div>
+            onRetry={() => void streetQuery.refetch()} onEnableLayer={() => setStreetOn(true)} />
           {drivingRoute ? <><div className="m-route">
             <div className="m-route-main">{drivingRoute.offline ? <><strong>{meters(drivingRoute.distance)}</strong><span>à vol d’oiseau · {drivingRoute.label}</span></> : <><strong>{Math.max(1, Math.round(drivingRoute.duration / 60))} min</strong><span>{meters(drivingRoute.distance)}{drivingRoute.label ? ` · ${drivingRoute.label}` : ""}</span></>}</div>
             <div className="m-route-body">
@@ -798,6 +812,7 @@ export default function Home() {
             </article>)}
           </div></> : <>
             <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((open) => !open)}>
+              <i className="m-grip" aria-hidden="true" />
               <b>{sheetOpen ? <ChevronDown size={20} aria-label="Fermer la liste" /> : <ChevronUp size={20} aria-label="Ouvrir la liste" />}{userPosition ? "Plus proches de toi" : "Plus proches du centre"}</b>
               <span>{filtered.length} {filtered.length > 1 ? "places" : "place"}</span>
             </button>

@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
-import { MapPin, LocateFixed, Car, RefreshCw } from "lucide-react";
+import { MapPin, Car, RefreshCw, WifiOff, ZoomIn } from "lucide-react";
+import { toast } from "sonner";
 import { countFreeNearby, STREET_RULES } from "@contracts/street-reports";
 
 type PanelSpot = { status: "free" | "taken"; latitude: number; longitude: number; reportedAt: string; example: boolean };
 export type StreetPanelState = "ok" | "loading" | "error" | "offline" | "zoom" | "off";
 
 /**
- * Panneau « Places en rue » de l'écran d'accueil : compteur honnête + accès direct aux deux signalements.
- * Le nombre n'est affiché que si la donnée est réellement connue (jamais de 0 par défaut quand on ne sait pas).
+ * Barre d'action « Places en rue » de l'écran d'accueil : UNE ligne = pastille du compteur + « Je libère ma place » + « Je me gare ».
+ * Le nombre n'est affiché que si la donnée est réellement connue (jamais de 0 par défaut quand on ne sait pas) ;
+ * un toucher sur la pastille donne la phrase complète (rayon, délai, mention « exemple », aucune garantie).
  */
-export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLabel, onFree, onTaken, onRetry, onEnableLayer, onLocate }: {
+export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLabel, onFree, onTaken, onRetry, onEnableLayer }: {
   state: StreetPanelState; spots: PanelSpot[]; reference: { lat: number; lng: number }; hasPosition: boolean;
-  busy: boolean; busyLabel: string | null; onFree: () => void; onTaken: () => void; onRetry: () => void; onEnableLayer: () => void; onLocate: () => void;
+  busy: boolean; busyLabel: string | null; onFree: () => void; onTaken: () => void; onRetry: () => void; onEnableLayer: () => void;
 }) {
   // Horloge locale : un signalement qui passe de 5 min cesse de compter sans attendre le prochain rafraîchissement du serveur.
   const [now, setNow] = useState(() => Date.now());
@@ -21,39 +23,33 @@ export function StreetPanel({ state, spots, reference, hasPosition, busy, busyLa
   const where = hasPosition ? "près de vous" : "près du centre de la carte";
   const minutes = STREET_RULES.greenMinutes;
 
-  let head: JSX.Element;
+  let pill: JSX.Element;
   if (state === "loading") {
-    head = <div className="sp-main" role="status" aria-label="Chargement des signalements"><span className="sp-num sp-skel" /><div className="sp-text"><span className="sp-skel sp-line" /><span className="sp-skel sp-line short" /></div></div>;
+    pill = <div className="sp-pill sp-skel" role="status" aria-label="Chargement des signalements" />;
   } else if (known) {
-    head = <div className="sp-main" role="status" aria-live="polite">
-      <span className={`sp-num${count > 0 ? " has" : ""}`} aria-hidden="true">{count}</span>
-      <div className="sp-text">
-        <strong>{count === 0 ? `Aucune place libre signalée il y a moins de ${minutes} min ${where}`
-          : `${count > 1 ? "places libres signalées" : "place libre signalée"} il y a moins de ${minutes} min ${where}`}</strong>
-        <span>{count === 0 ? "Vous partez ou vous cherchez ? Un signalement aide tout le monde." : "Signalements d'utilisateurs : rien n'est garanti, la place a pu être prise."}</span>
-        {count > 0 && examples > 0 && <span className="sp-example">{examples === count ? "Exemple de démonstration" : `Dont ${examples} exemple${examples > 1 ? "s" : ""} de démonstration`}</span>}
-      </div>
-    </div>;
+    const full = count === 0 ? `Aucune place libre signalée il y a moins de ${minutes} min ${where}. Vous partez ou vous cherchez ? Un signalement aide tout le monde.`
+      : `${count} ${count > 1 ? "places libres signalées" : "place libre signalée"} il y a moins de ${minutes} min ${where}. Signalements d'utilisateurs : rien n'est garanti, la place a pu être prise.`
+        + (examples > 0 ? (examples === count ? " Exemple de démonstration." : ` Dont ${examples} exemple${examples > 1 ? "s" : ""} de démonstration.`) : "");
+    const cap = examples > 0 ? (examples === count ? "exemple" : "dont ex.") : count > 1 ? "libres" : "libre";
+    pill = <button type="button" className={`sp-pill${count > 0 ? " has" : ""}`} aria-label={full} title={full} onClick={() => toast.message(full)}>
+      <b>{count}</b><span>{cap}</span></button>;
+  } else if (state === "error") {
+    pill = <button type="button" className="sp-pill unknown" aria-label="Signalements indisponibles pour le moment. Réessayer." title="Signalements indisponibles pour le moment" onClick={onRetry}><RefreshCw size={17} /><span>Réessayer</span></button>;
+  } else if (state === "off") {
+    pill = <button type="button" className="sp-pill unknown" aria-label="La couche « Places en rue » est masquée. Afficher les places en rue." title="La couche « Places en rue » est masquée" onClick={onEnableLayer}><MapPin size={17} /><span>Masquée</span></button>;
+  } else if (state === "offline") {
+    const msg = "Hors ligne : les signalements ne sont pas affichés (ils changent toutes les minutes).";
+    pill = <button type="button" className="sp-pill unknown" aria-label={msg} title={msg} onClick={() => toast.message(msg)}><WifiOff size={17} /><span>Hors ligne</span></button>;
   } else {
-    const msg = state === "offline" ? "Hors ligne : les signalements ne sont pas affichés (ils changent toutes les minutes)."
-      : state === "error" ? "Signalements indisponibles pour le moment."
-      : state === "zoom" ? "Zoomez sur la carte pour compter les places en rue."
-      : "La couche « Places en rue » est masquée.";
-    head = <div className="sp-main" role="status"><span className="sp-num unknown" aria-hidden="true"><MapPin size={22} /></span>
-      <div className="sp-text"><strong>{msg}</strong>
-        {state === "error" && <button type="button" className="sp-link" onClick={onRetry}><RefreshCw size={15} />Réessayer</button>}
-        {state === "off" && <button type="button" className="sp-link" onClick={onEnableLayer}>Afficher les places en rue</button>}
-      </div></div>;
+    const msg = "Zoomez sur la carte pour compter les places en rue.";
+    pill = <button type="button" className="sp-pill unknown" aria-label={msg} title={msg} onClick={() => toast.message(msg)}><ZoomIn size={17} /><span>Zoomer</span></button>;
   }
 
   return (
-    <section className="m-street-panel" aria-label="Places gratuites en rue">
-      {head}
-      {known && !hasPosition && <button type="button" className="sp-link" onClick={onLocate}><LocateFixed size={15} />Me localiser pour compter autour de moi</button>}
-      <div className="m-street-bar">
-        <button type="button" className="m-street-btn free" disabled={busy} onClick={onFree}><MapPin size={19} />{busy && busyLabel ? busyLabel : "Je libère ma place"}</button>
-        <button type="button" className="m-street-btn taken" disabled={busy} onClick={onTaken}><Car size={19} />{busy && busyLabel ? busyLabel : "Je me gare"}</button>
-      </div>
+    <section className="m-street-bar" aria-label="Places gratuites en rue : signaler">
+      {pill}
+      <button type="button" className="m-street-btn free" aria-label="Je libère ma place" disabled={busy} onClick={onFree}><MapPin size={18} /><span>{busy && busyLabel ? busyLabel : "Je libère"}</span></button>
+      <button type="button" className="m-street-btn taken" aria-label="Je me gare" disabled={busy} onClick={onTaken}><Car size={18} /><span>{busy && busyLabel ? busyLabel : "Je me gare"}</span></button>
     </section>
   );
 }

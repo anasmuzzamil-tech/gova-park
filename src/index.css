@@ -477,9 +477,6 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 
 .m-sheet { position: absolute; z-index: 500; left: 0; right: 0; bottom: 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); pointer-events: none; }
 .m-sheet > * { pointer-events: auto; }
-.m-sheet-head { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 0 14px 10px; pointer-events: none; }
-.m-sheet-head > * { pointer-events: auto; }
-.m-fab { height: 54px; padding: 0 22px 0 16px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 27px; background: #17142b; color: #fff; font-size: 16px; font-weight: 800; box-shadow: 0 10px 28px #1a143a50; }
 .m-speed { height: 40px; padding: 0 14px; display: flex; align-items: center; gap: 7px; border-radius: 20px; background: #fff; font-weight: 800; box-shadow: 0 4px 14px #1a143a24; }
 .m-sheet-title { padding: 0 18px 8px; display: flex; justify-content: space-between; align-items: baseline; color: #17142b; font-size: 17px; font-weight: 800; text-shadow: 0 1px 0 #ffffffb0; }
 .m-sheet-title span { color: #6c6a85; font-size: 13px; font-weight: 700; }
@@ -644,12 +641,6 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 }
 
 /* Légende des couleurs */
-.m-legend { margin: 0; padding: 7px 12px; list-style: none; display: grid; grid-template-columns: auto auto; gap: 3px 14px; background: #fff; border-radius: 16px; box-shadow: 0 6px 20px #1a143a30; color: #17142b; font-size: 12px; font-weight: 800; line-height: 1.2; }
-.m-legend li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.m-legend i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #1a143a33; }
-.m-legend i.green { background: #12a150; }.m-legend i.red { background: #e5483c; }.m-legend i.orange { background: #f08a14; }.m-legend i.gray { background: #8a8f9c; }
-.m-sheet-head { justify-content: space-between; }
-.m-sheet-head .m-fab { margin-left: auto; }
 
 /* Panneau de résultats repliable */
 .m-sheet-toggle { width: 100%; min-height: 44px; border: 0; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
@@ -657,7 +648,7 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 .m-sheet-toggle svg { color: #17142b; flex: none; }
 .m-sheet .m-cards[hidden] { display: none; }
 @media (max-width: 899px) {
-  .home-screen:has(.m-sheet.is-closed) { --sheet-h: 330px; }
+  .home-screen:has(.m-sheet.is-closed) { --sheet-h: calc(68px + env(safe-area-inset-bottom, 0px) + 138px); }
 }
 
 /* Carte 3D indisponible : message explicite au lieu d'un repli silencieux */
@@ -689,33 +680,11 @@ label small, .field-help { color: var(--text-muted); font-size: 12px; font-weigh
 /* Places gratuites en rue (signalements communautaires) : carré arrondi, forme distincte des places privées. Couleurs de contracts/parking-status.ts */
 .pk-street { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; border: 3px solid #fff; color: #fff; font: 800 16px/1 "Manrope", sans-serif; box-shadow: 0 3px 10px #1b1e3a55; cursor: pointer; }
 .pk-s-green { background: #12a150; }.pk-s-red { background: #e5483c; }.pk-s-orange { background: #f08a14; }.pk-s-gray { background: #8a8f9c; }
-.m-street-bar { display: flex; gap: 10px; padding: 0 14px 10px; pointer-events: none; }
-.m-street-bar > * { pointer-events: auto; }
-.m-street-btn { flex: 1; min-height: 52px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 16px; color: #fff; font: 800 15px "Manrope", sans-serif; }
-.m-street-btn.free { background: #0b7a3b; }.m-street-btn.taken { background: #c8302a; }
-.m-street-btn:disabled { opacity: .6; }
 .m-street-help { margin: 0 14px 10px; padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; border-radius: 16px; background: #fff; color: #17142b; font: 700 12.5px/1.35 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; pointer-events: auto; }
 .m-street-help span { flex: 1; }
 .m-street-help button { flex: none; min-width: 44px; min-height: 44px; margin: -10px -12px -10px 0; display: grid; place-items: center; border: 0; background: transparent; color: #17142b; }
 
 /* Écran d'accueil : panneau « Places en rue » (compteur honnête + deux signalements en un geste) */
-.m-street-panel { margin: 0 14px 10px; padding: 14px; border-radius: 22px; background: #fff; color: #17142b; box-shadow: 0 10px 30px #1a143a38; display: grid; gap: 12px; }
-.m-street-panel .m-street-bar { padding: 0; }
-.sp-main { display: flex; align-items: center; gap: 14px; min-height: 56px; }
-.sp-num { flex: none; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: #ecebf3; color: #4b4963; font: 800 30px/1 "Manrope", sans-serif; font-variant-numeric: tabular-nums; }
-.sp-num.has { background: #0b7a3b; color: #fff; }
-.sp-num.unknown { background: #ecebf3; color: #4b4963; }
-.sp-text { display: grid; gap: 3px; min-width: 0; }
-.sp-text strong { font: 800 15px/1.25 "Manrope", sans-serif; }
-.sp-text span { font: 600 12.5px/1.35 "Manrope", sans-serif; color: #4b4963; }
-.sp-text .sp-example { color: #8a4b00; font-weight: 800; }
-.sp-link { min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #4a2fb8; font: 800 13.5px "Manrope", sans-serif; text-decoration: underline; justify-self: start; }
-.sp-skel { background: linear-gradient(100deg, #ecebf3 30%, #f7f6fc 50%, #ecebf3 70%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
-.sp-line { display: block; height: 14px; border-radius: 7px; width: 100%; }
-.sp-line.short { width: 60%; }
-.sp-text:has(.sp-line) { flex: 1; gap: 8px; }
-.m-street-btn:disabled { opacity: .7; }
-@media (prefers-reduced-motion: reduce) { .sp-skel { animation: none; } }
 
 /* Mode navigation plein écran (guidage façon Waze) : la carte reste dessous, tout le reste de l'écran d'accueil est masqué */
 body.is-navigating .bottom-nav { display: none; }
@@ -754,5 +723,52 @@ body.is-navigating .bottom-nav { display: none; }
 @media (max-width: 380px) { .nav-dist { font-size: 32px; } .nav-instr { font-size: 17px; } .nav-arrow { width: 60px; height: 60px; } }
 
 /* Emplacements officiels de Paris : source et licence toujours visibles, état honnête */
-.m-paris-line { margin: 0 14px 10px; padding: 8px 12px; border-radius: 14px; background: #fff; color: #4b4963; font: 600 11.5px/1.4 "Manrope", sans-serif; box-shadow: 0 6px 20px #1a143a30; pointer-events: auto; }
-.m-paris-line a { display: inline-flex; align-items: center; min-height: 44px; margin: -14px 0; padding: 0 6px; color: #4a2fb8; font-weight: 800; text-decoration: underline; }
+
+/* ===== Écran carte mobile : la carte domine, pile du bas compacte =====
+   De haut en bas : recherche + localisation + réglages / puces (une rangée défilable) / CARTE /
+   ligne « i » + attribution / barre d'action (compteur + 2 signalements) / poignée de la liste / onglets. */
+.m-chips { gap: 6px; padding: 2px 24px 6px 2px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); overscroll-behavior-x: contain; }
+.m-chip { position: relative; height: 34px; min-width: 0; padding: 0 12px; border-radius: 17px; font-size: 12.5px; line-height: 1; white-space: nowrap; }
+.m-chip::after { content: ""; position: absolute; inset: -5px -2px; } /* zone tactile >= 44 px malgré la puce plus petite */
+@media (max-width: 899px) {
+  .m-sheet { padding-bottom: 4px; }
+  .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: var(--sheet-h); }
+}
+
+/* Ligne « i » + attribution (discrète) */
+.m-meta { position: relative; display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 14px 4px; pointer-events: none; }
+.m-meta > * { pointer-events: auto; }
+.m-info { position: relative; flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #17142b; box-shadow: 0 2px 8px #1a143a38; }
+.m-info::after { content: ""; position: absolute; inset: -8px; }
+.m-attrib { flex: 0 1 auto; min-width: 0; margin: 0; padding: 4px 9px; border-radius: 10px; background: #ffffffe6; color: #3b3a55; font: 600 10.5px/1.2 "Manrope", sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 8px #1a143a24; }
+.m-meta .m-speed { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12.5px; }
+.m-info-panel { position: absolute; z-index: 5; left: 14px; right: 14px; bottom: calc(100% + 2px); max-width: 420px; padding: 12px 44px 12px 14px; display: grid; gap: 8px; border-radius: 16px; background: #fff; color: #17142b; box-shadow: 0 10px 30px #1a143a45; }
+.m-info-panel p { margin: 0; color: #4b4963; font: 600 12px/1.4 "Manrope", sans-serif; }
+.m-info-panel a { justify-self: start; display: inline-flex; align-items: center; min-height: 44px; margin: -8px 0; color: #4a2fb8; font: 800 13px "Manrope", sans-serif; text-decoration: underline; }
+.m-info-close { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: #17142b; }
+.m-legend { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; color: #17142b; font-size: 12.5px; font-weight: 800; line-height: 1.2; }
+.m-legend li { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.m-legend i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #1a143a33; }
+.m-legend i.green { background: #12a150; }.m-legend i.red { background: #e5483c; }.m-legend i.orange { background: #f08a14; }.m-legend i.gray { background: #8a8f9c; }
+
+/* Barre d'action : UNE ligne = pastille du compteur + « Je libère » + « Je me gare » (>= 44 px) */
+.m-street-bar { margin: 0 14px 4px; padding: 5px; display: grid; grid-template-columns: 64px 1fr 1fr; gap: 6px; border-radius: 20px; background: #fff; box-shadow: 0 8px 24px #1a143a38; pointer-events: auto; }
+.m-street-btn { min-height: 46px; min-width: 0; padding: 0 8px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 15px; color: #fff; font: 800 14.5px "Manrope", sans-serif; white-space: nowrap; }
+.m-street-btn span { overflow: hidden; text-overflow: ellipsis; }
+.m-street-btn svg { flex: none; }
+.m-street-btn.free { background: #0b7a3b; }.m-street-btn.taken { background: #c8302a; }
+.m-street-btn:disabled { opacity: .7; }
+.sp-pill { min-height: 46px; padding: 0 4px; display: grid; place-content: center; justify-items: center; gap: 1px; border: 0; border-radius: 15px; background: #ecebf3; color: #3b3a55; font-family: "Manrope", sans-serif; }
+.sp-pill b { font: 800 20px/1 "Manrope", sans-serif; font-variant-numeric: tabular-nums; }
+.sp-pill span { max-width: 60px; font: 700 10px/1.1 "Manrope", sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-pill.has { background: #0b7a3b; color: #fff; }
+.sp-pill.has span { color: #fff; }
+.sp-skel { background: linear-gradient(100deg, #ecebf3 30%, #f7f6fc 50%, #ecebf3 70%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .sp-skel { animation: none; } }
+@media (max-width: 350px) { .m-street-btn svg { display: none; } .m-street-bar { grid-template-columns: 56px 1fr 1fr; } }
+
+/* Poignée de la liste « Plus proches du centre » : repliée = une seule barre basse */
+.m-sheet-toggle { position: relative; min-height: 40px; margin: 0 14px 4px; width: calc(100% - 28px); padding: 8px 14px 0; border-radius: 16px; align-items: center; }
+.m-sheet-toggle b { font-size: 14.5px; }
+.m-sheet-toggle span { font-size: 12.5px; }
+.m-grip { position: absolute; top: 4px; left: 50%; width: 32px; height: 4px; margin-left: -16px; border-radius: 2px; background: #c3c1d3; }

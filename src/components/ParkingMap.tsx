@@ -186,7 +186,7 @@ export default function ParkingMap({
     badge.style.transition = "transform .4s ease";
   }, [heading, userPosition, driving]);
   return (
-    <MapContainer center={[center.lat, center.lng]} zoom={12} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
+    <MapContainer center={[center.lat, center.lng]} zoom={13} zoomControl={false} className="parking-map" scrollWheelZoom minZoom={3} maxZoom={19}>
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
