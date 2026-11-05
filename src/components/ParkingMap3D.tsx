@@ -8,6 +8,7 @@ import { STATUS_COLORS } from "@contracts/parking-status";
 import { DEFAULT_SPOT_TYPES, SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
 import { POLY, buildPolygonFeatures, polygonsVisible, spotAnchorKey, type ParisPolygon, type PolygonColor } from "@contracts/paris-polygons";
 import { loadParisPolygons } from "@/lib/paris-polygons";
+import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 type Center = { lat: number; lng: number };
@@ -531,6 +532,9 @@ export default function ParkingMap3D({
 
   // Contours des emprises : à partir du zoom rue, seulement les tuiles visibles (avec limite), rechargées après chaque déplacement.
   const [polys, setPolys] = useState<ParisPolygon[]>([]);
+  // Seuls les types de véhicule dont un type d'emplacement est coché sont téléchargés (économie réseau).
+  const polygonVehicleKey = VEHICLE_TYPES.filter((v) => VEHICLE_SPOT_TYPES[v].some((t) => polygonTypes.has(t))).join(",");
+  const polygonVehicles = useMemo(() => (polygonVehicleKey ? polygonVehicleKey.split(",") : []) as Array<(typeof VEHICLE_TYPES)[number]>, [polygonVehicleKey]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -540,13 +544,13 @@ export default function ParkingMap3D({
       timer = window.setTimeout(async () => {
         if (!polygonsVisible(map.getZoom(), polygonsOn)) { if (!cancelled) setPolys((previous) => (previous.length ? [] : previous)); return; }
         const b = map.getBounds(), c = map.getCenter();
-        const result = await loadParisPolygons({ south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng });
+        const result = await loadParisPolygons({ south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng }, polygonVehicles);
         if (!cancelled) setPolys(result.status === "ok" ? result.polys : []);
       }, 250);
     };
     map.on("moveend", refresh); refresh();
     return () => { cancelled = true; window.clearTimeout(timer); map.off("moveend", refresh); };
-  }, [ready, polygonsOn]);
+  }, [ready, polygonsOn, polygonVehicles]);
   // Entités dessinées : filtre de types, couleur d'un signalement récent via le point d'ancrage (emplacement correspondant), sinon gris.
   const polygonFeatures = useMemo(() => {
     const colorOf = new Map<string, PolygonColor>();

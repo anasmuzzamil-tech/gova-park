@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 import { GRID, fromE5, tileKey, tilesForBounds, toE5 } from "@contracts/paris-spots";
 import {
-  POLY, POLY_KIND, anchorKey, bucketPolygons, buildPolygonFeatures, classifyRing, decodePolygonTile, encodePolygonRow, isCarRegime, isDefaultRegime, isMotoRegime, isRectangle, limitPolygonsNearCenter,
+  POLY, POLY_KIND, vehicleOfRegime, anchorKey, bucketPolygons, buildPolygonFeatures, classifyRing, decodePolygonTile, encodePolygonRow, isCarRegime, isDefaultRegime, isMotoRegime, isRectangle, limitPolygonsNearCenter,
   normalizeRing, outerRings, polygonsVisible, spotAnchorKey, splitSegments,
   type LngLat, type ParisPolygon, type PolygonColor, type PolygonIndex, type PolygonTileFile,
 } from "@contracts/paris-polygons";
@@ -51,6 +52,16 @@ describe("classification voiture / non-voiture (mêmes règles que les emplaceme
     for (const q of ["Vélos", "Vélo-cargo", "Box à vélos", "Mixte"]) { expect(isMotoRegime("2 ROUES", q), q).toBe(false); expect(isDefaultRegime("2 ROUES", q), q).toBe(false); }
     expect(isMotoRegime("2 ROUES", "motos PAYANT rotatif")).toBe(true);
     expect(isMotoRegime("", "")).toBe(false);
+  });
+  it("type de véhicule d'une emprise : voiture, moto, bus (autocars), utilitaire/PL (livraison), vélo ; jamais deviné", () => {
+    const got = Object.fromEntries(REAL_REGIMES.map(([p, q]) => [`${p}|${q}`, vehicleOfRegime(p, q)]));
+    expect(got["PAYANT MIXTE|Mixte"]).toBe("car"); expect(got["GRATUIT|Gratuit"]).toBe("car");
+    expect(got["2 ROUES|Motos payant Rotatif"]).toBe("moto");
+    expect(got["AUTOCAR|Autocar (payant)"]).toBe("bus"); expect(got["AUTOCAR|Autocar dépose"]).toBe("bus");
+    expect(got["LIVRAISON|ZL permanente"]).toBe("utility"); expect(got["LIVRAISON|ZL périodique"]).toBe("utility");
+    expect(got["2 ROUES|Vélos"]).toBe("bike"); expect(got["2 ROUES|Vélo-cargo"]).toBe("bike"); expect(got["2 ROUES|Box à vélos"]).toBe("bike");
+    for (const k of ["2 ROUES|Mixte", "PAYANT MIXTE|Mixte Marché", "GIG/GIC|GIG/GIC Standard", "AUTRE REGIME|Marché", "AUTRE REGIME|SP - Police", "LOCATION|Autopartage", "ELECTRIQUE|Bélib'"]) expect(got[k], k).toBeNull();
+    expect(vehicleOfRegime("", "")).toBeNull();
   });
   it("emprises importées (voitures et motos) : exactement 5 des 53 couples réels", () => {
     expect(REAL_REGIMES.filter(([p, q]) => isDefaultRegime(p, q)).map(([p, q]) => `${p}|${q}`)).toEqual(["PAYANT MIXTE|Mixte", "PAYANT ROTATIF|Rotatif", "GRATUIT|Gratuit", "2 ROUES|Motos payant Mixte", "2 ROUES|Motos payant Rotatif"]);
@@ -276,26 +287,29 @@ describe("fichiers générés dans le dépôt", () => {
   const root = path.resolve(import.meta.dirname, "..", "public", "data", "paris");
   const read = <T,>(...p: string[]) => JSON.parse(fs.readFileSync(path.join(root, ...p), "utf8")) as T;
   const have = fs.existsSync(path.join(root, "polygons", "index.json"));
-  it.runIf(have)("poids raisonnable, mêmes clés que les emplacements, comptes cohérents, tous les contours reliés à un emplacement", () => {
+  it.runIf(have)("un jeu de tuiles par type de véhicule : poids, clés, comptes, types de contours, tous reliés à un emplacement du même type", () => {
     const index = read<PolygonIndex>("polygons", "index.json");
     const spots = read<{ origin: { south: number; west: number }; tileDeg: number; tiles: Record<string, number> }>("index.json");
-    expect(index.version).toBe(1);
+    expect(index.version).toBe(2);
     expect(index.origin).toEqual(spots.origin);
     expect(index.tileDeg).toBe(spots.tileDeg);
     expect(index.source).toMatchObject({ producer: "Ville de Paris", license: "ODbL" });
-    for (const key of Object.keys(index.tiles)) expect(spots.tiles[key], `tuile ${key} inconnue des emplacements`).toBeGreaterThan(0);
-    const anchors = new Set<string>();
-    for (const key of Object.keys(spots.tiles)) for (const row of read<{ rows: number[][] }>("tiles", `${key}.json`).rows) anchors.add(anchorKey(row[0], row[1]));
+    expect(Object.keys(index.tiles).sort()).toEqual([...VEHICLE_TYPES].sort());
+    const anchors = new Map<string, number>(); // ancrage -> type d'emplacement
+    for (const key of Object.keys(spots.tiles)) for (const row of read<{ rows: number[][] }>("tiles", `${key}.json`).rows) anchors.set(anchorKey(row[0], row[1]), row[2]);
     let total = 0, bytes = fs.statSync(path.join(root, "polygons", "index.json")).size, biggest = 0, linked = 0, rects = 0, bad = 0;
-    for (const [key, count] of Object.entries(index.tiles)) {
-      const file = path.join(root, "polygons", "tiles", `${key}.json`);
+    for (const v of VEHICLE_TYPES) for (const [key, count] of Object.entries(index.tiles[v])) {
+      expect(spots.tiles[key], `tuile ${key} inconnue des emplacements`).toBeGreaterThan(0);
+      const file = path.join(root, "polygons", "tiles", v, `${key}.json`);
       const size = fs.statSync(file).size; bytes += size; biggest = Math.max(biggest, size);
       const tile = JSON.parse(fs.readFileSync(file, "utf8")) as PolygonTileFile;
       expect(tile.rows).toHaveLength(count); total += count;
-      for (const poly of decodePolygonTile(key, tile)) {
-        if (!anchors.has(poly.anchor)) continue;
+      for (const poly of decodePolygonTile(`${v}/${key}`, tile)) {
+        const spotType = anchors.get(poly.anchor);
+        if (spotType === undefined) continue;
         linked++;
-        if (poly.ring.length < 3 || ![1, 2, 5].includes(poly.t) || ![1, 2].includes(poly.kind)) bad++;
+        if (spotType !== poly.t || !VEHICLE_SPOT_TYPES[v].includes(poly.t)) bad++; // un contour « moto » ne s'accroche qu'à un emplacement moto
+        if (poly.ring.length < 3 || ![1, 2].includes(poly.kind)) bad++;
         if (poly.kind === POLY_KIND.rect) { rects++; if (!isRectangle(poly.ring)) bad++; }
       }
     }
@@ -304,6 +318,6 @@ describe("fichiers générés dans le dépôt", () => {
     expect(linked).toBe(total);
     expect(rects).toBe(index.rectangles);
     expect(biggest).toBeLessThanOrEqual(150 * 1024);
-    expect(bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+    expect(bytes).toBeLessThanOrEqual(6 * 1024 * 1024);
   });
 });

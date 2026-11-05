@@ -7,19 +7,21 @@
 //   node scripts/import-paris-polygons.mjs <fichier.csv> [--out=public/data/paris]
 // Le CSV source (37 Mo) n'est JAMAIS versionné : seuls les fichiers générés le sont.
 //
-// Produit <out>/polygons/index.json et <out>/polygons/tiles/<ix>_<iy>.json (format version 1, voir contracts/paris-polygons.ts).
-// - Seules les emprises de l'affichage par défaut « Voitures et motos » sont gardées (même règle que les emplacements, via interpretRegime) :
-//   voiture ordinaire (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT) ou deux-roues motorisé (2 ROUES | Motos payant Mixte / Rotatif).
-//   Les vélos, « 2 ROUES | Mixte » (incertain) et tous les autres régimes ne sont pas importés.
+// Produit <out>/polygons/index.json et <out>/polygons/tiles/<type>/<ix>_<iy>.json (format version 2, voir contracts/paris-polygons.ts).
+// - Sont gardées les emprises reliées à un type de véhicule (contracts/vehicle-types.ts, via interpretRegime, jamais deviné) :
+//   voiture (PAYANT MIXTE, PAYANT ROTATIF, GRATUIT), moto (2 ROUES | Motos payant Mixte / Rotatif), bus (AUTOCAR), utilitaire / PL (LIVRAISON : zones de
+//   livraison, pas de vrai stationnement poids lourd dans les données), vélo (2 ROUES | Vélos, Vélo-cargo, Box à vélos ; Vélib\').
+//   « 2 ROUES | Mixte » (incertain), PMR, services et tous les autres régimes ne sont pas importés.
 // - Grille : MÊME origine, MÊME taille (0,02 degré) et mêmes clés que les tuiles des emplacements (origine lue dans <out>/index.json).
-// - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type (payant/gratuit),
+// - Chaque emprise garde : contour (sommets arrondis au millionième de degré, doublons retirés), « Nombre places réelles », type d'emplacement (payant, gratuit, moto, autocar, livraison, vélo),
 //   forme (rectangle ou autre) et un point d'ancrage = le point geo_point_2d, identique (au 1e-5 degré) à celui de l'emplacement correspondant.
 // - Les lignes des deux CSV ne sont PAS dans le même ordre et « Nouvel identifiant » n'est pas unique : on relie par la POSITION (ancrage), jamais par l'ordre.
 // Aucune géométrie n'est inventée : un contour invalide (moins de 3 sommets, hors de Paris) est rejeté et compté.
 import fs from "node:fs";
 import path from "node:path";
 import { GRID, interpretRegime, toE5 } from "../contracts/paris-spots.ts";
-import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, isDefaultRegime, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
+import { VEHICLE_TYPES } from "../contracts/vehicle-types.ts";
+import { vehicleOfRegime, PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_SOURCE, POLY, POLY_KIND, anchorKey, bucketPolygons, classifyRing, normalizeRing, outerRings } from "../contracts/paris-polygons.ts";
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
@@ -58,7 +60,8 @@ const BOX = { south: 48.7, north: 49.0, west: 2.1, east: 2.6 };
 const stat = { lines: rows.length, notCar: 0, noShape: 0, badRing: 0, outside: 0, noPoint: 0, kept: 0, parts: 0, multi: 0, rect: 0, shape: 0, split: 0, placesZero: 0, placesOver: 0 };
 const items = []; const vertexHist = {}; let placesSplit = 0;
 for (const r of rows) {
-  if (!isDefaultRegime(r[C.prio], r[C.part])) { stat.notCar++; continue; }
+  const vehicle = vehicleOfRegime(r[C.prio], r[C.part]);
+  if (!vehicle) { stat.notCar++; continue; }
   const t = interpretRegime(r[C.prio], r[C.part]).t;
   let geometry = null; try { geometry = JSON.parse(r[C.shape]); } catch { /* traité plus bas */ }
   const rings = outerRings(geometry);
@@ -81,13 +84,13 @@ for (const r of rows) {
     const kind = rings.length === 1 ? classifyRing(pts) : POLY_KIND.shape; // MultiPolygon : contour seul
     if (kind === POLY_KIND.rect) { stat.rect++; if (places >= POLY.splitMin && places <= POLY.splitMax) { stat.split++; placesSplit += places; } } else stat.shape++;
     vertexHist[pts.length] = (vertexHist[pts.length] ?? 0) + 1;
-    items.push({ latE5: toE5(lat), lngE5: toE5(lng), t, places, kind, ring: pts });
+    items.push({ vehicle, latE5: toE5(lat), lngE5: toE5(lng), t, places, kind, ring: pts });
     stat.parts++; any = true;
   }
   if (any) stat.kept++;
 }
 console.log(`Fichier : ${file}`);
-console.log(`Lignes : ${stat.lines} · emprises voitures et motos gardées : ${stat.kept} (${stat.parts} contours, dont ${stat.multi} multi-parties) · autres régimes ignorés : ${stat.notCar}`);
+console.log(`Lignes : ${stat.lines} · emprises gardées (tous types de véhicule) : ${stat.kept} (${stat.parts} contours, dont ${stat.multi} multi-parties) · autres régimes ignorés : ${stat.notCar}`);
 console.log(`Rejets : ${stat.noShape} sans contour, ${stat.noPoint} sans point, ${stat.badRing} contours invalides, ${stat.outside} hors de Paris`);
 console.log(`Formes : ${stat.rect} rectangles (dont ${stat.split} avec 2 à ${POLY.splitMax} places : découpe indicative), ${stat.shape} autres formes (contour seul) · places réelles à 0/absent : ${stat.placesZero} · plus de ${POLY.splitMax} places : ${stat.placesOver}`);
 console.log(`Sommets par contour (nombre : contours) : ${Object.entries(vertexHist).slice(0, 8).map(([k, v]) => `${k}:${v}`).join(" ")} …`);
@@ -116,12 +119,21 @@ if (anchors) for (const p of items) {
   for (const dy of [-1, 0, 1]) for (const dx of [-1, 0, 1]) if ((dx || dy) && anchors.has(anchorKey(p.latE5 + dy, p.lngE5 + dx))) near.push([dy, dx]);
   if (near.length === 1) { p.latE5 += near[0][0]; p.lngE5 += near[0][1]; snapped++; }
 }
-const tiles = bucketPolygons(items, origin, POLY.tileDeg);
-let bytes = 0, biggest = { key: "", size: 0 }; const tileCounts = {}; const sizes = new Map();
-for (const [key, tile] of tiles) { const s = JSON.stringify(tile); sizes.set(key, s); const n = Buffer.byteLength(s); bytes += n; if (n > biggest.size) biggest = { key, size: n }; tileCounts[key] = tile.rows.length; }
-const index = { version: 1, source: PARIS_POLYGONS_SOURCE, attribution: PARIS_POLYGONS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: items.length, rectangles: stat.rect, origin, tileDeg: POLY.tileDeg, tiles: tileCounts };
+// Un jeu de tuiles PAR TYPE DE VÉHICULE : la carte ne charge que les types choisis (économie réseau).
+let bytes = 0, biggest = { key: "", size: 0 }, tileTotal = 0; const tileCounts = {}; const sizes = new Map(); const perType = {};
+for (const vehicle of VEHICLE_TYPES) {
+  const group = items.filter((p) => p.vehicle === vehicle);
+  tileCounts[vehicle] = {}; perType[vehicle] = { n: group.length, bytes: 0 };
+  for (const [key, tile] of bucketPolygons(group, origin, POLY.tileDeg)) {
+    const s = JSON.stringify(tile); const n = Buffer.byteLength(s); const id = `${vehicle}/${key}`;
+    sizes.set(id, s); bytes += n; perType[vehicle].bytes += n; tileTotal++; tileCounts[vehicle][key] = tile.rows.length;
+    if (n > biggest.size) biggest = { key: id, size: n };
+  }
+}
+const index = { version: 2, source: PARIS_POLYGONS_SOURCE, attribution: PARIS_POLYGONS_ATTRIBUTION, generatedAt: new Date().toISOString(), count: items.length, rectangles: stat.rect, origin, tileDeg: POLY.tileDeg, tiles: tileCounts };
 const indexText = JSON.stringify(index); bytes += Buffer.byteLength(indexText);
-console.log(`Tuiles : ${tiles.size} · total ${(bytes / 1048576).toFixed(2)} Mo non compressé · plus grosse tuile ${biggest.key} = ${(biggest.size / 1024).toFixed(1)} Ko`);
+console.log(`Tuiles : ${tileTotal} · total ${(bytes / 1048576).toFixed(2)} Mo non compressé · plus grosse tuile ${biggest.key} = ${(biggest.size / 1024).toFixed(1)} Ko`);
+console.log(`Par type : ${VEHICLE_TYPES.map((v) => `${v} ${perType[v].n} contours / ${(perType[v].bytes / 1024).toFixed(0)} Ko`).join(" · ")}`);
 if (anchors) {
   const linked = items.filter((p) => anchors.has(anchorKey(p.latE5, p.lngE5))).length;
   console.log(`Lien avec les emplacements importés (même point E5) : ${linked} contours sur ${items.length} (${((100 * linked) / items.length).toFixed(2)} %), dont ${snapped} recalé(s) d'un E5.`);
@@ -129,9 +141,10 @@ if (anchors) {
 
 if (inspect) { console.log("--inspect : rien n'a été écrit."); process.exit(0); }
 if (biggest.size > 150 * 1024) console.warn("ATTENTION : une tuile dépasse 150 Ko.");
-if (bytes > 5 * 1048576) console.warn("ATTENTION : plus de 5 Mo au total.");
+if (bytes > 6 * 1048576) console.warn("ATTENTION : plus de 6 Mo au total.");
 const dir = path.join(outDir, "polygons");
-fs.mkdirSync(path.join(dir, "tiles"), { recursive: true });
-for (const [key, s] of sizes) fs.writeFileSync(path.join(dir, "tiles", `${key}.json`), s);
+fs.rmSync(path.join(dir, "tiles"), { recursive: true, force: true }); // dossier entièrement généré par cet importeur (ancien format compris)
+for (const v of VEHICLE_TYPES) fs.mkdirSync(path.join(dir, "tiles", v), { recursive: true });
+for (const [id, s] of sizes) fs.writeFileSync(path.join(dir, "tiles", `${id}.json`), s);
 fs.writeFileSync(path.join(dir, "index.json"), indexText);
 console.log(`Écrit dans ${dir}.`);

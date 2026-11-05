@@ -8,6 +8,7 @@
 //
 // Fonctions pures, testées dans api/paris-polygons.test.ts ; utilisées par le site et par `scripts/import-paris-polygons.mjs`.
 import { SPOT_TYPE, interpretRegime, tileKey, toE5 } from "./paris-spots.ts";
+import { vehicleTypesForSpot, type VehicleType } from "./vehicle-types.ts";
 
 export const PARIS_POLYGONS_SOURCE = {
   name: "Stationnement sur voie publique - emprises",
@@ -51,6 +52,11 @@ export function isMotoRegime(prioritaire: string | null | undefined, particulier
 
 /** Emprises importées : celles affichées par défaut (« Voitures et motos »), voiture ordinaire OU deux-roues motorisé. */
 export const isDefaultRegime = (prioritaire: string | null | undefined, particulier: string | null | undefined): boolean => isCarRegime(prioritaire, particulier) || isMotoRegime(prioritaire, particulier);
+
+/** Type de véhicule d'une emprise d'après son régime (voiture, moto, utilitaire/PL = livraison, bus = autocar, vélo), ou null : régime autre ou incertain, jamais importé. */
+export function vehicleOfRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): VehicleType | null {
+  return vehicleTypesForSpot(interpretRegime(prioritaire, particulier).t)[0] ?? null;
+}
 
 /** Une voiture ordinaire peut-elle s'y garer ? MÊME règle que l'affichage par défaut des emplacements (interpretRegime) : payant mixte / rotatif, gratuit. */
 export function isCarRegime(prioritaire: string | null | undefined, particulier: string | null | undefined): boolean {
@@ -135,8 +141,10 @@ export function splitSegments(pts: LngLat[], n: number | null | undefined): Arra
 /** Contenu d'une tuile : lignes [latE5, lngE5, type, places, forme, dLat1, dLng1, dLat2, dLng2, ...] (sommets en millionièmes de degré, relatifs au point d'ancrage). */
 export type PolygonTileFile = { v: 1; rows: number[][] };
 export type PolygonIndex = {
-  version: 1; source: typeof PARIS_POLYGONS_SOURCE | Record<string, string>; attribution: string; generatedAt: string; count: number;
-  origin: { south: number; west: number }; tileDeg: number; tiles: Record<string, number>;
+  version: 2; source: typeof PARIS_POLYGONS_SOURCE | Record<string, string>; attribution: string; generatedAt: string; count: number;
+  origin: { south: number; west: number }; tileDeg: number;
+  /** Nombre de contours par type de véhicule puis par tuile « ix_iy » : un fichier par type et par tuile (`tiles/<type>/<ix>_<iy>.json`), seuls les types choisis sont chargés. */
+  tiles: Record<string, Record<string, number>>;
 };
 export type PolygonInput = { latE5: number; lngE5: number; t: number; places: number; kind: number; ring: LngLat[] };
 
