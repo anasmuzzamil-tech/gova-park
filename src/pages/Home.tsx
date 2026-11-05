@@ -33,6 +33,8 @@ import { WORKS_SOURCE, worksAttribution } from "@contracts/paris-works";
 import { TARIFF_SOURCE, tariffAttribution } from "@contracts/paris-tariffs";
 import { loadTariffs } from "@/lib/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
+import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
+import { nearLabel } from "@/lib/near-label";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
 import { loadLayerIndex } from "@/lib/geo-layers";
@@ -764,6 +766,7 @@ export default function Home() {
     : parisLoad.status === "error" ? "Emplacements de Paris indisponibles pour le moment (réseau)."
     : `${parisLoad.mode === "overview" ? "Zoomez pour voir chaque emplacement." : ""}${parisLoad.truncated ? " Affichage limité aux plus proches du centre." : ""}`.trim();
 
+  const placesNear = nearLabel(filtered.length, { hasPosition: !!userPosition, address: destination?.label });
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />
@@ -839,6 +842,7 @@ export default function Home() {
                 <li><i className="green" />Libre (signalé il y a X min)</li><li><i className="orange" />Peut-être libre</li><li><i className="red" />Prise</li><li><i className="gray" />Place</li>
               </ul>
               <p className="m-diag" onClick={() => void refreshPermissionState()}>Diagnostic position : autorisation {geolocDiag.permission} · dernière erreur {geolocDiag.lastCode ?? "aucune"}{geolocDiag.lastReason ? ` (${geolocDiag.lastReason})` : ""} · précision {geolocDiag.accuracy != null ? `${geolocDiag.accuracy} m (${geolocDiag.attempt})` : "aucune"}</p>
+              <p className="m-diag">{mapDiagLine(getMapDiag())}</p>
               <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
               <p>{PARIS_ATTRIBUTION}</p>
               {parisOn && parisNote && <p>{parisNote}</p>}
@@ -902,9 +906,9 @@ export default function Home() {
               </button>)}
             </div>
           </> : <>
-            <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} aria-label={`${filtered.length} ${filtered.length > 1 ? "places" : "place"} près de ${userPosition ? "vous" : "du centre de la carte"}. ${sheetMode === "closed" ? "Ouvrir la liste" : sheetMode === "half" ? "Agrandir la liste" : "Fermer la liste"}`} onClick={() => setSheetMode((mode) => (mode === "closed" ? "half" : mode === "half" ? "full" : "closed"))}>
+            <button type="button" className="m-sheet-title m-sheet-toggle" aria-expanded={sheetOpen} aria-label={`${placesNear}. ${sheetMode === "closed" ? "Ouvrir la liste" : sheetMode === "half" ? "Agrandir la liste" : "Fermer la liste"}`} onClick={() => setSheetMode((mode) => (mode === "closed" ? "half" : mode === "half" ? "full" : "closed"))}>
               <i className="m-grip" aria-hidden="true" />
-              <b>{filtered.length} {filtered.length > 1 ? "places" : "place"} près de {userPosition ? "vous" : "du centre"}</b>
+              <b>{placesNear}</b>
               <span aria-hidden="true">{sheetMode === "full" ? <ChevronDown size={20} /> : <ChevronUp size={20} />}</span>
             </button>
             <div className="m-cards" hidden={!sheetOpen}>

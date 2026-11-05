@@ -11,11 +11,13 @@ import { loadParisPolygons } from "@/lib/paris-polygons";
 import { LAYER, layerVisible, toGeoJson, type DecodedFeature } from "@contracts/geo-layers";
 import { loadLayer } from "@/lib/geo-layers";
 import { isWorkActive } from "@contracts/paris-works";
+import { mapDiag } from "@/lib/map-diag";
 import { zfeLine } from "@contracts/paris-zfe";
 import { loadZfe } from "@/lib/paris-zfe";
 import { VEHICLE_SPOT_TYPES, VEHICLE_TYPES } from "@contracts/vehicle-types";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
+
 type Center = { lat: number; lng: number };
 type GpsPosition = Center & { accuracy?: number };
 type RouteService = { id: string; lat: number; lng: number; name: string; kind: "charge" | "rest" | "parking" | "truck" | "restaurant" | "fuel"; detail?: string; price?: number; priceUpdated?: string };
@@ -241,6 +243,7 @@ export default function ParkingMap3D({
   const [zoom, setZoom] = useState(12);
   const [heading, setHeading] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false); // carte toujours pas chargée au bout de 8 s : message discret + bouton
   const [generation, setGeneration] = useState(0); // recréation après une perte de contexte WebGL (iPhone)
   const lastView = useRef<{ center: [number, number]; zoom: number; pitch: number; bearing: number } | null>(null);
   const detailed = zoom >= 14;
@@ -296,6 +299,11 @@ export default function ParkingMap3D({
       return () => { removed = true; window.clearTimeout(retryTimer); };
     }
     mapRef.current = map;
+    mapDiag.map = map; mapDiag.loaded = false; mapDiag.tiles = 0; mapDiag.attempt = attempt;
+    setSlow(false);
+    const slowTimer = window.setTimeout(() => { if (!loaded && !removed) setSlow(true); }, 8000);
+    map.on("data", (e) => { if ((e as { tile?: unknown }).tile) mapDiag.tiles++; });
+    map.on("error", (e) => { const m = (e as unknown as { error?: Error }).error?.message; if (m) mapDiag.lastError = m.slice(0, 160); });
     // Seule une erreur de style (sans tuile ni source) bloque vraiment la carte ; une tuile manquante n'est pas fatale.
     map.on("error", (e) => {
       const ev = e as unknown as { sourceId?: string; tile?: unknown; error?: Error };
@@ -315,9 +323,13 @@ export default function ParkingMap3D({
     map.on("movestart", (e) => { if ((e as { originalEvent?: unknown }).originalEvent) autoFitDone.current = true; });
     map.on("zoomend", () => setZoom(map.getZoom()));
     map.on("moveend", () => { const c = map.getCenter(); lastView.current = { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }; const b = map.getBounds(); cb.current.onMove?.({ lat: c.lat, lng: c.lng }, { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }); });
+    // Une couche qui échoue ne doit jamais empêcher la carte ni les autres couches : chaque étape est protégée.
+    const safe = (label: string, step: () => void) => { try { step(); } catch (error) { console.warn(`[GOVAPARK] Carte : ${label} impossible`, error); mapDiag.lastError = `${label} : ${error instanceof Error ? error.message : String(error)}`.slice(0, 160); } };
     map.on("load", () => {
-      loaded = true;
-      window.clearTimeout(watchdog);
+      loaded = true; mapDiag.loaded = true;
+      window.clearTimeout(watchdog); window.clearTimeout(slowTimer); setSlow(false);
+      safe("redimensionnement", () => map.resize());
+      safe("bâtiments 3D", () => {
       // Bâtiments en volume bien visibles dès le zoom 15 : on renforce la couche du style (hauteur pleine dès z15), sinon on l'ajoute.
       const heightExpr: maplibregl.ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["coalesce", ["get", "render_height"], 9]];
       const baseExpr: maplibregl.ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 14, 0, 15, ["coalesce", ["get", "render_min_height"], 0]];
@@ -340,9 +352,11 @@ export default function ParkingMap3D({
           });
         }
       }
+      });
       // Lumière douce depuis l'avant-gauche pour que les volumes ressortent.
       try { map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.25, position: [1.4, 210, 45] }); } catch { /* facultatif */ }
       // Places en plots 3D colorés (même couleur que les pastilles).
+      safe("couches de base", () => {
       map.addSource("gp-spots", { type: "geojson", data: emptyFc() });
       map.addLayer({
         id: "gp-spots-3d", type: "fill-extrusion", source: "gp-spots", minzoom: 16,
@@ -356,15 +370,16 @@ export default function ParkingMap3D({
       map.on("click", "gp-alts-line", (e) => { const id = e.features?.[0]?.properties?.id; if (id != null) cb.current.onPickRoute?.(String(id)); });
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
-      addPolygonLayers(map);
-      addZfeLayers(map);
-      addWorksLayers(map);
-      addForbiddenLayers(map);
-      addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
-      setZoom(map.getZoom());
+      });
+      safe("couche emprises", () => { addPolygonLayers(map); });
+      safe("couche ZFE", () => { addZfeLayers(map); });
+      safe("couche chantiers", () => { addWorksLayers(map); });
+      safe("couche interdictions", () => { addForbiddenLayers(map); });
+      safe("couche des emplacements", () => { addParisLayers(map, (props) => cb.current.onParisSpot?.(props)); });
+      safe("zoom", () => setZoom(map.getZoom()));
       setReady(true);
     });
-    return () => { removed = true; window.clearTimeout(retryTimer); window.clearTimeout(watchdog); window.clearTimeout(lostTimer); canvas.removeEventListener("webglcontextlost", onLost); canvas.removeEventListener("webglcontextrestored", onRestored); setReady(false); map.remove(); mapRef.current = null; };
+    return () => { removed = true; window.clearTimeout(retryTimer); window.clearTimeout(watchdog); window.clearTimeout(slowTimer); window.clearTimeout(lostTimer); canvas.removeEventListener("webglcontextlost", onLost); canvas.removeEventListener("webglcontextrestored", onRestored); setReady(false); map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, generation]);
 
@@ -721,5 +736,8 @@ export default function ParkingMap3D({
     serviceMarkers.current = made;
   }, [ready, routeServices, fuelStations]);
 
-  return <div ref={container} className="parking-map" />;
+  return <>
+    <div ref={container} className="parking-map" />
+    {slow && !ready && <div className="map3d-notice map3d-slow" role="status"><span>La carte met du temps à charger.</span><button type="button" onClick={() => { setSlow(false); setAttempt((n) => n + 1); }}>Réessayer</button></div>}
+  </>;
 }
