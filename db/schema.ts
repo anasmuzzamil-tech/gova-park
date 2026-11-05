@@ -302,6 +302,8 @@ export const streetReports = mysqlTable("streetReports", {
   latitude: double("latitude").notNull(),
   longitude: double("longitude").notNull(),
   status: mysqlEnum("streetStatus", ["free", "taken"]).notNull(),
+  // Type de véhicule du signalement (migration 0017) : « car » pour les anciennes lignes.
+  vehicleType: mysqlEnum("vehicleType", ["car", "moto", "utility", "bus", "bike"]).default("car").notNull(),
   userId: bigint("userId", { mode: "number", unsigned: true }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   expiresAt: timestamp("expiresAt").notNull(),

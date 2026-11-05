@@ -6,11 +6,14 @@
 //  - « libre » : VERT pendant 5 min, ORANGE de 5 à 10 min, puis la place disparaît de la carte.
 //  - « prise »  : ROUGE pendant 10 min, puis la place disparaît.
 //  - Le signalement le plus récent l'emporte ; des signalements concordants d'utilisateurs différents relèvent la fiabilité.
+//  - Chaque signalement porte un TYPE DE VÉHICULE (voiture, moto, utilitaire/PL, bus, vélo ; décision d'Anas) : le statut d'une place, le compteur et la
+//    fiabilité ne tiennent compte que des signalements du même type. Les anciens signalements sont des voitures.
 //  - Jamais de vert sans signalement récent : aucune DISPONIBILITÉ n'est pré-remplie. Les emplacements officiels de Paris (contracts/paris-spots.ts)
 //    sont affichés en gris « statut inconnu » et ne sont colorés que par un signalement récent. Un signalement n'est jamais une vérité garantie.
 // Fonctions pures, sans dépendance, partagées client/serveur et testées dans api/street-reports.test.ts.
 
 import { STATUS_COLORS, type StatusColor } from "./parking-status";
+import { DEFAULT_VEHICLE, VEHICLE_SHORT, isVehicleType, toVehicleType, type VehicleType } from "./vehicle-types";
 
 export type StreetStatus = "free" | "taken";
 
@@ -50,6 +53,8 @@ export type StreetReportRow = {
   userId: number | string | null;
   createdAt: Date | string;
   expiresAt?: Date | string | null;
+  /** Type de véhicule du signalement (absent = voiture, comme les anciennes lignes). */
+  vehicleType?: VehicleType | null;
 };
 
 export type StreetSpot = {
@@ -72,6 +77,8 @@ export type StreetSpot = {
   agreeing: number;
   /** Vrai pour tout signalement de démonstration (mode démo, sans base). */
   example: boolean;
+  /** Type de véhicule du signalement. */
+  vehicleType: VehicleType;
 };
 
 export type StreetBBox = { south: number; north: number; west: number; east: number };
@@ -116,7 +123,8 @@ export function clusterReports(rows: StreetReportRow[], now: Date): StreetReport
   const active = rows.filter((r) => isActive(r, now)).sort((a, b) => ms(b.createdAt) - ms(a.createdAt) || b.id - a.id);
   const clusters: StreetReportRow[][] = [];
   for (const row of active) {
-    const home = clusters.find((c) => distanceMeters(c[0].latitude, c[0].longitude, row.latitude, row.longitude) <= STREET_RULES.sameSpotMeters);
+    // Un signalement moto et un signalement voiture au même endroit sont deux places différentes : jamais regroupés.
+    const home = clusters.find((c) => toVehicleType(c[0].vehicleType) === toVehicleType(row.vehicleType) && distanceMeters(c[0].latitude, c[0].longitude, row.latitude, row.longitude) <= STREET_RULES.sameSpotMeters);
     if (home) home.push(row); else clusters.push([row]);
   }
   return clusters;
@@ -174,7 +182,7 @@ export function spotFromCluster(cluster: StreetReportRow[], now: Date, example =
   return {
     id: head.id, latitude: head.latitude, longitude: head.longitude, status: head.status, color, label, detail,
     source: STREET_SOURCE, reportedAt: new Date(created).toISOString(), expiresAt: expires.toISOString(), ageMinutes: age, agoText: agoText(age),
-    reliabilityPct: rel.pct, reliability: level, reliabilityText: `${reliabilityWord[level]} (${rel.pct} %)`, agreeing: rel.agreeing, example,
+    reliabilityPct: rel.pct, reliability: level, reliabilityText: `${reliabilityWord[level]} (${rel.pct} %)`, agreeing: rel.agreeing, example, vehicleType: toVehicleType(head.vehicleType),
   };
 }
 
@@ -184,12 +192,15 @@ export function spotFromCluster(cluster: StreetReportRow[], now: Date, example =
  * (qui peut dater de quelques secondes). Retourne 0 s'il n'y a aucun signalement : jamais de nombre inventé.
  */
 export function countFreeNearby(
-  spots: Array<{ status: StreetStatus; latitude: number; longitude: number; reportedAt: string; example?: boolean }>,
+  spots: Array<{ status: StreetStatus; latitude: number; longitude: number; reportedAt: string; example?: boolean; vehicleType?: VehicleType | null }>,
   ref: { lat: number; lng: number }, now: Date, radiusMeters: number = STREET_RULES.nearbyRadiusMeters,
+  /** Si fourni : seuls les signalements de ce type de véhicule comptent (un signalement moto n'entre pas dans le compteur d'une voiture). */
+  vehicle?: VehicleType,
 ): { count: number; examples: number } {
   let count = 0, examples = 0;
   for (const s of spots) {
     if (s.status !== "free") continue;
+    if (vehicle && toVehicleType(s.vehicleType) !== vehicle) continue;
     const created = ms(s.reportedAt);
     if (!Number.isFinite(created) || created > now.getTime() + minute) continue;
     if (now.getTime() - created >= STREET_RULES.greenMinutes * minute) continue;
@@ -231,7 +242,7 @@ export function checkReportRate(recent: Array<{ latitude: number; longitude: num
 
 // ---------- Validation stricte des entrées (aucune dépendance : lève une Error au message français) ----------
 
-export type StreetReportInput = { status: StreetStatus; latitude: number; longitude: number; deviceLatitude: number; deviceLongitude: number };
+export type StreetReportInput = { status: StreetStatus; vehicleType: VehicleType; latitude: number; longitude: number; deviceLatitude: number; deviceLongitude: number };
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 function coord(obj: Record<string, unknown>, key: string, min: number, max: number, name: string): number {
@@ -246,11 +257,13 @@ const asObject = (raw: unknown): Record<string, unknown> => {
 
 export function parseStreetReportInput(raw: unknown): StreetReportInput {
   const o = asObject(raw);
-  const allowed = new Set(["status", "latitude", "longitude", "deviceLatitude", "deviceLongitude"]);
+  const allowed = new Set(["status", "vehicleType", "latitude", "longitude", "deviceLatitude", "deviceLongitude"]);
   if (Object.keys(o).some((k) => !allowed.has(k))) throw new Error("Champs non autorisés.");
   if (o.status !== "free" && o.status !== "taken") throw new Error("Statut invalide.");
+  // Absent : voiture (anciens clients). Présent : doit être exactement l'un des cinq types.
+  if (o.vehicleType !== undefined && !isVehicleType(o.vehicleType)) throw new Error("Type de véhicule invalide.");
   return {
-    status: o.status,
+    status: o.status, vehicleType: o.vehicleType ?? DEFAULT_VEHICLE,
     latitude: coord(o, "latitude", -90, 90, "Latitude"), longitude: coord(o, "longitude", -180, 180, "Longitude"),
     deviceLatitude: coord(o, "deviceLatitude", -90, 90, "Latitude de l'appareil"), deviceLongitude: coord(o, "deviceLongitude", -180, 180, "Longitude de l'appareil"),
   };
@@ -276,7 +289,7 @@ export function parseStreetListInput(raw: unknown): StreetListInput {
 
 export type StreetPrepared =
   | { ok: false; code: "BAD_REQUEST" | "TOO_MANY_REQUESTS"; message: string }
-  | { ok: true; row: { status: StreetStatus; latitude: number; longitude: number; createdAt: Date; expiresAt: Date; reliability: number } };
+  | { ok: true; row: { status: StreetStatus; vehicleType: VehicleType; latitude: number; longitude: number; createdAt: Date; expiresAt: Date; reliability: number } };
 
 /**
  * Vérifie la distance à l'appareil et la limite d'une fois par minute et par zone, puis fabrique la ligne à enregistrer
@@ -290,18 +303,19 @@ export function prepareStreetReport(
   if (!dist.ok) return { ok: false, code: "BAD_REQUEST", message: `Vous devez être à moins de ${STREET_RULES.deviceMaxMeters} m de la place pour la signaler (vous en êtes à environ ${Math.round(dist.meters)} m).` };
   const rate = checkReportRate(recentOwn, input, now);
   if (!rate.ok) return { ok: false, code: "TOO_MANY_REQUESTS", message: `Un seul signalement par minute dans la même zone. Réessayez dans ${rate.retryAfterSeconds} s.` };
-  const draft: StreetReportRow = { id: 0, latitude: input.latitude, longitude: input.longitude, status: input.status, userId: authorId, createdAt: now };
+  const draft: StreetReportRow = { id: 0, latitude: input.latitude, longitude: input.longitude, status: input.status, vehicleType: input.vehicleType, userId: authorId, createdAt: now };
   const cluster = clusterReports([draft, ...nearby], now).find((c) => c.some((r) => r.id === 0));
   const reliability = cluster ? clusterReliability(cluster).pct : 50;
-  return { ok: true, row: { status: input.status, latitude: input.latitude, longitude: input.longitude, createdAt: now, expiresAt: expiresAtFor(input.status, now), reliability } };
+  return { ok: true, row: { status: input.status, vehicleType: input.vehicleType, latitude: input.latitude, longitude: input.longitude, createdAt: now, expiresAt: expiresAtFor(input.status, now), reliability } };
 }
 
 export const STREET_COLORS = STATUS_COLORS;
 
 /** Confirmation affichée après l'envoi d'un signalement (jamais présenté comme une vérité garantie ; « exemple » en démo). */
-export function reportSuccessText(status: StreetStatus, example: boolean): string {
+export function reportSuccessText(status: StreetStatus, example: boolean, vehicle: VehicleType = DEFAULT_VEHICLE): string {
   const free = status === "free";
+  const place = vehicle === DEFAULT_VEHICLE ? "place" : `place ${VEHICLE_SHORT[vehicle]}`;
   const life = free ? `verte ${STREET_RULES.greenMinutes} min, puis orange jusqu'à ${STREET_RULES.freeMaxMinutes} min` : `rouge ${STREET_RULES.takenMaxMinutes} min`;
-  if (example) return `Exemple (mode démo) : place signalée ${free ? "libre" : "prise"}, ${life}. Ce n'est pas un vrai signalement.`;
-  return `Merci, place signalée ${free ? "libre" : "prise"} : ${life}.`;
+  if (example) return `Exemple (mode démo) : ${place} signalée ${free ? "libre" : "prise"}, ${life}. Ce n'est pas un vrai signalement.`;
+  return `Merci, ${place} signalée ${free ? "libre" : "prise"} : ${life}.`;
 }

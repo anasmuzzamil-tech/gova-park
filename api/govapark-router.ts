@@ -359,7 +359,7 @@ export const govaparkRouter = createRouter({
         gte(streetReports.latitude, bbox.south - margin), lte(streetReports.latitude, bbox.north + margin),
         gte(streetReports.longitude, bbox.west - margin), lte(streetReports.longitude, bbox.east + margin),
       )).orderBy(desc(streetReports.createdAt)).limit(1000);
-      const mapped: StreetReportRow[] = rows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
+      const mapped: StreetReportRow[] = rows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, vehicleType: r.vehicleType, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
       return { serverNow: now, spots: resolveStreetSpots(mapped, bbox, limit, now, false) };
     }),
     // Connexion requise (en démo : visiteur démo). Dates et expiration calculées ici, jamais fournies par le client.
@@ -378,7 +378,7 @@ export const govaparkRouter = createRouter({
         gte(streetReports.latitude, input.latitude - 0.0005), lte(streetReports.latitude, input.latitude + 0.0005),
         gte(streetReports.longitude, input.longitude - 0.001), lte(streetReports.longitude, input.longitude + 0.001),
       )).limit(100);
-      const nearby: StreetReportRow[] = nearbyRows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
+      const nearby: StreetReportRow[] = nearbyRows.map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, vehicleType: r.vehicleType, userId: r.userId, createdAt: r.createdAt, expiresAt: r.expiresAt }));
       const prepared = prepareStreetReport(input, ctx.user.id, recentOwn, nearby, now);
       if (!prepared.ok) throw new TRPCError({ code: prepared.code, message: prepared.message });
       const [created] = await db.insert(streetReports).values({ ...prepared.row, userId: ctx.user.id }).$returningId();

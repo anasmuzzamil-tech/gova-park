@@ -15,6 +15,8 @@ export const DEFAULT_VEHICLE: VehicleType = "car";
 /** Texte court des puces de la carte. */
 export const VEHICLE_CHIP: Record<VehicleType, string> = { car: "Voiture", moto: "Moto", utility: "Utilitaire/PL", bus: "Bus", bike: "Vélo" };
 /** Précision pour les puces et les confirmations (jamais plus qu'une étiquette). */
+/** Nom court pour les confirmations (« place moto signalée libre »). */
+export const VEHICLE_SHORT: Record<VehicleType, string> = { car: "voiture", moto: "moto", utility: "utilitaire/PL", bus: "bus", bike: "vélo" };
 export const VEHICLE_NAME: Record<VehicleType, string> = { car: "voiture", moto: "moto ou scooter", utility: "utilitaire ou poids lourd", bus: "bus ou autocar", bike: "vélo" };
 /** Texte du bouton « Je me gare » : le véhicule entre parenthèses, sauf pour la voiture (cas courant). */
 export const VEHICLE_PARK_SUFFIX: Record<VehicleType, string> = { car: "", moto: " (moto)", utility: " (PL)", bus: " (bus)", bike: " (vélo)" };

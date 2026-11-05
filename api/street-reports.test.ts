@@ -140,8 +140,69 @@ describe("places en rue : anti-spam", () => {
   });
 });
 
+describe("signalements par type de véhicule", () => {
+  const rows = [report({ id: 1, vehicleType: "car", status: "free", createdAt: minutesAgo(1) }), report({ id: 2, vehicleType: "moto", status: "taken", createdAt: minutesAgo(2) })];
+  it("un signalement moto et un signalement voiture au même endroit sont deux places distinctes, chacune avec son statut", () => {
+    const list = spots(rows);
+    expect(list).toHaveLength(2);
+    expect(list.find((x) => x.vehicleType === "car")).toMatchObject({ color: "green", status: "free" });
+    expect(list.find((x) => x.vehicleType === "moto")).toMatchObject({ color: "red", status: "taken" });
+  });
+  it("sans type, un signalement est une voiture (anciennes lignes)", () => {
+    const [s] = spots([report({})]);
+    expect(s.vehicleType).toBe("car");
+  });
+  it("la fiabilité ne compte que les signalements du même type", () => {
+    const list = spots([report({ id: 1, userId: 1, vehicleType: "moto" }), report({ id: 2, userId: 2, vehicleType: "car" })]);
+    expect(list.every((x) => x.agreeing === 1 && x.reliabilityPct === 50)).toBe(true);
+  });
+  it("les règles de couleur restent celles de la voiture pour tous les types : vert 5 min, orange jusqu'à 10 min, puis disparition", () => {
+    for (const v of ["car", "moto", "utility", "bus", "bike"] as const) {
+      expect(spots([report({ vehicleType: v, createdAt: minutesAgo(4) })])[0].color).toBe("green");
+      expect(spots([report({ vehicleType: v, createdAt: minutesAgo(7) })])[0].color).toBe("orange");
+      expect(spots([report({ vehicleType: v, createdAt: minutesAgo(10) })])).toEqual([]);
+      expect(spots([report({ vehicleType: v, status: "taken", createdAt: minutesAgo(9) })])[0].color).toBe("red");
+    }
+  });
+  it("compteur : seuls les signalements libres du type choisi comptent", () => {
+    const list = [
+      { status: "free" as const, ...P, reportedAt: minutesAgo(1).toISOString(), vehicleType: "moto" as const },
+      { status: "free" as const, ...P, reportedAt: minutesAgo(1).toISOString(), vehicleType: "car" as const },
+      { status: "free" as const, ...P, reportedAt: minutesAgo(2).toISOString() },
+      { status: "taken" as const, ...P, reportedAt: minutesAgo(1).toISOString(), vehicleType: "moto" as const },
+    ];
+    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "moto").count).toBe(1);
+    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "car").count).toBe(2);
+    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now, 500, "bus").count).toBe(0);
+    expect(countFreeNearby(list, { lat: P.latitude, lng: P.longitude }, now).count).toBe(3);
+  });
+  it("validation stricte : les cinq types sont acceptés, tout le reste refusé, absent = voiture", () => {
+    const base = { status: "free", ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
+    for (const v of ["car", "moto", "utility", "bus", "bike"]) expect(parseStreetReportInput({ ...base, vehicleType: v }).vehicleType).toBe(v);
+    expect(parseStreetReportInput(base).vehicleType).toBe("car");
+    for (const bad of ["truck", "CAR", "", null, 1, {}, ["car"], "car "]) expect(() => parseStreetReportInput({ ...base, vehicleType: bad }), String(bad)).toThrow();
+  });
+  it("le type est enregistré dans la ligne préparée et sert au calcul de fiabilité (voisins d'un autre type ignorés)", () => {
+    const input = { status: "free" as const, vehicleType: "moto" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
+    const p = prepareStreetReport(input, 7, [], [report({ id: 5, userId: 9, vehicleType: "car", createdAt: minutesAgo(2) })], now);
+    expect(p.ok).toBe(true);
+    if (p.ok) { expect(p.row.vehicleType).toBe("moto"); expect(p.row.reliability).toBe(50); }
+  });
+  it("anti-abus inchangé : même limite d'une fois par minute quel que soit le type", () => {
+    const input = { status: "free" as const, vehicleType: "bus" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
+    expect(prepareStreetReport(input, 7, [{ ...P, createdAt: new Date(now.getTime() - 10000) }], [], now).ok).toBe(false);
+    expect(prepareStreetReport({ ...input, ...metersNorth(200), deviceLatitude: P.latitude + 200 / 111320 }, 7, [{ ...P, createdAt: new Date(now.getTime() - 10000) }], [], now).ok).toBe(true);
+  });
+  it("confirmations : la voiture garde son texte, les autres types sont nommés", () => {
+    expect(reportSuccessText("free", false, "moto")).toBe("Merci, place moto signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
+    expect(reportSuccessText("taken", false, "utility")).toBe("Merci, place utilitaire/PL signalée prise : rouge 10 min.");
+    expect(reportSuccessText("free", true, "bike")).toContain("place vélo signalée libre");
+    expect(reportSuccessText("free", false)).toBe("Merci, place signalée libre : verte 5 min, puis orange jusqu'à 10 min.");
+  });
+});
+
 describe("places en rue : création d'un signalement", () => {
-  const input = { status: "free" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
+  const input = { status: "free" as const, vehicleType: "car" as const, ...P, deviceLatitude: P.latitude, deviceLongitude: P.longitude };
   it("signalement valide : dates et expiration calculées côté serveur, fiabilité 50", () => {
     const p = prepareStreetReport(input, 7, [], [], now);
     expect(p.ok).toBe(true);
