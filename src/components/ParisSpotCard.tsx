@@ -2,6 +2,7 @@ import { Navigation } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { STATUS_COLORS } from "@contracts/parking-status";
 import { PARIS_SOURCE, describeParisSpot, interpretRegime } from "@contracts/paris-spots";
+import { PARIS_POLYGONS_NOTE } from "@contracts/paris-polygons";
 import { STREET_RULES, distanceMeters } from "@contracts/street-reports";
 
 export type ParisSpotInfo = { lat: number; lng: number; t: number; places: number; regime: number; street: string; num: number; color: string; reportId: number };
@@ -32,6 +33,7 @@ export function ParisSpotCard({ spot, regimes, report, device, onGo, onReport, o
         <p className="pf-places">{card.places}</p>
         {card.note && <p className="pf-note">{card.note}</p>}
         <p className="pf-status"><span className="report-status-dot" style={{ background: dot }} />{card.status}</p>
+        <p className="pf-source">{PARIS_POLYGONS_NOTE}</p>
         <p className="pf-source">Source : {PARIS_SOURCE.producer}, licence {PARIS_SOURCE.license}</p>
         <button className="btn btn-secondary btn-full" onClick={onGo}><Navigation size={18} />Y aller</button>
         {card.carsOk && near && <div className="pf-report">

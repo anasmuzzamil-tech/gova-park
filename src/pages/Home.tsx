@@ -22,6 +22,7 @@ import { fetchOsrmRoute } from "@/lib/routing";
 import { loadParisSpots, type ParisLoad } from "@/lib/paris-spots";
 import { DEFAULT_SPOT_TYPES, PARIS_ATTRIBUTION, PARIS_SOURCE, SPOT_TYPE_CODES, SPOT_TYPE_LABEL, formatStreet, interpretRegime, mergeWithReports, type OfficialSpot, type ParisSpot } from "@contracts/paris-spots";
 import { StreetPanel, type StreetPanelState } from "@/components/StreetPanel";
+import { PARIS_POLYGONS_ATTRIBUTION, PARIS_POLYGONS_NOTE, PARIS_POLYGONS_SOURCE } from "@contracts/paris-polygons";
 import { ParisSpotCard, type ParisSpotInfo } from "@/components/ParisSpotCard";
 import { OfflineBanner, OfflineDownloadModal } from "@/components/OfflineUI";
 import { loadPlaces, offlineStatus, savePlaces, straightLineKm, useOnlineStatus } from "@/lib/offline";
@@ -709,7 +710,7 @@ export default function Home() {
           </div>}
           {map3dFail ? <ParkingMap {...mapProps} /> : (
             <Map3DBoundary key={map3dKey} fallback={<ParkingMap {...mapProps} />} onError={() => setMap3dFail("load")}>
-              <Suspense fallback={null}><ParkingMap3D {...mapProps} onUnavailable={() => setMap3dFail("load")} /></Suspense>
+              <Suspense fallback={null}><ParkingMap3D {...mapProps} polygonsOn={parisOn} polygonTypes={parisTypes} onUnavailable={() => setMap3dFail("load")} /></Suspense>
             </Map3DBoundary>
           )}
         </div>
@@ -766,7 +767,10 @@ export default function Home() {
               <p>Chercher des places ne demande aucune position. Seuls « Je libère » et « Je me gare » utilisent celle de votre appareil.</p>
               <p>{PARIS_ATTRIBUTION}</p>
               {parisOn && parisNote && <p>{parisNote}</p>}
+              {parisOn && <p>{PARIS_POLYGONS_NOTE}</p>}
+              {parisOn && <p>{PARIS_POLYGONS_ATTRIBUTION}</p>}
               <a href={PARIS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source : data.gouv.fr</a>
+              {parisOn && <a href={PARIS_POLYGONS_SOURCE.url} target="_blank" rel="noopener noreferrer">Source des contours : data.gouv.fr</a>}
               <button type="button" className="m-info-close" onClick={() => setInfoOpen(false)} aria-label="Fermer la légende"><X size={18} /></button>
             </div>}
           </div>

@@ -1,11 +1,13 @@
 import { bearingBetween, carBadgeTransform, metersBetween } from "@/lib/heading";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { MapListing, MapReport, MapStreetSpot, MapBounds } from "./ParkingMap";
 import { clusterPoints } from "@/lib/cluster";
 import { STATUS_COLORS } from "@contracts/parking-status";
-import { SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
+import { DEFAULT_SPOT_TYPES, SPOT_TYPE_CODES, SPOT_TYPE_GLYPH, type ParisSpot } from "@contracts/paris-spots";
+import { POLY, buildPolygonFeatures, polygonsVisible, spotAnchorKey, type ParisPolygon, type PolygonColor } from "@contracts/paris-polygons";
+import { loadParisPolygons } from "@/lib/paris-polygons";
 
 export type { MapListing, MapReport, MapStreetSpot, MapBounds };
 type Center = { lat: number; lng: number };
@@ -19,6 +21,7 @@ const DRIVE_PITCH = 60;
 const FLAT_PITCH = 0;
 const START_ZOOM = 15;
 const PLOT_COLORS: Record<string, string> = { ...STATUS_COLORS, blue: "#2f6df6" };
+const DEFAULT_POLYGON_TYPES: ReadonlySet<number> = new Set(DEFAULT_SPOT_TYPES);
 
 // Place en « plot » 3D : petit rectangle (environ 6 m x 3 m) autour de la position, extrudé par MapLibre.
 function plotPolygon(lat: number, lng: number): GeoJSON.Polygon {
@@ -77,6 +80,22 @@ function parisIcon(color: string, glyph: string): ImageData | null {
   g.fillStyle = "#ffffff"; g.font = `800 ${glyph.length > 1 ? 21 : 34}px Manrope, system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(glyph, size / 2, size / 2 + 2);
   return g.getImageData(0, 0, size, size);
 }
+// Contours des emprises en POINTILLÉS (zoom rue) et séparateurs INDICATIFS : sous les icônes et les compteurs, couleur = statut d'un signalement récent, sinon gris.
+const colorByStatus = (): maplibregl.ExpressionSpecification => ["match", ["get", "c"], "green", STATUS_COLORS.green, "orange", STATUS_COLORS.orange, "red", STATUS_COLORS.red, "#6b7080"] as maplibregl.ExpressionSpecification;
+function addPolygonLayers(map: maplibregl.Map) {
+  try {
+    map.addSource("gp-poly", { type: "geojson", data: emptyFc() });
+    map.addSource("gp-poly-sep", { type: "geojson", data: emptyFc() });
+    map.addLayer({
+      id: "gp-poly-line", type: "line", source: "gp-poly", minzoom: POLY.minZoom, layout: { "line-join": "round" },
+      paint: { "line-color": colorByStatus(), "line-width": ["interpolate", ["linear"], ["zoom"], 17, 0.9, 19, 1.8] as maplibregl.ExpressionSpecification, "line-opacity": 0.95, "line-dasharray": [2, 1.5] },
+    });
+    map.addLayer({
+      id: "gp-poly-sep-line", type: "line", source: "gp-poly-sep", minzoom: POLY.minZoom,
+      paint: { "line-color": colorByStatus(), "line-width": ["interpolate", ["linear"], ["zoom"], 17, 0.7, 19, 1.4] as maplibregl.ExpressionSpecification, "line-opacity": 0.85, "line-dasharray": [1.5, 1.5] },
+    });
+  } catch (error) { console.warn("[GOVAPARK] Couche des contours d'emprises impossible", error); }
+}
 export type ParisPick = { lat: number; lng: number; t: number; reportId: number; color: string; places: number; regime: number; street: string; num: number };
 function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void) {
   try {
@@ -107,10 +126,11 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
         "icon-image": icon, "icon-size": iconSize, "icon-allow-overlap": false, "icon-padding": 3, "symbol-sort-key": ["*", -1, ["get", "w"]],
         "text-field": placesText, "text-font": ["Noto Sans Bold"], "text-size": 11, "text-anchor": "left", "text-offset": [1.15, 0], "text-optional": true, "text-allow-overlap": false,
       } as maplibregl.SymbolLayerSpecification["layout"],
-      paint: { "text-color": "#17142b", "text-halo-color": "#ffffff", "text-halo-width": 1.6 },
+      paint: { "text-color": "#17142b", "text-halo-color": "#ffffff", "text-halo-width": 1.6, "icon-opacity": ["case", ["==", ["get", "o"], 1], 0, 1] as maplibregl.ExpressionSpecification },
     });
     // Emplacements colorés par un signalement : toujours visibles (par-dessus), jamais masqués par la collision.
-    map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { "icon-image": icon, "icon-size": iconSize, "icon-allow-overlap": true } as maplibregl.SymbolLayerSpecification["layout"] });
+    // Quand le contour d'un emplacement est dessiné (zoom rue, propriété « o »), son icône en doublon est masquée (le nombre de places reste affiché) ; l'icône d'un emplacement coloré reste, plus discrète.
+    map.addLayer({ id: "gp-paris-hot-point", type: "symbol", source: "gp-paris-hot", layout: { "icon-image": icon, "icon-size": iconSize, "icon-allow-overlap": true } as maplibregl.SymbolLayerSpecification["layout"], paint: { "icon-opacity": ["case", ["==", ["get", "o"], 1], 0.65, 1] as maplibregl.ExpressionSpecification } });
     map.on("click", "gp-paris-cluster", async (e) => {
       const f = e.features?.[0]; if (!f || f.geometry.type !== "Point") return;
       try {
@@ -135,7 +155,7 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, listings, reports, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
@@ -146,6 +166,8 @@ export default function ParkingMap3D({
   onStreetSpot?: (spot: MapStreetSpot) => void;
   /** Emplacements officiels de Paris (gris, regroupés) et ceux colorés par un signalement (jamais regroupés). */
   parisSpots?: ParisSpot[]; parisHot?: ParisSpot[]; onParisSpot?: (spot: ParisPick) => void;
+  /** Contours en pointillés des emprises de Paris (zoom rue seulement) : couche active et types cochés (le filtre « Voitures seulement / Tout afficher »). Carte 3D uniquement. */
+  polygonsOn?: boolean; polygonTypes?: ReadonlySet<number>;
   confirmedIds: Set<number>;
   onListing: (id: number) => void;
   onBook: (id: number) => void;
@@ -283,6 +305,7 @@ export default function ParkingMap3D({
       map.on("click", "gp-alts-line", (e) => { const id = e.features?.[0]?.properties?.id; if (id != null) cb.current.onPickRoute?.(String(id)); });
       map.on("mouseenter", "gp-alts-line", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "gp-alts-line", () => { map.getCanvas().style.cursor = ""; });
+      addPolygonLayers(map);
       addParisLayers(map, (props) => cb.current.onParisSpot?.(props));
       setZoom(map.getZoom());
       setReady(true);
@@ -506,14 +529,50 @@ export default function ParkingMap3D({
     });
   }, [ready, streetSpots]);
 
+  // Contours des emprises : à partir du zoom rue, seulement les tuiles visibles (avec limite), rechargées après chaque déplacement.
+  const [polys, setPolys] = useState<ParisPolygon[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let cancelled = false, timer: number | undefined;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        if (!polygonsVisible(map.getZoom(), polygonsOn)) { if (!cancelled) setPolys((previous) => (previous.length ? [] : previous)); return; }
+        const b = map.getBounds(), c = map.getCenter();
+        const result = await loadParisPolygons({ south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }, { lat: c.lat, lng: c.lng });
+        if (!cancelled) setPolys(result.status === "ok" ? result.polys : []);
+      }, 250);
+    };
+    map.on("moveend", refresh); refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); map.off("moveend", refresh); };
+  }, [ready, polygonsOn]);
+  // Entités dessinées : filtre de types, couleur d'un signalement récent via le point d'ancrage (emplacement correspondant), sinon gris.
+  const polygonFeatures = useMemo(() => {
+    const colorOf = new Map<string, PolygonColor>();
+    for (const s of parisHot) if (s.color !== "gray") colorOf.set(spotAnchorKey(s.lat, s.lng), s.color);
+    return buildPolygonFeatures(polys, colorOf, polygonTypes);
+  }, [polys, parisHot, polygonTypes]);
+  const drawnAnchors = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of polys) if (polygonTypes.has(p.t) && p.ring.length >= 3) set.add(p.anchor);
+    return set;
+  }, [polys, polygonTypes]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource("gp-poly") as maplibregl.GeoJSONSource | undefined)?.setData(polygonFeatures.outlines);
+    (map.getSource("gp-poly-sep") as maplibregl.GeoJSONSource | undefined)?.setData(polygonFeatures.separators);
+  }, [ready, polygonFeatures]);
+
   // Emplacements officiels de Paris : regroupement natif MapLibre (gris, jamais de disponibilité) + emplacements colorés par un signalement.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const feature = (s: ParisSpot): GeoJSON.Feature<GeoJSON.Point> => ({ type: "Feature", properties: { w: s.places, a: s.agg ? 1 : 0, p: s.places, t: s.t, c: s.color, r: s.reportId, g: s.g, s: s.street, u: s.num }, geometry: { type: "Point", coordinates: [s.lng, s.lat] } });
+    const feature = (s: ParisSpot): GeoJSON.Feature<GeoJSON.Point> => ({ type: "Feature", properties: { w: s.places, a: s.agg ? 1 : 0, p: s.places, t: s.t, c: s.color, r: s.reportId, g: s.g, s: s.street, u: s.num, o: !s.agg && drawnAnchors.has(spotAnchorKey(s.lat, s.lng)) ? 1 : 0 }, geometry: { type: "Point", coordinates: [s.lng, s.lat] } });
     (map.getSource("gp-paris") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisSpots.map(feature) });
     (map.getSource("gp-paris-hot") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisHot.map(feature) });
-  }, [ready, parisSpots, parisHot]);
+  }, [ready, parisSpots, parisHot, drawnAnchors]);
 
   // Stations et services du trajet.
   useEffect(() => {
