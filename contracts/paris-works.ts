@@ -3,7 +3,8 @@
 // Ce que dit la donnée : des POLYGONES (saisis à la main) des périmètres où la circulation est perturbée par un chantier principal. NON EXHAUSTIF.
 // Mise à jour « quotidienne » annoncée mais NON TENUE (dernière : 5 juillet 2026) : la donnée peut être PÉRIMÉE. Aucune promesse d'exhaustivité ni d'actualité :
 // la date des données est toujours affichée dans le panneau « i », et un chantier dont la date de fin prévue est passée n'est ni dessiné ni cité dans une fiche.
-// Colonnes lues (noms repérés dans des exploitations publiques du jeu, NON VÉRIFIÉS ici faute de téléchargement) : voie, cp_arrondissement, maitre_ouvrage, objet, date_debut, date_fin, impact_circulation, geo_shape.
+// Colonnes lues, VÉRIFIÉES sur le fichier réel reçu le 05/11/2026 (CSV « ; », 106 lignes, 19 colonnes) : voie, cp_arrondissement, maitre_ouvrage, objet, date_debut, date_fin, impact_circulation, geo_shape.
+// Valeurs réelles de impact_circulation : RESTREINTE 83, SENS_UNIQUE 8, BARRAGE_TOTAL 3, IMPASSE 2, vide 10 (voir impactPhrase). Dates au format AAAA-MM-JJ.
 // Rien n'est lu comme une disponibilité : la couleur d'une place ne dépend jamais de ce fichier.
 //
 // Fonctions pures, testées dans api/paris-works.test.ts ; utilisées par le site et par `scripts/import-paris-works.mjs`.
@@ -20,10 +21,10 @@ export const WORKS_SOURCE = {
 /** Ordre des attributs d'une entité dans les tuiles. */
 export const WORK_PROP = { voie: 0, objet: 1, impact: 2, debut: 3, fin: 4, maitre: 5, arrondissement: 6 } as const;
 
-/** Mention du panneau « i » : source, licence, date des données, non-exhaustivité, péremption possible. Jamais en bandeau sur la carte. */
+/** Mention du panneau « i » : source, licence, date de réception de l'export (le fichier ne donne pas sa date d'export), non-exhaustivité, péremption possible. Jamais en bandeau sur la carte. */
 export function worksAttribution(dataDate: string | null | undefined): string {
   const d = formatDataDate(dataDate);
-  return `Chantiers : Ville de Paris, « Paris - Chantiers perturbants la circulation », licence ODbL, ${d ? `données du ${d}` : "date des données non renseignée"}. Non exhaustif ; la mise à jour quotidienne annoncée n'est pas tenue : ces chantiers peuvent être terminés ou manquer.`;
+  return `Chantiers : Ville de Paris, « Paris - Chantiers perturbants la circulation », licence ODbL, ${d ? `export reçu le ${d}` : "date de l'export non renseignée"} (le fichier ne donne pas sa date d'export). Non exhaustif ; ces chantiers peuvent être terminés, prolongés ou manquer.`;
 }
 
 /** Distance (mètres) sous laquelle une place est dite « près d'un chantier » (à l'intérieur du périmètre : 0). */
@@ -47,19 +48,33 @@ const clean = (raw: unknown, max = 80): string | null => {
   return t && t.length <= max && !/^[[{]/.test(t) ? t : null;
 };
 
+/** Adresse saisie à la main : retire le bruit de fin réel du fichier (« 75010_ », « - 75014 - », point final), sans toucher au reste. « 75010_ » devient rien, « rue X 75018 » devient « rue X ». */
+export function cleanVoie(raw: unknown): string | null {
+  const t = clean(raw);
+  if (!t) return null;
+  const v = t.replace(/[\s\-_.]*(?:\b75\d{3})?[\s\-_.]*$/, "").trim();
+  return v || null;
+}
+
 /** Texte publié rendu lisible : « CREATION_RESEAUX » devient « creation reseaux » (minuscules, tirets bas retirés). Aucune traduction ni accent n'est deviné. */
 export function readable(code: string | null): string | null {
   if (!code) return null;
   return code.replace(/_/g, " ").toLowerCase();
 }
 
-/** Phrase d'impact d'après la colonne impact_circulation ; valeur inconnue : texte publié (« impact : … »), jamais une promesse sur la voie. */
+/** Libellés lisibles des valeurs RÉELLES de impact_circulation (fichier du 05/11/2026), formulation décidée par Anas. */
+export const IMPACT_LABELS: Readonly<Record<string, string>> = {
+  RESTREINTE: "Voie partiellement fermée",
+  SENS_UNIQUE: "Sens unique",
+  BARRAGE_TOTAL: "Rue fermée",
+  IMPASSE: "Impasse",
+};
+
+/** Phrase d'impact d'après la colonne impact_circulation ; valeur absente : phrase générale ; valeur jamais vue : texte publié (« impact : … »), jamais une promesse sur la voie. */
 export function impactPhrase(impact: string | null): string {
   if (!impact) return "chantier perturbant la circulation";
-  const k = impact.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z]+/g, "_");
-  if (k === "RESTREINTE") return "circulation restreinte";
-  if (k === "BARREE" || k === "BARRE" || k === "VOIE_BARREE") return "voie barrée";
-  return `impact : ${readable(impact)}`;
+  const k = impact.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z]+/g, "_");
+  return IMPACT_LABELS[k] ?? `impact : ${readable(impact)}`;
 }
 
 export type WorksImportStats = { rows: number; noShape: number; outside: number; badPart: number; kept: number; parts: number; expiredAtImport: number };
@@ -68,7 +83,7 @@ export type WorksImportStats = { rows: number; noShape: number; outside: number;
 export function worksFeatures(rec: { shape: unknown; voie?: unknown; objet?: unknown; impact?: unknown; debut?: unknown; fin?: unknown; maitre?: unknown; arrondissement?: unknown }, simplifyMeters: number, stats?: WorksImportStats): GeoFeature[] {
   const parts = geometryParts(rec.shape).filter((p) => p.kind === "poly");
   if (!parts.length) { if (stats) stats.noShape++; return []; }
-  const props: Prop[] = [clean(rec.voie), clean(rec.objet), clean(rec.impact, 40), isoDay(rec.debut), isoDay(rec.fin), clean(rec.maitre), clean(rec.arrondissement, 10)];
+  const props: Prop[] = [cleanVoie(rec.voie), clean(rec.objet), clean(rec.impact, 40), isoDay(rec.debut), isoDay(rec.fin), clean(rec.maitre), clean(rec.arrondissement, 10)];
   const out: GeoFeature[] = [];
   for (const part of parts) {
     if (stats) stats.parts++;

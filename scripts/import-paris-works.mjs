@@ -5,14 +5,14 @@
 // Usage (Node 22, aucune dépendance, aucun service payant) :
 //   node scripts/import-paris-works.mjs <fichier.csv|.json|.geojson> --inspect
 //   node scripts/import-paris-works.mjs <fichier> --data-date=AAAA-MM-JJ [--simplify=0.5] [--tile-deg=0.02] [--out=public/data/paris-works]
-// --data-date = date de mise à jour AFFICHÉE par la page du jeu (la dernière annoncée : 5 juillet 2026), pas la date du jour : elle est montrée dans le panneau « i ».
+// --data-date = date des données : le fichier ne donne pas sa date d'export, on met la date de RÉCEPTION de l'export (ex. 2026-11-05) ; elle est montrée dans le panneau « i ».
 // Le fichier source (CSV d'environ 70 Ko) n'est JAMAIS versionné.
 //
-// NON TESTÉ SUR LES VRAIES DONNÉES (téléchargement bloqué depuis l'environnement de développement). Les ressources de la page sont en RGF93 Lambert 93 selon la fiche :
-// choisir l'export en WGS84 (celui d'opendata.paris.fr) ; un fichier Lambert 93 est refusé, jamais « corrigé » au hasard.
-// Colonnes lues, si présentes : voie, cp_arrondissement, maitre_ouvrage, objet, date_debut, date_fin, impact_circulation, geo_shape. Lancer --inspect d'abord.
+// Testé sur le vrai fichier reçu le 05/11/2026 (106 lignes, « ; », UTF-8, 19 colonnes, geo_shape Polygon/MultiPolygon WGS84). Un fichier Lambert 93 est refusé, jamais « corrigé » au hasard.
+// Colonnes lues : voie, cp_arrondissement, maitre_ouvrage, objet, date_debut, date_fin, impact_circulation, geo_shape. Les chantiers dont date_fin est PASSÉE sont écartés à l'import
+// (les « à venir », début futur, sont gardés : le site ne les affiche qu'à partir de leur début).
 import { geometryParts, looksWgs84 } from "../contracts/geo-layers.ts";
-import { WORKS_SOURCE, worksAttribution, worksFeatures, isWorkActive } from "../contracts/paris-works.ts";
+import { WORKS_SOURCE, parisDay, worksAttribution, worksFeatures, isWorkActive, WORK_PROP } from "../contracts/paris-works.ts";
 import { arg, jsonCell, pickColumn, readRecords, writeLayer } from "./lib/io.mjs";
 
 const args = process.argv.slice(2);
@@ -34,6 +34,7 @@ console.log(`Colonnes reconnues : ${Object.entries(C).map(([k, v]) => `${k}=${v 
 if (!C.shape) { console.error("Colonne de géométrie (geo_shape) absente : import annulé, rien écrit."); process.exit(1); }
 
 const stats = { rows: records.length, noShape: 0, outside: 0, badPart: 0, kept: 0, parts: 0, expiredAtImport: 0 };
+const today = parisDay(new Date());
 const features = []; let lambert = 0; const impacts = {};
 for (const rec of records) {
   const shape = jsonCell(rec[C.shape]);
@@ -43,10 +44,14 @@ for (const rec of records) {
   if (made.length) { const k = String(made[0].props[2] ?? "(absent)"); impacts[k] = (impacts[k] ?? 0) + 1; }
   features.push(...made);
 }
-stats.expiredAtImport = features.filter((f) => !isWorkActive(f.props)).length;
-console.log(`Lignes ${stats.rows} · contours gardés ${stats.kept} · sans polygone ${stats.noShape} · hors de Paris ${stats.outside} · invalides ${stats.badPart} · non WGS84 ${lambert}`);
-console.log(`Valeurs d'impact_circulation : ${Object.entries(impacts).map(([k, v]) => `${k} ${v}`).join(", ") || "aucune"}`);
-console.log(`Chantiers déjà terminés ou pas encore commencés selon leurs dates (gardés dans les tuiles, non affichés par le site) : ${stats.expiredAtImport} sur ${features.length}`);
+const all = features.length;
+const live = features.filter((f) => !(typeof f.props[WORK_PROP.fin] === "string" && f.props[WORK_PROP.fin] < today));
+stats.expiredAtImport = all - live.length;
+const notStarted = live.filter((f) => !isWorkActive(f.props)).length;
+features.length = 0; features.push(...live);
+console.log(`Lignes ${stats.rows} · parties de contour ${stats.parts} · contours gardés avant filtre ${all} · sans polygone ${stats.noShape} · hors de Paris ${stats.outside} · micro-contours dégénérés écartés (moins de ~1 m) ${stats.badPart} · non WGS84 ${lambert}`);
+console.log(`Valeurs d'impact_circulation (par ligne) : ${Object.entries(impacts).map(([k, v]) => `${k} ${v}`).join(", ") || "aucune"}`);
+console.log(`Jour de l'import (Paris) : ${today} · contours dont date_fin est passée, ÉCARTÉS : ${stats.expiredAtImport} · gardés : ${features.length} dont ${notStarted} à venir (début futur, non affichés avant leur début)`);
 if (lambert && !features.length) { console.error("Coordonnées non WGS84 (Lambert 93 ?) : utiliser l'export WGS84 d'opendata.paris.fr. Rien écrit."); process.exit(1); }
 const ok = writeLayer({ features, outDir, layer: "paris-works", source: WORKS_SOURCE, attribution: worksAttribution(dataDate), dataDate, tileDeg, inspect });
 process.exit(ok ? 0 : 1);
