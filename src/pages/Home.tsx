@@ -937,7 +937,8 @@ export default function Home() {
       {selectedParis && (() => {
         const spot = selectedParis;
         const rep = spot.reportId > 0 ? streetSpots.find((r) => r.id === spot.reportId) ?? null : null;
-        const info = interpretRegime(...(parisRegimes[spot.regime] ?? ["", ""]));
+        const [regimePrio, regimePart] = parisRegimes[spot.regime] ?? ["", ""];
+        const info = interpretRegime(regimePrio, regimePart);
         return <ParisSpotCard spot={spot} regimes={parisRegimes} report={rep ? { status: rep.status, reportedAt: rep.reportedAt, example: rep.example } : null} device={userPosition}
           onClose={() => setSelectedParis(null)}
           onGo={() => { setSelectedParis(null); setTarget({ lat: spot.lat, lng: spot.lng }); void calculateRoutes({ lat: spot.lat, lng: spot.lng }, formatStreet(spot.street, spot.num) || info.title, 0, { kind: "street" }); }}
