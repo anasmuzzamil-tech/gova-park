@@ -858,17 +858,30 @@ export default function Home() {
     return true;
   };
   useEffect(() => { if (!navActive) return; document.body.classList.add("is-navigating"); return () => document.body.classList.remove("is-navigating"); }, [navActive]);
-  // Arrivée depuis une fiche (page place) : « Y aller » démarre le calcul du trajet, départ = adresse saisie, position connue ou centre de la carte.
+  // Arrivée depuis une fiche (page place) : « Y aller » calcule le trajet depuis la POSITION de l'appareil, jamais depuis le centre de Paris.
+  // Position déjà connue : calcul immédiat. Sinon elle est demandée, et le trajet est calculé dès qu'elle arrive (même plus tard, via « Ma position »).
+  type GoTo = { lat: number; lng: number; label: string; id?: number };
   const goToHandled = useRef(false);
+  const pendingGoTo = useRef<GoTo | null>(null);
   useEffect(() => {
-    const goTo = (routerLocation.state as { goTo?: { lat: number; lng: number; label: string; id?: number } } | null)?.goTo;
+    const goTo = (routerLocation.state as { goTo?: GoTo } | null)?.goTo;
     if (!goTo || goToHandled.current) return;
-    goToHandled.current = true;
+    goToHandled.current = true; mapIntent.current = true;
     navigate(".", { replace: true, state: null });
     setTarget({ lat: goTo.lat, lng: goTo.lng });
-    void calculateRoutes({ lat: goTo.lat, lng: goTo.lng }, goTo.label, goTo.id ?? 0, { kind: "listing" });
+    if (userPosition) { void calculateRoutes({ lat: goTo.lat, lng: goTo.lng }, goTo.label, goTo.id ?? 0, { kind: "listing" }); return; }
+    pendingGoTo.current = goTo;
+    toast.message("Recherche de votre position pour calculer le trajet…", { id: "route-near" });
+    void locate(true, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routerLocation.state]);
+  useEffect(() => {
+    const goTo = pendingGoTo.current;
+    if (!goTo) return;
+    if (userPosition) { pendingGoTo.current = null; void calculateRoutes({ lat: goTo.lat, lng: goTo.lng }, goTo.label, goTo.id ?? 0, { kind: "listing" }); return; }
+    if (!locating && gpsNote) toast.message(`${gpsNote} Le trajet partira de votre position dès qu’elle sera connue (touchez « Ma position »).`, { id: "route-near", duration: 12000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPosition, locating, gpsNote]);
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
   // Mémorisé : un nouveau tableau à chaque rendu (donc à chaque position GPS) faisait redessiner le trajet et ses alternatives sur la carte.
