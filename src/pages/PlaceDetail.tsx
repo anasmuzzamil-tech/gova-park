@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Star, MapPin, LockKeyhole, Ruler, ArrowUpFromLine, ShieldCheck, Zap, UserCheck, Check, CarFront, Heart, Navigation } from "lucide-react";
 import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
+import { useDemoMode } from "@/hooks/useDemoMode";
 import { toast } from "sonner";
 import { bookingModeLabel, euros, placeTypeLabel, shortDate } from "@/lib/format";
 import { STATUS_COLORS, reliabilityLabel } from "@contracts/parking-status";
@@ -18,7 +19,9 @@ function scheduleText(raw: string) {
   return `${days} · ${s.start} – ${s.end}`;
 }
 
-const reviews = [
+// Exemples d'avis affichés SEULEMENT en mode démo, avec la mention « Exemples d'avis ». Aucun avis réel n'est lisible par l'API
+// aujourd'hui (pas de table ni de route d'avis) : en mode réel, aucun texte d'avis n'est affiché.
+const demoReviews = [
   { name: "Camille L.", date: "Octobre 2026", text: "Accès très simple et place conforme aux dimensions. Le propriétaire a répondu rapidement." },
   { name: "Nicolas B.", date: "Septembre 2026", text: "Emplacement pratique pour la journée. Les consignes reçues après confirmation étaient précises." },
   { name: "Sarah M.", date: "Septembre 2026", text: "Garage propre et sécurisé. Je recommande pour une citadine." },
@@ -30,6 +33,7 @@ export default function PlaceDetail() {
   const [photo, setPhoto] = useState(0);
   const online = useOnlineStatus();
   const { isAuthenticated } = useAuth();
+  const demo = useDemoMode();
   const favoriteIds = trpc.govapark.favorites.ids.useQuery(undefined, { enabled: isAuthenticated });
   const toggleFavorite = trpc.govapark.favorites.toggle.useMutation({ onSuccess: () => favoriteIds.refetch() });
   const query = trpc.govapark.listings.byId.useQuery({ id: Number(id) }, { enabled: Boolean(id) });
@@ -67,7 +71,7 @@ export default function PlaceDetail() {
             <div className="nav-links"><button className="btn btn-primary btn-full" onClick={() => navigate("/", { state: { goTo: { lat: place.latitude, lng: place.longitude, label: place.title, id: place.id } } })}><Navigation size={18} />Y aller</button><strong>Ouvrir l’itinéraire dans une autre application</strong>{navigationLinks(place.latitude, place.longitude).map((link) => <a key={link.id} className="btn btn-secondary" href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>)}</div>
           </section>
           <section className="detail-section"><div className="section-title-row"><h2>Avis</h2><span><Star size={16} fill="currentColor" />{place.rating.toFixed(1)} · {place.reviewCount} avis</span></div>
-            {place.reviewCount === 0 ? <p className="detail-description">Aucun avis pour le moment.</p> : <div className="reviews-list">{place.parkingStatus?.source?.startsWith("Simulation") && <p className="field-help">Exemples d’avis (mode démo).</p>}{reviews.map((review) => <article key={review.name}><div><strong>{review.name}</strong><span>{review.date}</span></div><div className="stars">★★★★★</div><p>{review.text}</p></article>)}</div>}
+            {place.reviewCount === 0 ? <p className="detail-description">Aucun avis pour le moment.</p> : demo ? <div className="reviews-list"><p className="field-help">Exemples d’avis (mode démo).</p>{demoReviews.map((review) => <article key={review.name}><div><strong>{review.name}</strong><span>{review.date}</span></div><div className="stars">★★★★★</div><p>{review.text}</p></article>)}</div> : null}
           </section>
         </div>
         <aside className="booking-summary-card">
