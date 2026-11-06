@@ -835,9 +835,35 @@ export default function Home() {
   };
   // ----- Navigation plein écran -----
   const requestLocation = () => { if (watchId.current === null) void locate(true); };
+  // Écran allumé pendant le guidage (Screen Wake Lock) : pris au démarrage, rendu à l'arrêt et à la sortie de la page,
+  // repris au retour de visibilité (le navigateur le rend quand la page passe en arrière-plan). Silencieux si non pris en charge.
+  type WakeLockLike = { released?: boolean; release: () => Promise<void> };
+  const wakeLock = useRef<WakeLockLike | null>(null);
+  const acquireWakeLock = async () => {
+    try {
+      const api = (navigator as unknown as { wakeLock?: { request: (type: "screen") => Promise<WakeLockLike> } }).wakeLock;
+      if (!api || document.visibilityState !== "visible" || (wakeLock.current && !wakeLock.current.released)) return;
+      const lock = await api.request("screen");
+      // Guidage arrêté pendant la demande : on rend aussitôt l'écran.
+      if (!navFollowRef.current.active) { lock.release().catch(() => { /* déjà rendu */ }); return; }
+      wakeLock.current = lock;
+    } catch { /* refusé ou non pris en charge : sans effet */ }
+  };
+  const releaseWakeLock = () => {
+    const lock = wakeLock.current; wakeLock.current = null;
+    if (lock && !lock.released) lock.release().catch(() => { /* déjà rendu */ });
+  };
+  useEffect(() => {
+    if (!navActive) { releaseWakeLock(); return; }
+    const onVisible = () => { if (document.visibilityState === "visible") void acquireWakeLock(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [navActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => releaseWakeLock(), []); // eslint-disable-line react-hooks/exhaustive-deps
   const startNavigation = () => {
     if (!drivingRoute || drivingRoute.offline || !navDest) return;
     setNavActive(true); setNavFollow(true); setRouteFocus((n) => n + 1);
+    void acquireWakeLock(); // dans le geste de l'utilisateur
     // Position demandée sans bloquer : sans autorisation, le guidage démarre quand même depuis le départ choisi.
     requestLocation();
     // Premier message vocal dans le geste de l'utilisateur (obligatoire sur iPhone pour autoriser la voix).
@@ -845,6 +871,7 @@ export default function Home() {
   };
   const stopNavigation = () => {
     try { window.speechSynthesis?.cancel(); } catch { /* ignoré */ }
+    releaseWakeLock();
     setNavActive(false); setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
   };
   const toggleNavVoice = () => {
