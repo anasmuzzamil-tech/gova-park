@@ -8,6 +8,18 @@ import { euros, shortDate } from "@/lib/format";
 import { meterCostCents } from "@contracts/meter";
 import { GeolocError, getDevicePosition } from "@/lib/street";
 import { reportPositionIssue } from "@/lib/geoloc";
+import { DEFAULT_VEHICLE, fromProfileVehicle, isVehicleType, type VehicleType } from "@contracts/vehicle-types";
+
+/** Véhicule du signalement : celui choisi sur la carte (« Mon véhicule », govapark.mapVehicle.v1), sinon celui du profil local, sinon voiture.
+ *  Seuls les 4 types de signalement existent (voiture, moto, livraison, vélo) : PMR et Électrique sont stockés à part (affichage seulement). */
+function reportVehicle(): VehicleType {
+  try {
+    const saved = JSON.parse(localStorage.getItem("govapark.mapVehicle.v1") || "null");
+    if (saved && isVehicleType(saved.vehicle)) return saved.vehicle;
+    const prefs = JSON.parse(localStorage.getItem("govapark.preferences.v1") || "{}");
+    return fromProfileVehicle(prefs?.vehicle) ?? DEFAULT_VEHICLE;
+  } catch { return DEFAULT_VEHICLE; }
+}
 
 function clock(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -43,7 +55,7 @@ export default function Meter() {
       const issue = reportPositionIssue(device); // signalement : 50 m près, moins de 30 s
       if (issue) { setReleaseNote(issue); return; }
       const place = offerRelease?.latitude != null && offerRelease?.longitude != null ? { latitude: offerRelease.latitude, longitude: offerRelease.longitude } : { latitude: device.latitude, longitude: device.longitude };
-      release.mutate({ status: "free", ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
+      release.mutate({ status: "free", vehicleType: reportVehicle(), ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
     } catch (e) { setReleaseNote(e instanceof GeolocError ? e.message : "Signalement impossible pour le moment."); }
   };
 
