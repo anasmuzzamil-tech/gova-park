@@ -5,6 +5,9 @@
 ## État au 2026-11-05 (passe « avant les vrais utilisateurs »)
 A1, A2, A3, A4 : corrigés dans le code, chacun avec un commit et des tests unitaires de la logique pure ; **aucun n'a été vérifié en ligne ni contre une vraie base MySQL**. Tests : l'exécuteur maison du sandbox (transpileModule, sans npm) passe ; `npm test` / `npm run build` / `tsc` n'ont pas pu être lancés. A12 : constat inexact (voir la ligne). Restent ouverts : A5 à A11, A13 à A15 (voir chaque ligne), plus les points « reste » notés en A1 à A3.
 
+## Accès sans compte à la carte (2026-11-06)
+Côté site seulement (`src/components/AppShell.tsx`) : en mode réel, `/` (carte) et `/place/:id` (fiche) s'ouvrent sans compte ; les autres pages renvoient vers `/login` avec retour au bon endroit (`govaparkReturn`), et les actions (signaler, réserver, publier, messages, favoris, compte) demandent un compte. **Aucune protection serveur relâchée** : les procédures `authedQuery` / `ownerQuery` / `adminQuery` sont inchangées ; la carte n'appelle sans compte que des procédures déjà publiques (`listings.search`, `listings.byId`, `street.list`, `community.list`, `intelligence.predictions`). Nouveau champ `demo` dans `auth.me` (booléen, sans donnée personnelle). Non testé en ligne (aucune base branchée).
+
 ## Corrigé dans la passe précédente (petit et certain)
 | Réf. | Constat | Correction |
 |---|---|---|

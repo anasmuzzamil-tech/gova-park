@@ -49,7 +49,7 @@ export default function PlaceDetail() {
   if (query.error || !query.data) return <div className="empty-state page-empty"><h1>Annonce introuvable</h1><button className="btn btn-primary" onClick={() => navigate("/")}>Retour à la carte</button></div>;
   const place = query.data;
   const isFavorite = favoriteIds.data?.includes(place.id) ?? false;
-  const handleFavorite = () => { if (!isAuthenticated) { toast.info("Connectez-vous pour enregistrer vos favoris"); navigate("/login"); return; } toggleFavorite.mutate({ listingId: place.id }, { onSuccess: (r) => toast.success(r.favorite ? "Ajouté aux favoris" : "Retiré des favoris") }); };
+  const handleFavorite = () => { if (!isAuthenticated) { toast.info("Connectez-vous pour enregistrer vos favoris"); try { sessionStorage.setItem("govaparkReturn", window.location.pathname); } catch { /* retour à la carte */ } navigate("/login"); return; } toggleFavorite.mutate({ listingId: place.id }, { onSuccess: (r) => toast.success(r.favorite ? "Ajouté aux favoris" : "Retiré des favoris") }); };
   return (
     <div className="detail-page">
       <div className="detail-topbar"><button className="back-button" onClick={() => navigate(-1)}><ArrowLeft size={19} />Retour</button><button className={`icon-btn ${isFavorite ? "active" : ""}`} onClick={handleFavorite} aria-label="Ajouter aux favoris"><Heart size={19} fill={isFavorite ? "currentColor" : "none"} /></button><span className="private-tag"><i className="legend-dot violet" />Place privée</span></div>

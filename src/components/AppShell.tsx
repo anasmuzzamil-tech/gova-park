@@ -12,6 +12,10 @@ const nav = [
   { to: "/profil", label: "Paramètres", short: "Réglages", icon: UserRound },
 ];
 
+// Pages consultables sans compte : la carte et la fiche d'une place. Les actions (signaler, réserver, publier, messages, compte)
+// demandent un compte là où elles se trouvent ; le serveur garde ses contrôles (procédures protégées inchangées).
+const PUBLIC_PATHS = [/^\/$/, /^\/place\/[^/]+\/?$/];
+
 export default function AppShell() {
   const location = useLocation();
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -20,7 +24,11 @@ export default function AppShell() {
   const bottomNav = visibleNav.filter((item) => item.to !== "/mobilite" && !(item.to === "/compteur" && user?.role !== "user"));
   const isMap = location.pathname === "/";
   if (isLoading) return <div className="page-loading"><span className="loader" />Ouverture de votre espace GOVAPARK…</div>;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated && !PUBLIC_PATHS.some((path) => path.test(location.pathname))) {
+    // Retour à cette page après connexion (lu par ResumeAfterLogin dans App.tsx).
+    try { sessionStorage.setItem("govaparkReturn", `${location.pathname}${location.search}`); } catch { /* stockage indisponible : retour à la carte */ }
+    return <Navigate to="/login" replace />;
+  }
   return (
     <div className="app-shell">
       <aside className="desktop-rail">
