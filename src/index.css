@@ -809,3 +809,6 @@ body.is-navigating .bottom-nav { display: none; }
 .m-locating { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 78px); left: 50%; transform: translateX(-50%); z-index: 60; background: #17142b; color: #fff; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; box-shadow: 0 6px 20px #1a143a40; }
 .m-round:disabled { opacity: .75; }
 .m-diag { font-size: 11px; color: #6b6785; word-break: break-word; }
+/* iPhone : Safari zoome sur un champ dont le texte fait moins de 16 px. Sur écran tactile, champs à 16 px minimum,
+   y compris ceux qui fixent une taille plus petite ailleurs (!important) ; ceux déjà plus grands que le texte parent gardent leur taille. */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
