@@ -1108,7 +1108,7 @@ export default function Home() {
             </div>
             <div className="m-cards m-cards-dest">
               {destPlaces.street.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`dest-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
-                <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
+                <span className={`m-state ${spot.color}`}>{spot.color === "orange" ? "Peut-être libre" : spot.status === "free" ? "Libre" : "Prise"}</span>
                 <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalée par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
                 <span className="m-dist">{meters(away)}</span>
               </button>)}
@@ -1133,7 +1133,7 @@ export default function Home() {
               {searchNote && <div className="m-empty">{searchNote}</div>}
               {searchTruncated && <div className="m-empty">Trop de places dans cette zone : seules les 300 premières sont chargées. Zoomez ou affinez les filtres.</div>}
               {nearStreet.map(({ spot, meters: away }) => <button type="button" className="m-card m-scard" key={`near-street-${spot.id}`} onClick={() => setSelectedStreetId(spot.id)}>
-                <span className={`m-state ${spot.color}`}>{spot.status === "free" ? "Libre" : "Prise"}</span>
+                <span className={`m-state ${spot.color}`}>{spot.color === "orange" ? "Peut-être libre" : spot.status === "free" ? "Libre" : "Prise"}</span>
                 <span className="m-scard-main"><strong>{spot.label}</strong><small>Place en rue · signalée par un utilisateur{spot.example ? " (exemple)" : ""}</small></span>
                 <span className="m-dist">{meters(away)}</span>
               </button>)}
