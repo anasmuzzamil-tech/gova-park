@@ -60,11 +60,15 @@ async function handleMapRequest(request, url) {
 // quand le reseau est injoignable (hors ligne, timeout, serveur 502/503/504 pendant son reveil).
 async function handleNavigation(request) {
   const shell = await caches.open(SHELL_CACHE);
+  // fetch(request) SANS second argument : Chrome/Edge refusent de construire une requete de navigation avec des
+  // options (TypeError), ce qui faisait echouer CHAQUE ouverture du site (ERR_FAILED) quand le cache etait vide.
+  // Le delai de 20 s ne s'applique que si une copie du shell existe : sinon on attend le reveil du serveur Render (~50 s).
+  const hasFallback = !!((await shell.match('/')) || (await caches.match('/')));
   try {
-    const response = await Promise.race([
-      fetch(request, { cache: 'no-store' }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), NAVIGATION_TIMEOUT_MS)),
-    ]);
+    const network = fetch(request);
+    const response = hasFallback
+      ? await Promise.race([network, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), NAVIGATION_TIMEOUT_MS))])
+      : await network;
     if ([502, 503, 504].includes(response.status)) throw new Error('server-unavailable');
     const type = response.headers.get('content-type') || '';
     if (response.ok && type.includes('text/html')) shell.put('/', response.clone()).catch(() => {});
