@@ -69,6 +69,8 @@ type AddressSuggestion = { label: string; lat: number; lng: number; kind: "listi
 
 // Île-de-France : centre de Paris pour le biais de localisation et cadre approximatif (lon min, lat min, lon max, lat max).
 const NO_PARIS: ParisSpot[] = [];
+// Tableau stable (une nouvelle valeur à chaque rendu relançait l'effet des marqueurs de services de la carte à chaque position GPS).
+const NO_FUEL: Array<{ id: number; lat: number; lng: number; name: string }> = [];
 // Rayons de la liste « Places près de [adresse] ».
 const DEST_STREET_RADIUS_M = 300;
 const DEST_PRIVATE_RADIUS_M = 2000;
@@ -184,6 +186,11 @@ export default function Home() {
   const [navActive, setNavActive] = useState(false);
   const [navFollow, setNavFollow] = useState(true);
   const [navDest, setNavDest] = useState<NavDest | null>(null);
+  // Lu par le suivi GPS (fonction créée une fois) : le recentrage automatique ne vaut QU'EN navigation, et pas en « Vue d'ensemble ».
+  const navFollowRef = useRef({ active: false, follow: true });
+  navFollowRef.current = { active: navActive, follow: navFollow };
+  // L'utilisateur a choisi où regarder (adresse, place, trajet) : la position demandée à l'ouverture ne recentre plus la carte.
+  const mapIntent = useRef(false);
   const voiceSupported = typeof window !== "undefined" && "speechSynthesis" in window;
   const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(false);
   const [backgroundAlertsEnabled, setBackgroundAlertsEnabled] = useState(false);
@@ -194,7 +201,9 @@ export default function Home() {
   const gpsInitialized = useRef(false);
   const originRef = useRef<{ lat: number; lng: number } | null>(null);
   const [departureUpdate, setDepartureUpdate] = useState(toLocalInput(new Date(Date.now() + 15 * 60000)));
-  const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: userPosition?.lat ?? visibleCenter.lat, longitude: userPosition?.lng ?? visibleCenter.lng, radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
+  // Clé arrondie à 0,01° (≈ 1 km) : une nouvelle position GPS ne relance plus une requête à chaque fois.
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  const learnedPredictions = trpc.govapark.intelligence.predictions.useQuery({ latitude: round2(userPosition?.lat ?? visibleCenter.lat), longitude: round2(userPosition?.lng ?? visibleCenter.lng), radiusKm: 5 }, { refetchInterval: 60000, staleTime: 30000 });
   // Chargement par zone : seule la zone affichée (ou le trajet) est demandée au serveur, avec les filtres et une limite.
   const searchInput = useMemo(() => {
     const round = (v: number) => Math.round(v * 100) / 100;
@@ -505,8 +514,9 @@ export default function Home() {
     if (speed !== undefined) setSpeedKmh(speed == null ? null : Math.max(0, Math.round(speed * 3.6)));
     setTrackingGps(true); setGpsNote(null);
     if (centre) { setTarget({ lat: next.lat, lng: next.lng }); setVisibleCenter({ lat: next.lat, lng: next.lng }); gpsInitialized.current = true; }
-    else {
-      // Suivi doux du véhicule : recentrer après environ 50 m de déplacement.
+    else if (navFollowRef.current.active && navFollowRef.current.follow) {
+      // En navigation (recentrage actif) seulement : suivi doux du véhicule, recentrer après environ 50 m de déplacement.
+      // Hors navigation, seule la position (point bleu) change : la carte reste là où l'utilisateur l'a mise.
       setTarget((previous) => {
         const moved = Math.hypot((next.lat - previous.lat) * 111000, (next.lng - previous.lng) * 75000);
         return moved >= 50 ? { lat: next.lat, lng: next.lng } : previous;
@@ -522,14 +532,18 @@ export default function Home() {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 },
     );
   };
-  const locate = async (soft = false) => {
+  // opening = true : demande sans geste (ouverture de la carte, retour depuis une fiche) : centre au plus une fois, seulement si
+  // l'utilisateur n'a encore rien choisi, et SANS suivi continu. Le suivi (startWatch) ne part que d'un toucher sur « Ma position » ou de la navigation.
+  const wantWatch = useRef(false);
+  const locate = async (soft = false, opening = false) => {
+    if (!opening) wantWatch.current = true; // demandé pendant une autre recherche : le suivi démarrera à la fin de celle-ci
     if (locatingRef.current) return; // pas d'appels concurrents
     locatingRef.current = true; setLocating(true);
     try {
       const device = await getDevicePosition(); // lancé directement dans le geste de l'utilisateur
-      applyPosition(device, undefined, true);
+      applyPosition(device, undefined, !opening || !mapIntent.current);
       if (!soft) toast.success(device.accuracy > 500 ? `Position approximative (± ${Math.round(device.accuracy)} m)` : "Vous êtes ici", { id: "locate" });
-      startWatch();
+      if (wantWatch.current) startWatch();
     } catch (error) {
       const message = error instanceof GeolocError ? error.message : "Position indisponible pour le moment. Réessayez.";
       setGpsNote(message);
@@ -537,8 +551,9 @@ export default function Home() {
     } finally { locatingRef.current = false; setLocating(false); }
   };
   useEffect(() => () => { if (watchId.current !== null) navigator.geolocation?.clearWatch(watchId.current); }, []);
-  // À l'ouverture : demande la position une seule fois (message discret, pas de toast). Un refus ne bloque rien : « Ma position » redemande à chaque toucher.
-  useEffect(() => { if (!gpsInitialized.current) void locate(true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // À l'ouverture : demande la position une seule fois (message discret, pas de toast), point bleu et centrage unique, sans suivi continu.
+  // Un refus ne bloque rien : « Ma position » redemande à chaque toucher.
+  useEffect(() => { if (!gpsInitialized.current) void locate(true, true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitReport = () => {
     createReport.mutate({ kind: reportKind, latitude: visibleCenter.lat, longitude: visibleCenter.lng, address: reportAddress,
@@ -590,6 +605,7 @@ export default function Home() {
   const calculateRoutes = async (destination: {lat:number;lng:number}, destinationName: string, listingId = 0, info?: Partial<NavDest>, mode?: VehicleType) => {
     // `mode` : onglet de mode touché sur l'écran de trajet (la préférence « Mon véhicule » n'a pas encore eu le temps de changer). Sinon le véhicule choisi.
     const veh: VehicleType = mode ?? vehicle;
+    mapIntent.current = true;
     const consumption = mode ? (DEFAULT_CONSUMPTION[mode] || DEFAULT_CONSUMPTION.car) : fuelConsumption;
     const fuelKind: typeof routeFuelType = mode ? (mode === "moto" ? "e10" : "gazole") : routeFuelType;
     setNavDest({ lat: destination.lat, lng: destination.lng, label: destinationName || "Destination", kind: "address", ...info });
@@ -781,6 +797,7 @@ export default function Home() {
       return;
     }
     updatePlaces(addRecent(places, suggestion, Date.now()));
+    mapIntent.current = true;
     // Le point de départ d'un éventuel « Y aller » est mémorisé AVANT que la carte se recentre sur la destination.
     originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
     setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
@@ -854,12 +871,15 @@ export default function Home() {
   }, [routerLocation.state]);
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
+  // Mémorisé : un nouveau tableau à chaque rendu (donc à chaque position GPS) faisait redessiner le trajet et ses alternatives sur la carte.
+  const altRoutes = useMemo(() => routeOptions.filter((o) => o.id !== drivingRoute?.id), [routeOptions, drivingRoute?.id]);
   const mapProps = {
-    center: target, focus: focusRequest, listings: mapListings, altRoutes: routeOptions.filter((o) => o.id !== drivingRoute?.id),
+    center: target, focus: focusRequest, listings: mapListings, altRoutes,
     onPickRoute: (id: string) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } },
-    reports, userPosition, confirmedIds, fuelStations: [] as Array<{ id: number; lat: number; lng: number; name: string }>,
+    reports, userPosition, confirmedIds, fuelStations: NO_FUEL,
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
-    driving: !!drivingRoute && (!navActive || navFollow), routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
+    // Caméra qui suit la voiture : en navigation seulement, et pas en « Vue d'ensemble ».
+    driving: !!drivingRoute && navActive && navFollow, routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
     onListing: (id: number) => navigate(`/place/${id}`), onBook: (id: number) => navigate(`/reserver/${id}`), canBook: online, onRoute: startRoute,
     onReport: (report: MapReport) => setSelectedReportId(report.id), onMove: (center: { lat: number; lng: number }, bounds?: MapBounds) => { setVisibleCenter(center); if (bounds) setVisibleBounds(bounds); },
     streetSpots: streetSpotsOnMap, onStreetSpot: (spot: MapStreetSpot) => setSelectedStreetId(spot.id),

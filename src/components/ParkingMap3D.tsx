@@ -535,12 +535,17 @@ export default function ParkingMap3D({
     wasFollowing.current = following;
   }, [ready, following]);
 
-  // Position de l'utilisateur / voiture orientée.
+  // Position de l'utilisateur / voiture orientée. Le marqueur est créé quand son apparence change (voiture ou point bleu),
+  // puis simplement déplacé (setLngLat) à chaque nouvelle position : plus de destruction / recréation à chaque position GPS.
+  const userPositionRef = useRef(userPosition);
+  userPositionRef.current = userPosition;
+  const hasUserPosition = !!userPosition;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     userMarker.current?.remove(); userMarker.current = null; carBadge.current = null;
-    if (!userPosition) return;
+    const position = userPositionRef.current;
+    if (!position) return;
     let node: HTMLElement;
     if (driving) {
       node = el("span", "pk-car", `<i></i><b>🚗</b>`);
@@ -549,9 +554,12 @@ export default function ParkingMap3D({
       node = el("span", "pk-you", `<i></i><b></b>`);
     }
     node.title = `Votre position GPS · ${vehicleType}`;
-    userMarker.current = new maplibregl.Marker({ element: node, rotationAlignment: "map", pitchAlignment: "map" }).setLngLat([userPosition.lng, userPosition.lat]).addTo(map);
+    userMarker.current = new maplibregl.Marker({ element: node, rotationAlignment: "map", pitchAlignment: "map" }).setLngLat([position.lng, position.lat]).addTo(map);
     userMarker.current.getElement().style.zIndex = "900";
-  }, [ready, userPosition, driving, vehicleType]);
+  }, [ready, hasUserPosition, driving, vehicleType]);
+  useEffect(() => {
+    if (userPosition) userMarker.current?.setLngLat([userPosition.lng, userPosition.lat]);
+  }, [userPosition?.lat, userPosition?.lng]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const badge = carBadge.current;
     if (!badge) return;
