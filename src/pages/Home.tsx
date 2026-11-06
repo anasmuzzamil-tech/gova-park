@@ -36,7 +36,7 @@ import { loadTariffs } from "@/lib/paris-tariffs";
 import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
-import { nearLabel } from "@/lib/near-label";
+import { nearCountLabel, NEAR_COUNT_RADIUS_M } from "@/lib/near-label";
 import { addRecent, getFavorite, loadPlaces as loadSavedPlaces, removeFavorite, removeRecent, savePlaces as saveSavedPlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
 import { IRVE_SOURCE, irveAttribution, irveSheet } from "@contracts/paris-irve";
@@ -930,7 +930,15 @@ export default function Home() {
     <span className="m-peek-main"><strong>{item.title}</strong><small>{meters(away)} · Place privée{pill && <> · <span className={`m-state ${item.parkingStatus?.color ?? "gray"}`}>{pill}</span></>}</small></span>
     <span className="m-peek-price">{euros(item.hourlyCents)}<small>/h</small></span>
   </button>; })() : null;
-  const placesNear = nearLabel(filtered.length + nearStreet.length, { hasPosition: !!userPosition, address: destination?.label });
+  // Compteur de la poignée : places à moins de 1 km de la position (sinon du centre de la carte), places prises exclues
+  // (places en rue signalées prises, places privées occupées). Ce n'est pas un nombre de places libres.
+  const nearCount = useMemo(() => {
+    const from = userPosition ?? visibleCenter;
+    const street = streetOfVehicle.filter((spot) => spot.status !== "taken" && distanceMeters(from.lat, from.lng, spot.latitude, spot.longitude) <= NEAR_COUNT_RADIUS_M).length;
+    const privatePlaces = filtered.filter((item) => item.parkingStatus?.color !== "red" && distanceMeters(from.lat, from.lng, item.latitude, item.longitude) <= NEAR_COUNT_RADIUS_M).length;
+    return street + privatePlaces;
+  }, [streetOfVehicle, filtered, userPosition, visibleCenter]);
+  const placesNear = nearCountLabel(nearCount, !!userPosition);
   return (
     <div className={`home-screen view-${view}${drivingRoute ? " has-route" : ""}${navActive && drivingRoute ? " is-navigating" : ""}${online ? "" : " is-offline"}`}>
       <OfflineBanner online={online} savedAt={placesSavedAt} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nearLabel } from "../src/lib/near-label";
+import { nearCountLabel, nearLabel, NEAR_COUNT_RADIUS_M } from "../src/lib/near-label";
 import { getMapDiag, mapDiag, mapDiagLine } from "../src/lib/map-diag";
 
 describe("poignée de la feuille basse", () => {
@@ -10,6 +10,15 @@ describe("poignée de la feuille basse", () => {
   it("avec une adresse cherchée", () => { expect(nearLabel(12, { hasPosition: false, address: "rue de Rivoli, Paris" })).toBe("12 places près de rue de Rivoli, Paris"); });
   it("avec la position de l'appareil", () => { expect(nearLabel(1, { hasPosition: true })).toBe("1 place près de vous"); });
   it("l'adresse cherchée l'emporte sur la position", () => { expect(nearLabel(2, { hasPosition: true, address: "Bastille" })).toBe("2 places près de Bastille"); });
+});
+
+describe("compteur de la poignée (1 km, places prises exclues)", () => {
+  it("rayon de 1 km et libellé exact, sans le mot « libres »", () => {
+    expect(NEAR_COUNT_RADIUS_M).toBe(1000);
+    expect(nearCountLabel(3, true)).toBe("3 places à moins de 1 km de vous");
+    expect(nearCountLabel(1, false)).toBe("1 place à moins de 1 km du centre de la carte");
+    expect(nearCountLabel(0, true)).toBe("0 place à moins de 1 km de vous");
+  });
 });
 
 describe("diagnostic de la carte", () => {
