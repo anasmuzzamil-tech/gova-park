@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acquirePosition, geolocMessage, getGeolocDiag, reasonOfCode, PRECISE_OPTIONS, COARSE_OPTIONS } from "@/lib/geoloc";
+import { acquirePosition, geolocMessage, getGeolocDiag, reasonOfCode, reportPositionIssue, PRECISE_OPTIONS, COARSE_OPTIONS } from "@/lib/geoloc";
 
 type Cb = (p: { coords: { latitude: number; longitude: number; accuracy: number } }) => void;
 const fix = { coords: { latitude: 48.85, longitude: 2.35, accuracy: 30 } };
@@ -55,5 +55,30 @@ describe("géolocalisation : essai précis puis essai réseau", () => {
   });
   it("codes : 1 refusée, 2 indisponible, 3 délai", () => {
     expect([1, 2, 3].map(reasonOfCode)).toEqual(["denied", "unavailable", "timeout"]);
+  });
+});
+
+describe("position exigée pour un signalement (50 m, 30 s)", () => {
+  const now = 1_800_000_000_000;
+  it("précise et fraîche : acceptée", () => {
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 50, timestamp: now - 30000 }, now)).toBeNull();
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 12, timestamp: now }, now)).toBeNull();
+  });
+  it("précision supérieure à 50 m : refusée avec la précision", () => {
+    const m = reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 51, timestamp: now }, now);
+    expect(m).toContain("trop imprécise");
+    expect(m).toContain("± 51 m");
+  });
+  it("position de plus de 30 s (position réseau ancienne) : refusée", () => {
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 20, timestamp: now - 30001 }, now)).toContain("trop ancienne");
+  });
+  it("précision illisible : refusée ; horodatage absent ou futur : la précision seule décide", () => {
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: Number.NaN }, now)).toContain("trop imprécise");
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 20 }, now)).toBeNull();
+    expect(reportPositionIssue({ latitude: 48.85, longitude: 2.35, accuracy: 20, timestamp: now + 5000 }, now)).toBeNull();
+  });
+  it("l'horodatage de l'appareil est transmis par l'acquisition", async () => {
+    const geo = { getCurrentPosition: (ok: (p: { coords: { latitude: number; longitude: number; accuracy: number }; timestamp?: number }) => void) => ok({ ...fix, timestamp: 1234 }) };
+    expect((await acquirePosition(geo, false)).timestamp).toBe(1234);
   });
 });

@@ -17,7 +17,7 @@ import { bboxAround } from "@contracts/parking-search";
 import { agoText, reportSuccessText, STREET_RULES } from "@contracts/street-reports";
 import { GeolocError, getDevicePosition } from "@/lib/street";
 import { DEFAULT_CONSUMPTION, NO_TRAFFIC, DEFAULT_FUEL_PRICE_EUR_L, formatDistance, formatDuration, formatEuro, bikeDurationSeconds, isSamePlace, routeEndpoints, straightLineEstimate, summaryLine, tripCostEur } from "@/lib/route-calc";
-import { getGeolocDiag, noteGeolocError, subscribeGeolocDiag, refreshPermissionState } from "@/lib/geoloc";
+import { getGeolocDiag, noteGeolocError, subscribeGeolocDiag, refreshPermissionState, reportPositionIssue } from "@/lib/geoloc";
 import { NavigationMode } from "@/components/NavigationMode";
 import { mapOsrmSteps, type NavDest, type RouteStep } from "@/lib/guidance";
 import { fetchOsrmRoute } from "@/lib/routing";
@@ -424,6 +424,9 @@ export default function Home() {
     setStreetLocating(true);
     try {
       const device = await getDevicePosition();
+      // Signalement seulement : position à 50 m près et de moins de 30 s, sinon refus clair (le bouton « Ma position » n'est pas concerné).
+      const issue = reportPositionIssue(device);
+      if (issue) { toast.error(issue, { id: "street-report", duration: 9000 }); return; }
       let place = { latitude: device.latitude, longitude: device.longitude };
       if (spot) place = { latitude: spot.latitude, longitude: spot.longitude };
       else if (status === "taken") {

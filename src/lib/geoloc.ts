@@ -2,7 +2,7 @@
 // Pensée pour Safari / PWA iPhone : appel dans le geste de l'utilisateur, essai précis puis essai réseau (basse précision),
 // aucune promesse sans fin, aucune erreur avalée, aucun état « refusé » mémorisé (chaque toucher redemande).
 
-export type DevicePosition = { latitude: number; longitude: number; accuracy: number };
+export type DevicePosition = { latitude: number; longitude: number; accuracy: number; timestamp?: number };
 export type GeolocReason = "unsupported" | "denied" | "unavailable" | "timeout";
 
 /** Texte exact demandé pour iPhone quand la localisation est refusée. */
@@ -45,7 +45,7 @@ export async function refreshPermissionState(): Promise<void> {
 }
 
 // ----- Acquisition -----
-type GeoLike = { getCurrentPosition: (ok: (p: { coords: { latitude: number; longitude: number; accuracy: number } }) => void, err: (e: { code: number }) => void, o?: PositionOptions) => void };
+type GeoLike = { getCurrentPosition: (ok: (p: { coords: { latitude: number; longitude: number; accuracy: number }; timestamp?: number }) => void, err: (e: { code: number }) => void, o?: PositionOptions) => void };
 
 export const PRECISE_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 };
 export const COARSE_OPTIONS: PositionOptions = { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 };
@@ -60,8 +60,8 @@ export function acquirePosition(geo: GeoLike | undefined, ios: boolean, hardLimi
     const fail = (reason: GeolocReason, code: number | null) => finish(() => { if (code != null) noteGeolocError(code); else setDiag({ lastCode: null, lastReason: reason, at: Date.now() }); reject(new GeolocError(reason, geolocMessage(reason, ios), code)); });
     const guard = setTimeout(() => fail("timeout", 3), hardLimitMs);
     if (!geo) { fail("unsupported", null); return; }
-    const ok = (attempt: string) => (p: { coords: { latitude: number; longitude: number; accuracy: number } }) =>
-      finish(() => { noteGeolocFix(p.coords.accuracy, attempt); resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }); });
+    const ok = (attempt: string) => (p: { coords: { latitude: number; longitude: number; accuracy: number }; timestamp?: number }) =>
+      finish(() => { noteGeolocFix(p.coords.accuracy, attempt); resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy, ...(typeof p.timestamp === "number" ? { timestamp: p.timestamp } : {}) }); });
     try {
       geo.getCurrentPosition(ok("précise"), (e) => {
         if (e.code === 1) { fail("denied", 1); return; }
@@ -71,6 +71,22 @@ export function acquirePosition(geo: GeoLike | undefined, ios: boolean, hardLimi
       }, PRECISE_OPTIONS);
     } catch { fail("unavailable", 2); }
   });
+}
+
+// ----- Exigence propre au SIGNALEMENT (« Je libère », « Je me gare », libération en fin de compteur) -----
+// Le bouton « Ma position » n'est pas concerné : il accepte une position approximative (il l'affiche comme telle).
+export const REPORT_MAX_ACCURACY_M = 50;
+export const REPORT_MAX_AGE_MS = 30000;
+/** Message de refus si la position ne suffit pas pour signaler (précision > 50 m ou position de plus de 30 s), sinon null. */
+export function reportPositionIssue(p: DevicePosition, now: number = Date.now()): string | null {
+  if (!Number.isFinite(p.accuracy) || p.accuracy > REPORT_MAX_ACCURACY_M) {
+    return `Position trop imprécise pour signaler${Number.isFinite(p.accuracy) ? ` (± ${Math.round(p.accuracy)} m)` : ""} : il faut 50 m au plus. Mettez-vous à découvert, attendez quelques secondes, puis réessayez.`;
+  }
+  // Horodatage absent ou dans le futur (horloge de l'appareil) : l'âge n'est pas mesurable, la précision seule décide.
+  if (typeof p.timestamp === "number" && now - p.timestamp > REPORT_MAX_AGE_MS) {
+    return "Position trop ancienne pour signaler (plus de 30 s). Attendez quelques secondes que le GPS se mette à jour, puis réessayez.";
+  }
+  return null;
 }
 
 const isIos = () => typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent);
