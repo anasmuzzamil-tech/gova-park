@@ -36,6 +36,7 @@ import { loadTariffs } from "@/lib/paris-tariffs";
 import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
+import { useDemoMode } from "@/hooks/useDemoMode";
 import { nearCountLabel, NEAR_COUNT_RADIUS_M } from "@/lib/near-label";
 import { addRecent, getFavorite, loadPlaces as loadSavedPlaces, removeFavorite, removeRecent, savePlaces as saveSavedPlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
@@ -127,6 +128,8 @@ export default function Home() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
   const { isAuthenticated, user } = useAuth();
+  // Mode démo du serveur (sans base) : étiquettes « exemple » et textes de démo seulement dans ce cas.
+  const demo = useDemoMode();
   const utils = trpc.useUtils();
   const reportsQuery = trpc.govapark.community.list.useQuery(undefined, { refetchInterval: 30000 });
   const myReservations = trpc.govapark.reservations.mine.useQuery(undefined, { enabled: isAuthenticated });
@@ -1192,11 +1195,11 @@ export default function Home() {
 
       <aside className={`results-panel ${view === "map" ? "desktop-only" : ""}`}>
         {view === "list" && <section className="prediction-panel" aria-label="Prévision des départs de stationnement">
-          <div className="prediction-heading"><div><span className="eyebrow">GOVAPARK INTELLIGENCE</span><h2>Places susceptibles de se libérer</h2></div><span className="prediction-live">En direct</span></div>
+          <div className="prediction-heading"><div><span className="eyebrow">GOVAPARK INTELLIGENCE</span><h2>Places susceptibles de se libérer</h2></div>{!demo && <span className="prediction-live">En direct</span>}</div>
           <p className="prediction-explainer">Estimation basée sur les départs annoncés récemment par la communauté, leur heure prévue et leur niveau de confiance. Ce n’est pas une garantie de place libre.</p>
           {predictedDepartures.length === 0 ? <div className="prediction-empty">Aucun départ annoncé suffisamment récent dans un rayon de 5 km. Les places privées disponibles restent affichées ci-dessous.</div> : predictedDepartures.map((item) => <div className="prediction-row" key={`prediction-${item.id}`}>
             <div className="prediction-score" aria-label={`Indice ${item.potentialIndex} sur 100`}>{item.potentialIndex}<small>/100</small></div>
-            <div className="prediction-copy"><strong>{item.address}</strong><span>{item.minutesUntil === 0 ? "Départ prévu maintenant" : `Départ annoncé dans ${item.minutesUntil} min`} · à ${item.distance < 1000 ? `${Math.round(item.distance)} m` : `${(item.distance/1000).toFixed(1)} km`}</span><small>Confiance communautaire : {item.confidence}% · actualisé {ago(item.updatedAt)}</small></div>
+            <div className="prediction-copy"><strong>{item.address}</strong><span>{item.minutesUntil === 0 ? "Départ prévu maintenant" : `Départ annoncé dans ${item.minutesUntil} min`} · à ${item.distance < 1000 ? `${Math.round(item.distance)} m` : `${(item.distance/1000).toFixed(1)} km`}</span><small>{demo ? "Exemple de démonstration" : `Confiance communautaire : ${item.confidence}%`} · actualisé {ago(item.updatedAt)}</small></div>
           </div>)}
           <div className="learned-zone-panel"><strong>Historique intelligent des zones</strong><small>{learnedPredictions.data?.totalObservations ?? 0} observations enregistrées dans un rayon de 5 km · 90 derniers jours</small>{(learnedPredictions.data?.predictions ?? []).slice(0,3).map((zone) => <div key={`${zone.cellKey}-${zone.weekday}-${zone.hour}`}><span>{zone.score}/100 · {zone.confidence === "élevée" ? "confiance élevée" : zone.confidence === "moyenne" ? "confiance moyenne" : "confiance faible"}</span><small>{zone.observations} observations · {zone.freeSignals} libres · {zone.occupiedSignals} occupées</small></div>)}{!learnedPredictions.data?.predictions.length && <small>Le moteur attend davantage de confirmations réelles pour établir des tendances horaires fiables.</small>}</div>
           <small className="prediction-footnote">Indice expérimental. Les prévisions reposent sur les observations communautaires des 90 derniers jours, regroupées par zone, jour et heure. Elles ne garantissent jamais une place libre.</small>
@@ -1209,8 +1212,8 @@ export default function Home() {
           <small className="route-cost-note">Après modification du type de carburant, relancez le calcul d’itinéraire pour actualiser les prix. Le coût carburant est une estimation à partir des prix du flux officiel du ministère de l’Économie repérés près du trajet et de votre consommation déclarée. Péages, trafic en temps réel, restrictions poids lourds et prix des recharges ne sont pas encore inclus. Vérifiez les prix et services avant le départ.</small>
           {routeListings.map((item)=><button key={item.id} onClick={()=>navigate(`/place/${item.id}`)}><strong>{item.title}</strong><span>{item.approxAddress} · {euros(item.hourlyCents)}/h</span></button>)}
           {drivingRoute.steps.length > 0 && <details className="route-directions"><summary>Afficher les {drivingRoute.steps.length} instructions de route</summary>{drivingRoute.steps.map((step,index)=><div key={`${index}-${step.instruction}`}><span>{index+1}</span><p>{step.instruction}<small>{Math.round(step.distance)} m</small></p></div>)}</details>}
-          <small className="route-background-note">Le guidage vocal fonctionne lorsque GOVAPARK est actif. Le GPS continu écran verrouillé n'est pas garanti par un site web/PWA ; une application native et un service de notifications push sont nécessaires pour un suivi fiable en arrière-plan.</small>{routeStreetReports.length>0 && <><p>Places de rue signalées libres · non garanties</p>{routeStreetReports.map((item)=><div className="route-street-report" key={`street-${item.id}`}><strong>{item.address}</strong><span>Confiance {item.confidence}% · actualisé {ago(item.updatedAt)}</span></div>)}</>}</section>}
-        <div className="results-head"><div><span className="eyebrow">Île-de-France · démo</span><h1>Se garer, simplement.</h1></div><div className="results-head-actions"><span className="result-count">{filtered.length}</span>{view === "list" && <button className="btn btn-secondary" onClick={() => setView("map")}><MapIcon size={16} />Carte</button>}</div></div>
+          <small className="route-background-note">Le guidage vocal fonctionne lorsque GOVAPARK est actif. Le GPS continu écran verrouillé n'est pas garanti par un site web/PWA ; une application native et un service de notifications push sont nécessaires pour un suivi fiable en arrière-plan.</small>{routeStreetReports.length>0 && <><p>Places de rue signalées libres · non garanties</p>{routeStreetReports.map((item)=><div className="route-street-report" key={`street-${item.id}`}><strong>{item.address}</strong><span>{demo ? "Exemple de démonstration" : `Confiance ${item.confidence}%`} · actualisé {ago(item.updatedAt)}</span></div>)}</>}</section>}
+        <div className="results-head"><div><span className="eyebrow">{demo ? "Île-de-France · démo" : "Île-de-France"}</span><h1>Se garer, simplement.</h1></div><div className="results-head-actions"><span className="result-count">{filtered.length}</span>{view === "list" && <button className="btn btn-secondary" onClick={() => setView("map")}><MapIcon size={16} />Carte</button>}</div></div>
         <p className="results-intro">Places privées réservables et informations partagées par la communauté.</p>
         <div className="quick-filters">
           <button className={filters.covered === "couvert" ? "active" : ""} onClick={() => setFilters({ ...filters, covered: filters.covered === "couvert" ? "tous" : "couvert" })}>Couvert</button>
@@ -1302,8 +1305,8 @@ export default function Home() {
 
       {selectedReport && <Modal title={reportTitle[selectedReport.kind]} onClose={() => setSelectedReportId(null)}>
         <div className={`report-detail-head ${selectedReport.kind}`}><span className="report-status-dot" style={{ background: STATUS_COLORS[selectedReport.parkingStatus?.color ?? "gray"] }} /><div><strong>{selectedReport.address}</strong><p>{selectedReport.parkingStatus?.label} · {selectedReport.parkingStatus?.detail}</p></div></div>
-        <dl className="report-facts"><div><dt>Mise à jour</dt><dd>{ago(selectedReport.updatedAt)} · {shortDate(selectedReport.updatedAt)}</dd></div><div><dt>Source</dt><dd>{selectedReport.source}</dd></div><div><dt>Fiabilité</dt><dd>{selectedReport.confidence}% · {selectedReport.confidence >= 75 ? "moyenne à bonne" : selectedReport.confidence >= 50 ? "modérée" : "faible"}</dd></div><div><dt>Expire</dt><dd>{selectedReport.parkingStatus?.expiresAt ? shortDate(selectedReport.parkingStatus.expiresAt) : "—"}</dd></div></dl>
-        <div className="confidence-track"><span style={{ width: `${selectedReport.confidence}%` }} /></div>
+        <dl className="report-facts"><div><dt>Mise à jour</dt><dd>{ago(selectedReport.updatedAt)} · {shortDate(selectedReport.updatedAt)}</dd></div><div><dt>Source</dt><dd>{selectedReport.source}</dd></div><div><dt>Fiabilité</dt><dd>{demo ? "Exemple de démonstration (aucune fiabilité réelle)" : `${selectedReport.confidence}% · ${selectedReport.confidence >= 75 ? "moyenne à bonne" : selectedReport.confidence >= 50 ? "modérée" : "faible"}`}</dd></div><div><dt>Expire</dt><dd>{selectedReport.parkingStatus?.expiresAt ? shortDate(selectedReport.parkingStatus.expiresAt) : "—"}</dd></div></dl>
+        {!demo && <div className="confidence-track"><span style={{ width: `${selectedReport.confidence}%` }} /></div>}
         {selectedReport.kind === "departure" && <DeparturePanel report={selectedReport} isOwner={selectedReport.userId === user?.id} update={departureUpdate} setUpdate={setDepartureUpdate}
           onUpdate={() => updateDeparture.mutate({ id: selectedReport.id, estimatedDeparture: new Date(departureUpdate) })} onStop={() => stopDeparture.mutate({ id: selectedReport.id })}
           onAutoRelease={(latitude, longitude, accuracy) => autoRelease.mutate({ id: selectedReport.id, latitude, longitude, accuracy })} autoReleasePending={autoRelease.isPending} />}

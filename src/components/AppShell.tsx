@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, Navigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
+import { useDemoMode } from "@/hooks/useDemoMode";
 import { Map, CalendarDays, CirclePlus, UserRound, ParkingSquare, MessageCircle, ShieldCheck, CarFront, Timer } from "lucide-react";
 
 const nav = [
@@ -14,6 +15,7 @@ const nav = [
 export default function AppShell() {
   const location = useLocation();
   const { user, isAuthenticated, isLoading } = useAuth();
+  const demo = useDemoMode();
   const visibleNav = user?.role === "admin" ? [...nav, { to: "/entreprise", label: "Espace société", icon: ParkingSquare }, { to: "/admin", label: "Modération", icon: ShieldCheck }] : user?.role === "owner" ? [...nav, { to: "/proposer", label: "Espace propriétaire", icon: CirclePlus }] : [...nav, { to: "/espace-client", label: "Mon espace", short: "Espace", icon: UserRound }];
   const bottomNav = visibleNav.filter((item) => item.to !== "/mobilite" && !(item.to === "/compteur" && user?.role !== "user"));
   const isMap = location.pathname === "/";
@@ -27,7 +29,7 @@ export default function AppShell() {
         <nav className="rail-nav" aria-label="Navigation principale">
           {visibleNav.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : ""}><Icon size={19} /><span>{label}</span></NavLink>)}
         </nav>
-        <div className="rail-note"><span className="live-dot" />Données de démonstration<br /><small>Paiement désactivé</small></div>
+        <div className="rail-note">{demo ? <><span className="live-dot" />Données de démonstration<br /><small>Paiement désactivé</small></> : <small>Paiement désactivé</small>}</div>
       </aside>
       <main className={`app-main ${isMap ? "map-main" : ""}`}><Outlet /></main>
       <nav className="bottom-nav" style={{ gridTemplateColumns: `repeat(${bottomNav.length}, minmax(0, 1fr))` }} aria-label="Navigation principale">

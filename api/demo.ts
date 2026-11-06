@@ -105,7 +105,7 @@ let nextReportId = 1000;
 export function demoCreateReport(input: { kind: "free" | "occupied" | "departure"; latitude: number; longitude: number; address: string; estimatedDeparture?: Date }) {
   const id = nextReportId++;
   const now = new Date();
-  userReports.push({ id, userId: demoUser.id, kind: input.kind, latitude: input.latitude, longitude: input.longitude, address: input.address, source: `${demoUser.name} · communauté`, confidence: 50, estimatedDeparture: input.estimatedDeparture ?? null, updatedAt: now, createdAt: now, expiresAt: null });
+  userReports.push({ id, userId: demoUser.id, kind: input.kind, latitude: input.latitude, longitude: input.longitude, address: input.address, source: `Exemple (mode démo) · ${demoUser.name}`, confidence: 50, estimatedDeparture: input.estimatedDeparture ?? null, updatedAt: now, createdAt: now, expiresAt: null });
   return { id };
 }
 export function demoVote(reportId: number, vote: "confirm" | "contradict") {
@@ -121,16 +121,18 @@ export function demoUpdateDeparture(id: number, estimatedDeparture: Date) {
   return { ok: true };
 }
 
+// Aucun nom de personne : ce sont des signalements d'exemple, étiquetés comme tels partout où la source s'affiche.
+const DEMO_REPORT_SOURCE = "Exemple de démonstration · communauté";
 export function demoReports() {
   const now = Date.now();
   const base = { userId: null, createdAt: new Date(now), expiresAt: null, contradictions: 0 };
   const fixed = [
-    { ...base, id: 1, kind: "free" as const, latitude: 48.8561, longitude: 2.3522, address: "Rue de Rivoli, Paris 4ᵉ", source: "Lina M. · communauté", confidence: 88, estimatedDeparture: null, updatedAt: new Date(now - 4 * 60000), confirmations: 3 },
-    { ...base, id: 2, kind: "occupied" as const, latitude: 48.8584, longitude: 2.3471, address: "Rue Saint-Antoine, Paris 4ᵉ", source: "Mehdi R. · communauté", confidence: 76, estimatedDeparture: null, updatedAt: new Date(now - 9 * 60000), confirmations: 2 },
-    { ...base, id: 3, kind: "departure" as const, latitude: 48.8531, longitude: 2.3491, address: "Quai des Célestins, Paris 4ᵉ", source: "Sophie D. · communauté", confidence: 64, estimatedDeparture: new Date(now + 12 * 60000), updatedAt: new Date(now - 3 * 60000), confirmations: 1 },
-    { ...base, id: 4, kind: "free" as const, latitude: 48.8606, longitude: 2.3698, address: "Rue de la Folie-Méricourt, Paris 11ᵉ", source: "Adam B. · communauté", confidence: 92, estimatedDeparture: null, updatedAt: new Date(now - 6 * 60000), confirmations: 4 },
-    { ...base, id: 5, kind: "occupied" as const, latitude: 48.8441, longitude: 2.3731, address: "Rue de Lyon, Paris 12ᵉ", source: "Nora L. · communauté", confidence: 81, estimatedDeparture: null, updatedAt: new Date(now - 14 * 60000), confirmations: 2 },
-    { ...base, id: 6, kind: "departure" as const, latitude: 48.8421, longitude: 2.3221, address: "Rue de Vaugirard, Paris 15ᵉ", source: "Jules T. · communauté", confidence: 57, estimatedDeparture: new Date(now + 20 * 60000), updatedAt: new Date(now - 8 * 60000), confirmations: 1 },
+    { ...base, id: 1, kind: "free" as const, latitude: 48.8561, longitude: 2.3522, address: "Rue de Rivoli, Paris 4ᵉ", source: DEMO_REPORT_SOURCE, confidence: 88, estimatedDeparture: null, updatedAt: new Date(now - 4 * 60000), confirmations: 3 },
+    { ...base, id: 2, kind: "occupied" as const, latitude: 48.8584, longitude: 2.3471, address: "Rue Saint-Antoine, Paris 4ᵉ", source: DEMO_REPORT_SOURCE, confidence: 76, estimatedDeparture: null, updatedAt: new Date(now - 9 * 60000), confirmations: 2 },
+    { ...base, id: 3, kind: "departure" as const, latitude: 48.8531, longitude: 2.3491, address: "Quai des Célestins, Paris 4ᵉ", source: DEMO_REPORT_SOURCE, confidence: 64, estimatedDeparture: new Date(now + 12 * 60000), updatedAt: new Date(now - 3 * 60000), confirmations: 1 },
+    { ...base, id: 4, kind: "free" as const, latitude: 48.8606, longitude: 2.3698, address: "Rue de la Folie-Méricourt, Paris 11ᵉ", source: DEMO_REPORT_SOURCE, confidence: 92, estimatedDeparture: null, updatedAt: new Date(now - 6 * 60000), confirmations: 4 },
+    { ...base, id: 5, kind: "occupied" as const, latitude: 48.8441, longitude: 2.3731, address: "Rue de Lyon, Paris 12ᵉ", source: DEMO_REPORT_SOURCE, confidence: 81, estimatedDeparture: null, updatedAt: new Date(now - 14 * 60000), confirmations: 2 },
+    { ...base, id: 6, kind: "departure" as const, latitude: 48.8421, longitude: 2.3221, address: "Rue de Vaugirard, Paris 15ᵉ", source: DEMO_REPORT_SOURCE, confidence: 57, estimatedDeparture: new Date(now + 20 * 60000), updatedAt: new Date(now - 8 * 60000), confirmations: 1 },
   ];
   const cutoff = now - 30 * 60000;
   return [...fixed, ...userReports.filter((r) => r.updatedAt.getTime() > cutoff).map((r) => ({ ...base, ...r, contradictions: 0, confirmations: 0 }))]

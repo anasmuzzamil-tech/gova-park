@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { signSessionToken } from "./kimi/session";
 import { env } from "./lib/env";
+import { isDemoMode } from "./demo";
 
 const scrypt = promisify(scryptCallback);
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -46,6 +47,8 @@ export const authRouter = createRouter({
   me: authedQuery.query(({ ctx }) => ({
     id: ctx.user.id, name: ctx.user.name, email: ctx.user.email,
     avatar: ctx.user.avatar, role: ctx.user.role, ownerVerificationStatus: ctx.user.ownerVerificationStatus, createdAt: ctx.user.createdAt,
+    // Indique au site qu'il tourne en mode démo (sans base) : étiquettes « exemple » et textes de démo seulement dans ce cas.
+    demo: isDemoMode,
   })),
   register: publicQuery.input(z.object({
     name: z.string().trim().min(2).max(80),
