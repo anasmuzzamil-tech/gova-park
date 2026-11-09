@@ -238,3 +238,31 @@
 .hist-link:focus-visible, .hist-btn:focus-visible { outline: 3px solid var(--gp-accent-ink); outline-offset: 2px; }
 .hist-empty { display: grid; justify-items: start; gap: var(--gp-s-3); }
 .hist-empty p { margin: 0; font-size: 14px; color: var(--gp-ink); }
+
+/* « Ma voiture » : marqueur encre foncée (ni couleur de statut, ni couleur de type), puce à gauche de la carte, panneau, carte réutilisée par le compteur. */
+.pk-mycar { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--gp-ink); border: 3px solid #fff; box-shadow: var(--gp-shadow-1); }
+.m-mycar-pill { position: absolute; z-index: 600; left: 14px; top: calc(max(14px, env(safe-area-inset-top, 0px)) + 120px); min-height: var(--gp-touch); display: inline-flex; align-items: center; gap: var(--gp-s-2); padding: 0 var(--gp-s-4); border: 0; border-radius: var(--gp-r-pill); background: var(--gp-surface); color: var(--gp-ink); font-family: inherit; font-size: 14px; font-weight: 700; box-shadow: var(--gp-ring), var(--gp-shadow-1); }
+.m-mycar-pill.on { background: var(--gp-ink); color: #fff; }
+.m-mycar-panel { position: absolute; z-index: 800; left: 14px; top: calc(max(14px, env(safe-area-inset-top, 0px)) + 176px); width: min(340px, calc(100% - 28px)); max-height: 62dvh; overflow-y: auto; border-radius: var(--gp-r-3); box-shadow: var(--gp-ring), var(--gp-shadow-2); }
+@media (max-width: 899px) {
+  .m-mycar-pill { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 140px); }
+  .m-mycar-panel { top: calc(max(14px, env(safe-area-inset-top, 0px)) + 196px); }
+}
+.mycar-card { display: grid; gap: var(--gp-s-3); padding: var(--gp-s-4); border-radius: var(--gp-r-3); background: var(--gp-surface); box-shadow: var(--gp-ring); color: var(--gp-ink); }
+.meter-page > .mycar-card, .meter-page > .mycar-note { margin-bottom: var(--gp-s-4); }
+.mycar-head { display: flex; align-items: center; gap: var(--gp-s-3); }
+.mycar-head > div { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.mycar-head b { font-size: var(--gp-t-16); font-weight: 700; }
+.mycar-head span { font-size: 14px; color: var(--gp-ink-2); }
+.mycar-badge { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--gp-ink); color: #fff; }
+.mycar-close { width: var(--gp-touch); height: var(--gp-touch); flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--gp-ink-2); }
+.mycar-note { margin: 0; font-size: 14px; line-height: 1.45; color: var(--gp-ink-2); }
+.mycar-btn { min-height: var(--gp-touch); display: inline-flex; align-items: center; justify-content: center; gap: var(--gp-s-2); }
+.mycar-field { display: grid; gap: var(--gp-s-1); font-size: 14px; font-weight: 600; color: var(--gp-ink); }
+.mycar-field input { min-height: var(--gp-touch); padding: 0 var(--gp-s-3); border: 1px solid var(--gp-line); border-radius: var(--gp-r-1); font-size: 16px; color: var(--gp-ink); background: var(--gp-surface); }
+.mycar-reminder { display: grid; gap: var(--gp-s-2); padding: var(--gp-s-3); border-radius: var(--gp-r-2); background: var(--gp-surface-2); }
+.mycar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--gp-s-2); }
+.mycar-durations { display: flex; flex-wrap: wrap; gap: var(--gp-s-2); }
+.mycar-banner { margin: 0; padding: var(--gp-s-3); border-radius: var(--gp-r-1); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gp-ink); background: var(--gp-surface); box-shadow: var(--gp-ring); }
+.mycar-soon { color: var(--gp-orange-ink); background: var(--gp-orange-tint); box-shadow: none; }
+.mycar-over { color: var(--gp-red-ink); background: var(--gp-red-tint); box-shadow: none; }

@@ -37,6 +37,9 @@ import { tariffLineFor } from "@contracts/paris-tariffs";
 import { loadLayerPrefs, saveLayerPrefs } from "@/lib/layer-prefs";
 import { getMapDiag, mapDiagLine } from "@/lib/map-diag";
 import { useDemoMode } from "@/hooks/useDemoMode";
+import { useMyCar } from "@/hooks/useMyCar";
+import { MyCarCard } from "@/components/MyCarCard";
+import { makeCar, walkEstimate } from "@/lib/my-car";
 import { nearCountLabel, NEAR_COUNT_RADIUS_M } from "@/lib/near-label";
 import { addRecent, getFavorite, loadPlaces as loadSavedPlaces, removeFavorite, removeRecent, savePlaces as saveSavedPlaces, setFavorite, KIND_NAME, MAX_NAME, type PlacesStore, type SavedKind } from "@/lib/saved-places";
 import { ZFE_SOURCE, zfeAttribution, type ZfeFile } from "@contracts/paris-zfe";
@@ -255,6 +258,9 @@ export default function Home() {
   const [visibleBounds, setVisibleBounds] = useState<MapBounds | null>(null);
   const [selectedStreetId, setSelectedStreetId] = useState<number | null>(null);
   const [streetLocating, setStreetLocating] = useState(false);
+  // « Ma voiture » : enregistrée sur l'appareil à chaque « Je me gare » / « Je m'y gare » (src/lib/my-car.ts). N'envoie aucun signalement de plus.
+  const [myCar, setMyCar] = useMyCar();
+  const [myCarOpen, setMyCarOpen] = useState(false);
   // Couche « Emplacements de Paris » (Ville de Paris, ODbL) : emplacements officiels en gris, colorés seulement par un signalement récent.
   const [parisOn, setParisOn] = useState(initialLayers.paris);
   const [forbiddenOn, setForbiddenOn] = useState(initialLayers.forbidden);
@@ -423,10 +429,22 @@ export default function Home() {
   // Signaler une place en rue : la position GPS de l'appareil est demandée au toucher (obligatoire pour SIGNALER seulement, vérifiée par le serveur).
   // Chaque toucher a une réponse visible : bouton « Localisation… » puis « Envoi… », puis toast de confirmation ou message court.
   const reportStreet = async (status: "free" | "taken", spot?: { latitude: number; longitude: number }, forVehicle: VehicleType = vehicle) => {
-    if (!isAuthenticated) { toast.message("Connectez-vous pour signaler une place.", { id: "street-report" }); requireAuth(); return; }
+    // Position de la voiture : l'appareil si précis (≤ 50 m), sinon le centre de la carte (dit dans « Ma voiture »).
+    const rememberCar = (device: { latitude: number; longitude: number; accuracy?: number | null } | null) => { const car = makeCar({ device, mapCenter: visibleCenter, at: Date.now() }); if (car) setMyCar(car); };
+    if (!isAuthenticated) {
+      if (status === "taken") {
+        // Sans compte : la voiture est enregistrée sur l'appareil ; le signalement aux autres demande un compte.
+        setStreetLocating(true);
+        try { rememberCar(await getDevicePosition()); } catch { rememberCar(null); } finally { setStreetLocating(false); }
+        toast.message("Voiture enregistrée sur cet appareil. Connectez-vous pour signaler la place aux autres.", { id: "street-report", action: { label: "Se connecter", onClick: requireAuth } });
+        return;
+      }
+      toast.message("Connectez-vous pour signaler une place.", { id: "street-report" }); requireAuth(); return;
+    }
     setStreetLocating(true);
     try {
       const device = await getDevicePosition();
+      if (status === "taken") rememberCar(device);
       // Signalement seulement : position à 50 m près et de moins de 30 s, sinon refus clair (le bouton « Ma position » n'est pas concerné).
       const issue = reportPositionIssue(device);
       if (issue) { toast.error(issue, { id: "street-report", duration: 9000 }); return; }
@@ -440,6 +458,7 @@ export default function Home() {
       }
       streetCreate.mutate({ status, vehicleType: forVehicle, ...place, deviceLatitude: device.latitude, deviceLongitude: device.longitude });
     } catch (error) {
+      if (status === "taken") rememberCar(null);
       toast.error(error instanceof GeolocError ? error.message : "Signalement impossible pour le moment.", { id: "street-report", duration: 9000 });
     } finally { setStreetLocating(false); }
   };
@@ -938,7 +957,7 @@ export default function Home() {
   const mapProps = {
     center: target, focus: focusRequest, listings: mapListings, altRoutes,
     onPickRoute: (id: string) => { const o = routeOptions.find((x) => x.id === id); if (o) { setDrivingRoute(o); void refreshRouteServices(o); spokenStepIndex.current = 0; } },
-    reports, userPosition, confirmedIds, fuelStations: NO_FUEL,
+    reports, userPosition, confirmedIds, fuelStations: NO_FUEL, myCar,
     vehicleType: vehiclePrefs.vehicle || "car", vehicleColor: vehiclePrefs.vehicleColor || "#2563eb",
     // Caméra qui suit la voiture : en navigation seulement, et pas en « Vue d'ensemble ».
     driving: !!drivingRoute && navActive && navFollow, routeFocus, routeCoordinates: drivingRoute?.coordinates, routeListingIds, routeServices,
@@ -1049,6 +1068,12 @@ export default function Home() {
           <button data-vt="all" className={`m-chip ${vehicleChoice.all && !displayType ? "on" : ""}`} aria-pressed={vehicleChoice.all && !displayType} aria-label="Afficher tous les types de places sur la carte" onClick={() => chooseVehicle({ vehicle, all: !vehicleChoice.all, display: null })}>Tout</button>
         </div>
 
+        {myCar && !navActive && <button type="button" className={`m-mycar-pill${myCarOpen ? " on" : ""}`} aria-expanded={myCarOpen} onClick={() => setMyCarOpen((open) => !open)}><CarIcon size={18} />Ma voiture</button>}
+        {myCar && myCarOpen && !navActive && <div className="m-mycar-panel">
+          <MyCarCard car={myCar} onClose={() => setMyCarOpen(false)} onChange={(next) => { setMyCar(next); if (!next) setMyCarOpen(false); }}
+            onGo={() => { mapIntent.current = true; setFocusRequest((previous) => ({ id: (previous?.id ?? 0) + 1, lat: myCar.lat, lng: myCar.lng, zoom: 18 })); setMyCarOpen(false); }}
+            walk={userPosition ? (() => { const w = walkEstimate(userPosition, myCar); return `≈ ${meters(w.meters)} · ≈ ${w.minutes} min à pied.`; })() : null} />
+        </div>}
         <button type="button" className={`m-round m-layers-btn${layersOpen ? " on" : ""}`} aria-label="Couches de la carte" aria-expanded={layersOpen} onClick={() => setLayersOpen((open) => !open)}><Layers size={22} /></button>
         {layersOpen && <div className="m-layers" role="dialog" aria-label="Couches de la carte">
           <div className="m-layers-head"><b>Couches</b><button type="button" className="m-layers-close" onClick={() => setLayersOpen(false)} aria-label="Fermer les couches"><X size={20} /></button></div>

@@ -8,6 +8,9 @@ import { euros, shortDate } from "@/lib/format";
 import { meterCostCents } from "@contracts/meter";
 import { GeolocError, getDevicePosition } from "@/lib/street";
 import { reportPositionIssue } from "@/lib/geoloc";
+import { useMyCar } from "@/hooks/useMyCar";
+import { MyCarCard } from "@/components/MyCarCard";
+import { makeCar, withSession } from "@/lib/my-car";
 import { DEFAULT_VEHICLE, fromProfileVehicle, isVehicleType, type VehicleType } from "@contracts/vehicle-types";
 
 /** Véhicule du signalement : celui choisi sur la carte (« Mon véhicule », govapark.mapVehicle.v1), sinon celui du profil local, sinon voiture.
@@ -33,14 +36,16 @@ export default function Meter() {
   const current = trpc.govapark.meter.current.useQuery(undefined, { enabled: isAuthenticated });
   const history = trpc.govapark.meter.history.useQuery(undefined, { enabled: isAuthenticated });
   const [label, setLabel] = useState(""); const [address, setAddress] = useState(""); const [rate, setRate] = useState("");
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+  const [myCar, setMyCar] = useMyCar();
   const [now, setNow] = useState(() => Date.now());
   // Ecart entre l'horloge du serveur et celle de l'appareil : le temps affiche suit toujours le serveur.
   const offset = useRef(0);
   useEffect(() => { if (current.data) offset.current = new Date(current.data.serverNow).getTime() - Date.now(); }, [current.data]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   const refresh = () => { utils.govapark.meter.current.invalidate(); utils.govapark.meter.history.invalidate(); };
-  const start = trpc.govapark.meter.start.useMutation({ onSuccess: () => { toast.success("Stationnement démarré"); refresh(); }, onError: (e) => toast.error(e.message) });
+  // Démarrage : « Ma voiture » prend la position du compteur si elle est précise (≤ 50 m), sinon la voiture déjà enregistrée est liée à la session.
+  const start = trpc.govapark.meter.start.useMutation({ onSuccess: (session) => { const car = coords ? makeCar({ device: coords, at: Date.now(), note: label, sessionId: session?.id ?? null }) : null; if (car) setMyCar(car); else if (myCar) setMyCar(withSession(myCar, session?.id ?? null)); toast.success("Stationnement démarré"); refresh(); }, onError: (e) => toast.error(e.message) });
   // Fin de session : on PROPOSE de libérer la place pour les autres, jamais automatiquement.
   const [offerRelease, setOfferRelease] = useState<{ latitude: number | null; longitude: number | null } | null>(null);
   const [releaseNote, setReleaseNote] = useState<string | null>(null);
@@ -67,13 +72,13 @@ export default function Meter() {
   const cost = session ? meterCostCents(session.hourlyCents, new Date(session.startedAt), new Date(now + offset.current)) : null;
   const locate = () => {
     if (!navigator.geolocation) { toast.error("Géolocalisation indisponible sur cet appareil."); return; }
-    navigator.geolocation.getCurrentPosition((p) => { setCoords({ latitude: p.coords.latitude, longitude: p.coords.longitude }); toast.success("Position enregistrée pour ce stationnement"); }, () => toast.error("Position refusée ou indisponible."), { enableHighAccuracy: true, timeout: 10000 });
+    navigator.geolocation.getCurrentPosition((p) => { setCoords({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }); toast.success("Position enregistrée pour ce stationnement"); }, () => toast.error("Position refusée ou indisponible."), { enableHighAccuracy: true, timeout: 10000 });
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const euro = rate.trim() ? Number(rate.replace(",", ".")) : 0;
     if (!Number.isFinite(euro) || euro < 0 || euro > 100) { toast.error("Tarif horaire invalide."); return; }
-    start.mutate({ label: label.trim(), address: address.trim() || undefined, ...(coords ?? {}), hourlyCents: Math.round(euro * 100) });
+    start.mutate({ label: label.trim(), address: address.trim() || undefined, ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}), hourlyCents: Math.round(euro * 100) });
   };
 
   return <div className="standard-page meter-page">
@@ -100,6 +105,7 @@ export default function Meter() {
         <button className="btn btn-primary btn-large" disabled={start.isPending}><Play size={17} />Démarrer le compteur</button>
       </form>
     </section>}
+    {myCar ? <MyCarCard car={myCar} onChange={setMyCar} /> : <p className="mycar-note">« Ma voiture » et le rappel de fin de stationnement s’enregistrent avec « Je me gare » sur la carte, ou ici avec « Utiliser ma position » avant de démarrer.</p>}
     <section className="profile-section"><h2><Timer size={20} /> Historique</h2>
       {(history.data ?? []).length === 0 ? <p>Aucun stationnement terminé pour l’instant.</p> : <div className="company-table">{(history.data ?? []).map((s) => <div key={s.id}><b>{s.label}</b><span>{s.endedAt ? clock(new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) : ""}</span><small>{shortDate(s.startedAt)}{s.totalCents != null ? ` · ${euros(s.totalCents)}` : " · sans tarif"}</small></div>)}</div>}
     </section>

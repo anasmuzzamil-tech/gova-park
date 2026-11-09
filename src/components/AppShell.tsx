@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, Navigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { useDemoMode } from "@/hooks/useDemoMode";
+import { useParkingReminder } from "@/hooks/useMyCar";
 import { Map, History, CirclePlus, UserRound, ParkingSquare, MessageCircle, ShieldCheck, CarFront, Timer } from "lucide-react";
 
 const nav = [
@@ -20,6 +21,7 @@ export default function AppShell() {
   const location = useLocation();
   const { user, isAuthenticated, isLoading } = useAuth();
   const demo = useDemoMode();
+  useParkingReminder(); // rappel personnel de fin de stationnement, sur toutes les pages
   const visibleNav = user?.role === "admin" ? [...nav, { to: "/entreprise", label: "Espace société", icon: ParkingSquare }, { to: "/admin", label: "Modération", icon: ShieldCheck }] : user?.role === "owner" ? [...nav, { to: "/proposer", label: "Espace propriétaire", icon: CirclePlus }] : [...nav, { to: "/espace-client", label: "Mon espace", short: "Espace", icon: UserRound }];
   const bottomNav = visibleNav.filter((item) => item.to !== "/mobilite" && !(item.to === "/compteur" && user?.role !== "user"));
   const isMap = location.pathname === "/";
