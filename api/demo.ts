@@ -160,6 +160,15 @@ export function demoStreetCreate(input: StreetReportInput, now = new Date()) {
   return { ok: true as const, id, expiresAt: prepared.row.expiresAt, reliability: prepared.row.reliability };
 }
 
+// Mes signalements de places en rue (liste « Historique ») : uniquement ceux du visiteur démo, étiquetés « exemple ».
+export function demoStreetMine(now = new Date()) {
+  return streetStore
+    .filter((r) => r.userId === demoUser.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 30)
+    .map((r) => ({ id: r.id, latitude: r.latitude, longitude: r.longitude, status: r.status, vehicleType: r.vehicleType ?? "car", createdAt: r.createdAt, expiresAt: r.expiresAt ?? now, example: true }));
+}
+
 // Favoris et reservations gardes en memoire (perdus au redemarrage du serveur).
 const favoriteIds = new Set<number>();
 export function demoFavoriteIds() { return [...favoriteIds]; }

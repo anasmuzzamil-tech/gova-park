@@ -17,7 +17,7 @@ import { log } from "./lib/logger";
 import { checkDisputeAllowed, DISPUTABLE_STATUSES } from "./lib/dispute-rules";
 import { assertCanCreatePending, paymentHoldExpiry, isPaymentHoldExpired } from "./lib/reservation-holds";
 import { MAX_UPLOAD_BASE64_CHARS, validateImageUpload } from "./lib/upload-validation";
-import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
+import { isDemoMode, demoListings, demoReports, demoFavoriteIds, demoFavoriteListings, demoToggleFavorite, demoCreateReservation, demoMyReservations, demoCancelReservation, demoCreateReport, demoVote, demoStopReport, demoUpdateDeparture, demoStreetList, demoStreetCreate, demoStreetMine, demoMeterCurrent, demoMeterStart, demoMeterStop, demoMeterHistory, demoBookedSlots } from "./demo";
 
 const revealedStatuses = ["confirmed", "in_progress", "completed", "refund_pending", "refunded", "dispute"] as const;
 
@@ -416,6 +416,14 @@ export const govaparkRouter = createRouter({
       if (!prepared.ok) throw new TRPCError({ code: prepared.code, message: prepared.message });
       const [created] = await db.insert(streetReports).values({ ...prepared.row, userId: ctx.user.id }).$returningId();
       return { id: created.id, expiresAt: prepared.row.expiresAt, reliability: prepared.row.reliability, example: false };
+    }),
+    // Mes signalements (historique de l'utilisateur connecté, lecture seule) : seulement les siens, sans identifiant d'autres utilisateurs. Mode base réelle : NON TESTÉ faute de base.
+    mine: authedQuery.query(async ({ ctx }) => {
+      const now = new Date();
+      if (isDemoMode) return { serverNow: now, reports: demoStreetMine(now) };
+      const rows = await getDb().select({ id: streetReports.id, latitude: streetReports.latitude, longitude: streetReports.longitude, status: streetReports.status, vehicleType: streetReports.vehicleType, createdAt: streetReports.createdAt, expiresAt: streetReports.expiresAt })
+        .from(streetReports).where(eq(streetReports.userId, ctx.user.id)).orderBy(desc(streetReports.createdAt)).limit(30);
+      return { serverNow: now, reports: rows.map((r) => ({ ...r, example: false })) };
     }),
   }),
 
