@@ -68,6 +68,7 @@ function FocusAddress({ focus }: { focus: { id: number; lat: number; lng: number
   return null;
 }
 
+const myCarIcon = L.divIcon({ className: "govapark-marker-wrap", html: `<span class="pk-mycar" aria-label="Ma voiture"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 19 10l-1.5-4.5A2 2 0 0 0 15.6 4H8.4a2 2 0 0 0-1.9 1.5L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/></svg></span>`, iconSize: [40, 40], iconAnchor: [20, 20] });
 function markerIcon(color: string, text: string, label: string) {
   const safeLabel = label.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
   return L.divIcon({
@@ -141,11 +142,13 @@ const carIcon = L.divIcon({
 const formatRate = (cents?: number) => cents == null ? "P" : `${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1).replace(".", ",")} €/h`;
 
 export default function ParkingMap({
-  center, focus = null, listings, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
+  center, focus = null, myCar = null, listings, streetSpots = [], onStreetSpot, confirmedIds, onListing, onBook, onRoute, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", vehicleColor = "#2563eb", driving = false, canBook = true, altRoutes = [], onPickRoute,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
   focus?: { id: number; lat: number; lng: number; zoom: number } | null;
+  /** « Ma voiture » (stockée sur l'appareil) : marqueur distinct des places, jamais une disponibilité. */
+  myCar?: { lat: number; lng: number; approx: boolean } | null;
   listings: MapListing[];
   reports: MapReport[];
   streetSpots?: MapStreetSpot[];
@@ -205,6 +208,7 @@ export default function ParkingMap({
         <Polyline positions={routeCoordinates} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.95, lineCap: "round", lineJoin: "round" }} />
         <Polyline positions={routeCoordinates} pathOptions={{ color: "#2f6df6", weight: 6.5, opacity: 1, lineCap: "round", lineJoin: "round" }} />
       </>}
+      {myCar && <Marker position={[myCar.lat, myCar.lng]} icon={myCarIcon} zIndexOffset={800}><Popup>{myCar.approx ? "Ma voiture · position approximative" : "Ma voiture"}</Popup></Marker>}
       {userPosition && <>
         <Circle
           center={[userPosition.lat, userPosition.lng]}

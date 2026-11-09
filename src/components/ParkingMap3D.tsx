@@ -72,6 +72,8 @@ function el(tag: string, className?: string, html?: string) {
   if (html != null) node.innerHTML = html;
   return node;
 }
+// Pictogramme voiture (dessin lucide « car-front ») du marqueur « Ma voiture ».
+const MY_CAR_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 19 10l-1.5-4.5A2 2 0 0 0 15.6 4H8.4a2 2 0 0 0-1.9 1.5L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/></svg>';
 function text(tag: string, value: string, className?: string) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -238,11 +240,13 @@ function addParisLayers(map: maplibregl.Map, onPick: (props: ParisPick) => void)
 }
 
 export default function ParkingMap3D({
-  center, focus = null, listings, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, irveOn = false, onIrve, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
+  center, focus = null, myCar = null, listings, streetSpots = [], onStreetSpot, parisSpots = [], parisHot = [], onParisSpot, irveOn = false, onIrve, polygonsOn = false, polygonTypes = DEFAULT_POLYGON_TYPES, forbiddenOn = false, worksOn = false, zfeOn = false, typeColorKey = "car", confirmedIds, onListing, onBook, onRoute, onReport, onMove, userPosition, routeCoordinates, routeFocus = 0, routeListingIds, routeServices = [], fuelStations = [], vehicleType = "car", driving = false, canBook = true, altRoutes = [], onPickRoute, onUnavailable,
 }: {
   center: Center;
   /** Demande de cadrage « zoom rue » sur une adresse choisie (un nouvel `id` = un nouveau cadrage). */
   focus?: { id: number; lat: number; lng: number; zoom: number } | null;
+  /** « Ma voiture » (stockée sur l'appareil) : marqueur distinct des places, jamais une disponibilité. */
+  myCar?: { lat: number; lng: number; approx: boolean } | null;
   listings: MapListing[];
   reports: MapReport[];
   streetSpots?: MapStreetSpot[];
@@ -775,6 +779,17 @@ export default function ParkingMap3D({
     (map.getSource("gp-paris") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisSpots.map(feature) });
     (map.getSource("gp-paris-hot") as maplibregl.GeoJSONSource | undefined)?.setData({ type: "FeatureCollection", features: parisHot.map(feature) });
   }, [ready, parisSpots, parisHot, drawnAnchors]);
+
+  // « Ma voiture » : un seul marqueur encre foncée avec pictogramme, distinct des places (statut, type) et du point bleu.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !myCar) return;
+    const node = el("div", "pk-mycar", MY_CAR_SVG);
+    const name = myCar.approx ? "Ma voiture (position approximative)" : "Ma voiture";
+    node.title = name; node.setAttribute("aria-label", name);
+    const marker = new maplibregl.Marker({ element: node }).setLngLat([myCar.lng, myCar.lat]).addTo(map);
+    return () => { marker.remove(); };
+  }, [ready, myCar?.lat, myCar?.lng, myCar?.approx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stations et services du trajet.
   useEffect(() => {
