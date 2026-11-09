@@ -113,14 +113,16 @@ export function walkEstimate(from: { lat: number; lng: number }, to: { lat: numb
   return { meters: Math.round(m), minutes: Math.max(1, Math.round(m / WALK_M_PER_MIN)) };
 }
 
-function safeStorage(): Storage | null { try { return window.localStorage; } catch { return null; } }
-export function loadCar(storage: Pick<Storage, "getItem"> | null = typeof window === "undefined" ? null : safeStorage()): MyCar | null {
+// Accès par globalThis : ce fichier est aussi compilé par la configuration serveur (tests), sans les types du navigateur.
+const g = globalThis as { localStorage?: Storage; dispatchEvent?: (event: Event) => boolean };
+function safeStorage(): Storage | null { try { return g.localStorage ?? null; } catch { return null; } }
+export function loadCar(storage: Pick<Storage, "getItem"> | null = safeStorage()): MyCar | null {
   try { return parseCar(storage?.getItem(MY_CAR_KEY) ?? null); } catch { return null; }
 }
 /** Écrit (ou efface avec null) et prévient les autres écrans de l'onglet. Renvoie false si l'écriture a échoué (navigation privée, stockage plein). */
-export function saveCar(car: MyCar | null, storage: Pick<Storage, "setItem" | "removeItem"> | null = typeof window === "undefined" ? null : safeStorage()): boolean {
+export function saveCar(car: MyCar | null, storage: Pick<Storage, "setItem" | "removeItem"> | null = safeStorage()): boolean {
   let ok = false;
   try { if (storage) { if (car) storage.setItem(MY_CAR_KEY, JSON.stringify(car)); else storage.removeItem(MY_CAR_KEY); ok = true; } } catch { ok = false; }
-  try { if (typeof window !== "undefined") window.dispatchEvent(new Event(MY_CAR_EVENT)); } catch { /* sans événement : relu au prochain affichage */ }
+  try { g.dispatchEvent?.(new Event(MY_CAR_EVENT)); } catch { /* sans événement : relu au prochain affichage */ }
   return ok;
 }
