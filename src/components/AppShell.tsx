@@ -1,20 +1,20 @@
 import { NavLink, Outlet, useLocation, Navigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { useDemoMode } from "@/hooks/useDemoMode";
-import { Map, CalendarDays, CirclePlus, UserRound, ParkingSquare, MessageCircle, ShieldCheck, CarFront, Timer } from "lucide-react";
+import { Map, History, CirclePlus, UserRound, ParkingSquare, MessageCircle, ShieldCheck, CarFront, Timer } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Carte", icon: Map },
-  { to: "/reservations", label: "Réservations", short: "Résas", icon: CalendarDays },
+  { to: "/historique", label: "Historique", icon: History },
   { to: "/messages", label: "Messages", icon: MessageCircle },
   { to: "/compteur", label: "Compteur", icon: Timer },
   { to: "/mobilite", label: "Mobilité", icon: CarFront },
   { to: "/profil", label: "Paramètres", short: "Réglages", icon: UserRound },
 ];
 
-// Pages consultables sans compte : la carte et la fiche d'une place. Les actions (signaler, réserver, publier, messages, compte)
+// Pages consultables sans compte : la carte, la fiche d'une place et l'historique (ses récents sont stockés sur l'appareil ; réservations et signalements y demandent un compte). Les actions (signaler, réserver, publier, messages, compte)
 // demandent un compte là où elles se trouvent ; le serveur garde ses contrôles (procédures protégées inchangées).
-const PUBLIC_PATHS = [/^\/$/, /^\/place\/[^/]+\/?$/];
+const PUBLIC_PATHS = [/^\/$/, /^\/place\/[^/]+\/?$/, /^\/historique\/?$/];
 
 export default function AppShell() {
   const location = useLocation();

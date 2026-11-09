@@ -6,6 +6,7 @@ import Home from "@/pages/Home";
 import PlaceDetail from "@/pages/PlaceDetail";
 import BookingFlow from "@/pages/BookingFlow";
 import Reservations from "@/pages/Reservations";
+import Historique from "@/pages/Historique";
 import Owner from "@/pages/Owner";
 import Profile from "@/pages/Profile";
 import Favorites from "@/pages/Favorites";
@@ -41,6 +42,7 @@ export default function App() {
       <Route path="/espace-client" element={<ClientDashboard />} />
       <Route path="/place/:id" element={<PlaceDetail />} />
       <Route path="/reserver/:id" element={<BookingFlow />} />
+      <Route path="/historique" element={<Historique />} />
       <Route path="/reservations" element={<Reservations />} />
       <Route path="/messages" element={<Messages />} />
       <Route path="/compteur" element={<Meter />} />

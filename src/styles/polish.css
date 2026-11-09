@@ -218,3 +218,23 @@
   .bottom-nav a { border-radius: 18px; }
   .bottom-nav a.active { background: #ece8fd; color: var(--gp-accent-ink); }
 }
+
+/* Historique (page /historique) : trois sections, jetons existants, zones tactiles 44 px, mobile 390 px d'abord. */
+.hist-page { display: grid; gap: var(--gp-s-4); }
+.hist-section { display: grid; gap: var(--gp-s-3); padding: var(--gp-s-4); border-radius: var(--gp-r-2); background: var(--gp-surface); box-shadow: var(--gp-ring); }
+.hist-section h2 { margin: 0; font-size: var(--gp-t-20); font-weight: 700; color: var(--gp-ink); }
+.hist-help, .hist-muted { margin: 0; font-size: 14px; line-height: 1.45; color: var(--gp-ink-2); }
+.hist-list { display: grid; gap: var(--gp-s-2); margin: 0; padding: 0; list-style: none; }
+.hist-item { display: grid; gap: var(--gp-s-2); padding: var(--gp-s-3); border-radius: var(--gp-r-2); background: var(--gp-surface-2); }
+.hist-item strong { font-size: var(--gp-t-16); font-weight: 700; color: var(--gp-ink); }
+.hist-item-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.hist-item-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gp-s-2); font-size: 14px; color: var(--gp-ink-2); }
+.hist-pill, .hist-tag { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--gp-s-3); border-radius: var(--gp-r-pill); font-size: 14px; font-weight: 600; color: var(--gp-ink); background: var(--gp-surface); box-shadow: var(--gp-ring); }
+.hist-tag { font-size: 12px; color: var(--gp-gray-ink); background: var(--gp-gray-tint); box-shadow: none; }
+.hist-pill-free { color: var(--gp-green-ink); background: var(--gp-green-tint); box-shadow: none; }
+.hist-pill-taken { color: var(--gp-red-ink); background: var(--gp-red-tint); box-shadow: none; }
+.hist-btn { min-height: var(--gp-touch); display: inline-flex; align-items: center; justify-content: center; gap: var(--gp-s-2); padding: 0 var(--gp-s-4); white-space: nowrap; }
+.hist-link { display: inline-flex; align-items: center; min-height: var(--gp-touch); font-size: 14px; font-weight: 600; color: var(--gp-accent-ink); text-decoration: none; }
+.hist-link:focus-visible, .hist-btn:focus-visible { outline: 3px solid var(--gp-accent-ink); outline-offset: 2px; }
+.hist-empty { display: grid; justify-items: start; gap: var(--gp-s-3); }
+.hist-empty p { margin: 0; font-size: 14px; color: var(--gp-ink); }

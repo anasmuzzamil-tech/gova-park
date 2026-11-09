@@ -915,6 +915,22 @@ export default function Home() {
     if (!locating && gpsNote) toast.message(`${gpsNote} Le trajet partira de votre position dès qu’elle sera connue (touchez « Ma position »).`, { id: "route-near", duration: 12000 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPosition, locating, gpsNote]);
+  // Arrivée depuis Historique (« Y aller » sur un lieu récent) : la carte se centre sur le lieu comme la recherche, sans itinéraire automatique.
+  const focusHandled = useRef(false);
+  useEffect(() => {
+    const focus = (routerLocation.state as { focus?: { lat: number; lng: number; label: string } } | null)?.focus;
+    if (!focus || focusHandled.current) return;
+    focusHandled.current = true; mapIntent.current = true;
+    navigate(".", { replace: true, state: null });
+    originRef.current = userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : { lat: visibleCenter.lat, lng: visibleCenter.lng };
+    setDrivingRoute(null); setRouteOptions([]); setRouteServices([]);
+    setDestination({ lat: focus.lat, lng: focus.lng, label: focus.label });
+    setSearch(focus.label); setSearchFocused(false);
+    setStreetOn(true); setParisOn(true);
+    setTarget({ lat: focus.lat, lng: focus.lng });
+    setFocusRequest((previous) => ({ id: (previous?.id ?? 0) + 1, lat: focus.lat, lng: focus.lng, zoom: 17 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routerLocation.state]);
   const meters = (value: number) => value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(1).replace(".", ",")} km`;
 
   // Mémorisé : un nouveau tableau à chaque rendu (donc à chaque position GPS) faisait redessiner le trajet et ses alternatives sur la carte.
